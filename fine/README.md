@@ -39,8 +39,10 @@ events cover only the observed `th_rewriter::reduce_app` path; this stream does
 not pretend to contain substitutions, quantifier rewrites, other rewriter
 instances, or solver search.
 
-The bisimulation replay records the four elaborated quantified constraints,
-the public MBQI-enabled model query, every completed finite relation cell, the
-deterministic constant-array-plus-stores extensionalization, and the checked
-Fine model witness. It deliberately has no internal solver events yet: the
-query result reports what Z3 returned, not how MBQI or search produced it.
+The bisimulation replay disables E-matching and records the accepted,
+nontrivial quantifier instances which reach Z3's `qi_queue` binding callback
+during the MBQI-only query. Each preprocessed quantifier retains a Fine source
+role through its qid. The stream then records every completed finite relation
+cell, deterministic constant-array-plus-stores extensionalization, and the
+checked Fine model witness. It does not expose MBQI's auxiliary-context search,
+discarded candidates, blocking clauses, or general CDCL(T) search.

@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "quantifier_observer.h"
 #include "rainfall.h"
 #include "synthesis.h"
 
@@ -687,23 +688,40 @@ private:
             return z3::select(right_step.value, tuple(right_step_domain, from, to));
         };
 
+        auto named_forall = [&](char const* role,
+                                std::vector<z3::expr> const& variables,
+                                z3::expr const& body) {
+            std::vector<Z3_app> bound;
+            bound.reserve(variables.size());
+            for (z3::expr const& variable : variables)
+                bound.push_back(reinterpret_cast<Z3_app>(
+                    static_cast<Z3_ast>(variable)));
+            std::string qid = std::string("fine.bisim.") + role;
+            Z3_ast result = Z3_mk_quantifier_const_ex(
+                context_, true, 0, context_.str_symbol(qid.c_str()),
+                context_.str_symbol(""), static_cast<unsigned>(bound.size()),
+                bound.data(), 0, nullptr, 0, nullptr, body);
+            context_.check_error();
+            return z3::expr(context_, result);
+        };
+
         std::vector<std::pair<std::string, z3::expr>> assertions;
         assertions.emplace_back(
             "labels-agree",
-            z3::forall(left, right,
+            named_forall("labels-agree", {left, right},
                 z3::implies(related(left, right),
                     z3::select(left_label.value, left) ==
                     z3::select(right_label.value, right))));
         assertions.emplace_back(
             "left-step-matched",
-            z3::forall(left, right, left_next,
+            named_forall("left-step-matched", {left, right, left_next},
                 z3::implies(related(left, right) && steps_left(left, left_next),
                     z3::exists(right_next,
                         steps_right(right, right_next) &&
                         related(left_next, right_next)))));
         assertions.emplace_back(
             "right-step-matched",
-            z3::forall(left, right, right_next,
+            named_forall("right-step-matched", {left, right, right_next},
                 z3::implies(related(left, right) &&
                                 steps_right(right, right_next),
                     z3::exists(left_next,
@@ -715,6 +733,7 @@ private:
         z3::solver solver(context_);
         z3::params parameters(context_);
         parameters.set("mbqi", true);
+        parameters.set("ematching", false);
         solver.set(parameters);
         std::vector<std::string> assertion_references;
         for (auto const& [role, assertion] : assertions) {
@@ -743,9 +762,16 @@ private:
                      "assertions",
                      RainfallRecorder::string_array(assertion_references)),
                  RainfallRecorder::string_field("polarity", "model-exists"),
-                 RainfallRecorder::boolean_field("mbqi", true)});
+                 RainfallRecorder::boolean_field("mbqi", true),
+                 RainfallRecorder::boolean_field("ematching", false)});
         }
 
+        std::unique_ptr<RainfallQuantifierObserver> quantifier_observer;
+        if (rainfall_) {
+            quantifier_observer = std::make_unique<RainfallQuantifierObserver>(
+                solver, *rainfall_, std::vector<std::string>{run_scope, query},
+                false);
+        }
         z3::check_result result = solver.check();
         if (rainfall_) {
             char const* status = result == z3::sat

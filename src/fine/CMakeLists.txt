@@ -7,6 +7,7 @@ add_executable(fine-bin
   internal_rewrite.cpp
   main.cpp
   parser.cpp
+  quantifier_observer.cpp
   rainfall.cpp
   runtime.cpp
   synthesis.cpp

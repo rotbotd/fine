@@ -133,6 +133,25 @@
           assert len(queries) == 1
           assert queries[0]["data"]["status"] == "sat"
           assert queries[0]["data"]["polarity"] == "model-exists"
+          opened = [event for event in events
+                    if event["operation"] == "solver.query.open"]
+          assert len(opened) == 1
+          assert opened[0]["data"]["mbqi"] is True
+          assert opened[0]["data"]["ematching"] is False
+          instances = [event for event in events
+                       if event["operation"] == "z3.mbqi-instance"]
+          assert instances
+          assert all(event["sequence"] < queries[0]["sequence"]
+                     for event in instances)
+          assert all(event["producer"]["component"] ==
+                     "z3.qi_queue.on_binding" for event in instances)
+          assert all(event["data"]["instantiation_engine"] ==
+                     "mbqi-only-query" for event in instances)
+          assert {event["data"]["source_role"] for event in instances} == {
+              "fine.bisim.labels-agree",
+              "fine.bisim.left-step-matched",
+              "fine.bisim.right-step-matched",
+          }
           cells = [event for event in events
                    if event["operation"] == "model.eval-cell"]
           assert len(cells) == 4

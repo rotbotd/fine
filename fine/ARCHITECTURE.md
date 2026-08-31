@@ -140,12 +140,12 @@ references explicitly. Each term declaration carries identity
 `z3::expr` strongly until the run ends.
 
 The bisimulation producer records all four public assertions, the one
-MBQI-enabled satisfiability boundary, completed evaluation of every cell in the
-finite relation, deterministic extensionalization into an admitted array term,
-and the exact source round trip. A completed model value is labelled only as
-equality under that returned model. There is no solver-internal bisimulation
-producer yet, so this replay says nothing about which instantiations or search
-steps caused `sat`.
+MBQI-only satisfiability boundary, the accepted quantifier instances described
+below, completed evaluation of every cell in the finite relation, deterministic
+extensionalization into an admitted array term, and the exact source round
+trip. A completed model value is labelled only as equality under that returned
+model. Accepted instances are evidence about formulas admitted to the search;
+they do not by themselves explain which later search steps caused `sat`.
 
 The soft fork adds a synchronous optional observer to `th_rewriter`. Fine
 attaches it only to the ordinary theory rewriter used for native synthesis
@@ -164,3 +164,21 @@ only the observed `th_rewriter_cfg::reduce_app` path; it misses substitutions,
 variables, quantifiers, macro expansion, cache reuse, other rewriter
 instantiations, and solver propagation. Later producers must be added rather
 than calling this partial stream the solver's entire execution.
+
+The bisimulation path uses a separate existing Z3 boundary rather than
+pretending the theory-rewriter hook covers solver search. Its query sets
+`mbqi=true` and `ematching=false`, assigns stable `fine.bisim.*` qids to the
+three universal source clauses, and installs a read-only user-propagator
+`on_binding` callback. Z3 invokes that callback in `qi_queue` only after an
+instance survives the redundancy checker and rewrite-to-true rejection, and
+before the corresponding lemma is inserted. Rainfall records the preprocessed
+quantifier, ground instance, and preserved source qid as `z3.mbqi-instance`.
+The callback always returns true and therefore never suppresses an instance.
+
+That producer does not expose the auxiliary model-checking query, candidate
+countermodels, inverse-term selection, discarded or duplicate candidates,
+blocking clauses, or the later CDCL(T) consequences of the accepted instance.
+Its MBQI attribution is a property of the query configuration—E-matching is
+disabled—not provenance carried by the callback itself. Fresh auxiliary solver
+contexts have different AST managers and deliberately do not enter the parent
+rainfall registry; only accepted instances reaching the parent `qi_queue` do.
