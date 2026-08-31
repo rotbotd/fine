@@ -6,6 +6,7 @@ configure_file(demo_source.h.in demo_source.h @ONLY)
 add_executable(fine-bin
   main.cpp
   parser.cpp
+  rainfall.cpp
   runtime.cpp
   synthesis.cpp
 )

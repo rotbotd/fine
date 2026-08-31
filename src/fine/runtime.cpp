@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "rainfall.h"
 #include "synthesis.h"
 
 #include "c++/z3++.h"
@@ -79,8 +80,13 @@ struct SurfaceTable {
 
 class Runtime {
 public:
-    explicit Runtime(std::ostream& output)
-        : output_(output), bool_type_(std::make_shared<RuntimeType>(
+    explicit Runtime(std::ostream& output, std::ostream* rainfall_output)
+        : output_(output),
+          rainfall_(rainfall_output
+                        ? std::make_unique<RainfallRecorder>(context_,
+                                                            *rainfall_output)
+                        : nullptr),
+          bool_type_(std::make_shared<RuntimeType>(
                                RuntimeType::Kind::boolean,
                                context_.bool_sort(), "Bool")),
           int_type_(std::make_shared<RuntimeType>(
@@ -94,6 +100,7 @@ public:
 private:
     z3::context context_;
     std::ostream& output_;
+    std::unique_ptr<RainfallRecorder> rainfall_;
     TypePtr bool_type_;
     TypePtr int_type_;
     std::map<std::string, TypePtr> types_;
@@ -521,7 +528,8 @@ private:
         }
 
         RefutationSynthesizer synthesizer(context_, declaration.name, parameters,
-                                           result, specification);
+                                           result, specification,
+                                           rainfall_.get());
         SynthesisResult synthesized = synthesizer.run();
         syntax::Expr lifted = lift_expression(synthesized.witness, named_parameters);
         std::ostringstream rendered;
@@ -534,6 +542,29 @@ private:
             !Z3_is_eq_ast(context_, roundtrip.expression, synthesized.witness))
             reject(declaration.span,
                    "parse(print(lift(witness))) violated exact AST identity");
+
+        if (rainfall_) {
+            rainfall_->record(
+                "object", "fine.source-witness", {"synth:" + declaration.name},
+                "fine.runtime",
+                "Lifted, printed, parsed, elaborated witness with exact same-manager AST identity",
+                {RainfallRecorder::string_field("declaration", declaration.name),
+                 RainfallRecorder::string_field("body", body),
+                 RainfallRecorder::string_field(
+                     "semantic_term", rainfall_->term(synthesized.witness)),
+                 RainfallRecorder::boolean_field("parse_reify_exact_identity", true)});
+            rainfall_->record(
+                "transition", "fine.witness.accept", {"synth:" + declaration.name},
+                "fine.runtime",
+                "Backend verification plus Fine source round-trip identity check",
+                {RainfallRecorder::string_field("declaration", declaration.name),
+                 RainfallRecorder::string_field("status", "source-program"),
+                 RainfallRecorder::boolean_field("verified", true)});
+            rainfall_->record(
+                "scope", "synth.run.close", {"synth:" + declaration.name},
+                "fine.runtime", "Native synthesis plus Fine source witness round trip",
+                {RainfallRecorder::string_field("status", "source-program")});
+        }
 
         output_ << "source-program: synthesized " << declaration.name << " from "
                 << synthesized.selections.size() << " ground instances; core kept "
@@ -876,6 +907,9 @@ int Runtime::execute(syntax::Document const& document) {
     }
     if (synth) return execute_synthesis(*synth);
     if (!proof) reject(document.span, "expected one `proof` or `synth` declaration");
+    if (rainfall_)
+        reject(proof->span,
+               "the first live rainfall slice admits `synth`; bisimulation replay is not wired yet");
     if (!model_hole)
         reject(document.span, "expected one model-shaped hole for the proof result");
     return execute_bisimulation(*proof);
@@ -905,8 +939,9 @@ std::string SemanticError::format(std::string_view filename,
     return output.str();
 }
 
-int execute(syntax::Document const& document, std::ostream& output) {
-    return Runtime(output).execute(document);
+int execute(syntax::Document const& document, std::ostream& output,
+            std::ostream* rainfall_output) {
+    return Runtime(output, rainfall_output).execute(document);
 }
 
 } // namespace fine

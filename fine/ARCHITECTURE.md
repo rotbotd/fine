@@ -130,6 +130,15 @@ inside one named manager and keeps an `ast_ref` / `expr_ref` alive for every
 handle. The event schema carries the manager, recorder handle, and diagnostic
 AST ID together. A bare AST ID must never be used as a trace key.
 
+The runnable public-boundary slice is `fine rain <source.fine>`. It emits JSONL
+with six event kinds—`object`, `scope`, `constraint`, `derive`, `transform`, and
+`transition`—and producer-specific operations. Scope nesting and sequence give
+location and time, never causality; operations name evidence queries and term
+references explicitly. Each term declaration carries identity
+`(run, recorder, manager, handle)` and only
+`ast_id_at_observation` as a diagnostic. The recorder holds every registered
+`z3::expr` strongly until the run ends.
+
 There is also no honest single “all rewrites” hook. The generic recursive
 rewriter commits results along several paths, while solver propagation and
 some formula transformations do not pass through it at all. The first hook

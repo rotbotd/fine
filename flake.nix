@@ -57,6 +57,44 @@
           grep -F "source-program: synthesized largest from 3 ground instances; core kept 3" <<<"$three"
           grep -F "else { if" <<<"$three"
           grep -F "verification: no counterexample" <<<"$three"
+          rain="$($out/bin/fine rain "$src/fine/fixtures/synth-max.fine")"
+          echo "$rain"
+          RAIN="$rain" ${pkgs.python3}/bin/python - <<'PY'
+          import json, os
+          events = [json.loads(line) for line in os.environ["RAIN"].splitlines()]
+          assert events
+          assert [event["sequence"] for event in events] == list(range(len(events)))
+          assert all(event["schema"] == "fine.rainfall.v2" for event in events)
+          operations = [event["operation"] for event in events]
+          required = [
+              "synth.run.open",
+              "synth.candidate.select",
+              "synth.instance.activate",
+              "solver.unsat-core",
+              "synth.assemble-core",
+              "z3.simplify",
+              "synth.backend.accept",
+              "fine.source-witness",
+              "fine.witness.accept",
+              "synth.run.close",
+          ]
+          positions = [operations.index(operation) for operation in required]
+          assert positions == sorted(positions), (required, positions)
+          terms = [event for event in events if event["operation"] == "term.declare"]
+          handles = [event["data"]["identity"]["handle"] for event in terms]
+          assert handles == list(range(len(handles)))
+          verify = [event for event in events
+                    if event["operation"] == "solver.query.result"
+                    and event["data"].get("polarity") == "counterexample-exists"]
+          assert verify[-1]["data"]["status"] == "unsat"
+          assert verify[-1]["data"]["domain_outcome"] == "verified"
+          models = [event for event in events
+                    if event["operation"] == "solver.query.result"
+                    and event["data"].get("model_assignments")]
+          assert models
+          assert all(event["data"]["relation"] == "equality-under-this-model"
+                     for event in models)
+          PY
           runHook postInstallCheck
         '';
       };

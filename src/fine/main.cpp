@@ -13,10 +13,13 @@
 
 namespace {
 
-int run_source(std::string_view filename, std::string_view source) {
+int run_source(std::string_view filename, std::string_view source,
+               bool rainfall = false) {
     try {
         fine::syntax::Document document = fine::syntax::parse(source);
-        return fine::execute(document, std::cout);
+        if (!rainfall) return fine::execute(document, std::cout);
+        std::ostringstream ordinary_output;
+        return fine::execute(document, ordinary_output, &std::cout);
     } catch (fine::syntax::ParseError const& error) {
         std::cerr << error.format(filename, source) << '\n';
         return EXIT_FAILURE;
@@ -26,7 +29,7 @@ int run_source(std::string_view filename, std::string_view source) {
     }
 }
 
-int run_file(char const* path) {
+int run_file(char const* path, bool rainfall = false) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         std::cerr << "fine: cannot open `" << path << "`\n";
@@ -39,7 +42,7 @@ int run_file(char const* path) {
         return EXIT_FAILURE;
     }
     std::string source = contents.str();
-    return run_source(path, source);
+    return run_source(path, source, rainfall);
 }
 
 } // namespace
@@ -49,8 +52,11 @@ int main(int argc, char** argv) try {
         return run_source("<demo-bisim>", fine::demo_source);
     if (argc == 3 && std::string_view(argv[1]) == "run")
         return run_file(argv[2]);
+    if (argc == 3 && std::string_view(argv[1]) == "rain")
+        return run_file(argv[2], true);
     std::cerr << "usage: fine demo-bisim\n"
-                 "       fine run <source.fine>\n";
+                 "       fine run <source.fine>\n"
+                 "       fine rain <source.fine>\n";
     return EXIT_FAILURE;
 } catch (z3::exception const& error) {
     std::cerr << "z3: " << error.msg() << '\n';

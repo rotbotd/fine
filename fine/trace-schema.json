@@ -1,49 +1,83 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fine-lang.invalid/schema/rainfall-event-v1.json",
-  "title": "Fine rainfall event v1",
+  "$id": "https://fine-lang.invalid/schema/rainfall-event-v2.json",
+  "title": "Fine rainfall event v2",
   "type": "object",
-  "required": ["schema", "sequence", "phase", "event", "term"],
+  "additionalProperties": false,
+  "required": [
+    "schema", "run", "recorder", "manager", "event_id", "sequence",
+    "kind", "operation", "within", "producer", "data"
+  ],
   "properties": {
-    "schema": { "const": "fine.rainfall.v1" },
+    "schema": { "const": "fine.rainfall.v2" },
+    "run": { "type": "string", "minLength": 1 },
+    "recorder": { "type": "string", "minLength": 1 },
+    "manager": { "type": "string", "minLength": 1 },
+    "event_id": { "type": "string", "minLength": 1 },
     "sequence": { "type": "integer", "minimum": 0 },
-    "phase": { "type": "string" },
-    "event": { "enum": ["intern", "rewrite", "assert", "model-value"] },
-    "rule": { "type": ["string", "null"] },
-    "term": { "$ref": "#/$defs/term" },
-    "replacement": { "anyOf": [{ "$ref": "#/$defs/term" }, { "type": "null" }] }
-  },
-  "$defs": {
-    "term": {
+    "kind": {
+      "enum": ["object", "scope", "constraint", "derive", "transform", "transition"]
+    },
+    "operation": { "type": "string", "minLength": 1 },
+    "within": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "producer": { "$ref": "#/$defs/producer" },
+    "data": {
       "type": "object",
-      "required": ["identity", "kind", "children", "fine"],
+      "description": "Operation-specific payload. Causal support is named by explicit references here, never inferred from sequence or scope."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "operation": { "const": "term.declare" } },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["id", "identity", "representation", "text"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "identity": { "$ref": "#/$defs/termIdentity" },
+              "representation": { "type": "string", "minLength": 1 },
+              "text": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "coverage"],
       "properties": {
-        "identity": { "$ref": "#/$defs/identity" },
-        "kind": { "type": "string" },
-        "children": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/identity" }
-        },
-        "fine": { "type": "string" }
+        "component": { "type": "string", "minLength": 1 },
+        "coverage": { "type": "string", "minLength": 1 }
       }
     },
-    "identity": {
+    "termIdentity": {
       "type": "object",
-      "required": ["manager", "handle", "ast_id"],
+      "additionalProperties": false,
+      "required": ["run", "recorder", "manager", "handle", "ast_id_at_observation"],
       "properties": {
-        "manager": {
-          "type": "string",
-          "description": "Opaque identity of one live ast_manager"
-        },
+        "run": { "type": "string", "minLength": 1 },
+        "recorder": { "type": "string", "minLength": 1 },
+        "manager": { "type": "string", "minLength": 1 },
         "handle": {
           "type": "integer",
           "minimum": 0,
-          "description": "Never-reused key into the recorder's strong ast_ref registry"
+          "description": "Never-reused index into this recorder's strong z3::expr registry."
         },
-        "ast_id": {
+        "ast_id_at_observation": {
           "type": "integer",
           "minimum": 0,
-          "description": "Z3's diagnostic live-node ID; not the durable identity key"
+          "description": "Diagnostic Z3 live-node ID; not part of the identity key."
         }
       }
     }

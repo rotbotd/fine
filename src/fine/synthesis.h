@@ -9,6 +9,8 @@
 
 namespace fine {
 
+class RainfallRecorder;
+
 struct SynthesisSelection {
     std::size_t grammar_size;
     z3::expr term;
@@ -34,7 +36,8 @@ class RefutationSynthesizer {
 public:
     RefutationSynthesizer(z3::context& context, std::string declaration_name,
                           std::vector<z3::expr> parameters,
-                          z3::expr result_placeholder, z3::expr specification);
+                          z3::expr result_placeholder, z3::expr specification,
+                          RainfallRecorder* rainfall = nullptr);
 
     SynthesisResult run();
 
@@ -44,6 +47,7 @@ private:
     std::vector<z3::expr> parameters_;
     z3::expr result_placeholder_;
     z3::expr specification_;
+    RainfallRecorder* rainfall_;
 };
 
 } // namespace fine
