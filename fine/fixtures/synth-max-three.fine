@@ -1,0 +1,8 @@
+synth largest(a: Int, b: Int, c: Int): Int {
+  ensures {
+    result >= a;
+    result >= b;
+    result >= c;
+    result == a || result == b || result == c;
+  }
+}

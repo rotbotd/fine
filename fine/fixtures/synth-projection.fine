@@ -1,0 +1,5 @@
+synth keep(value: Int): Int {
+  ensures {
+    result == value;
+  }
+}

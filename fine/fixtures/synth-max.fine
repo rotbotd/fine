@@ -1,0 +1,7 @@
+synth max(left: Int, right: Int): Int {
+  ensures {
+    result >= left;
+    result >= right;
+    result == left || result == right;
+  }
+}

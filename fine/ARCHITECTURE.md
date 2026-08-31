@@ -47,8 +47,9 @@ Latte's web-oriented `const`. Do not copy Latte's typeclass machinery.
 3. Assert the two directional bisimulation clauses and the distinguished pair.
 4. Ask Z3 for a model, extensionalize all four Boolean cells into one canonical
    array term, lift it, and print it in Fine syntax.
-5. Reify the printed witness and assert pointer identity with the canonical Z3
-   term inside the same `ast_manager`.
+5. Render a typed `model` witness, parse it with Fine's ordinary parser,
+   elaborate its table expression in the same context, and assert pointer
+   identity with the canonical Z3 term inside the same `ast_manager`.
 
 Rainfall follows this closed loop; it does not delay the first model return.
 
@@ -103,6 +104,22 @@ function: its named `takes` fields elaborate to the quantified two-directional
 bisimulation clauses, and `gives` names the hole to return. The parser produces
 syntax containing source spans and no Z3 objects. Elaboration resolves that
 syntax against manager-owned enum, product, array, and Boolean sorts.
+
+The parser accepts both a model-shaped hole, `model r: Table(...);`, and a
+concrete model witness, `model r: Table(...) = table(...);`. The former is a
+solver input; the latter is the parseable output form used to close the source
+round trip. Proof/runtime policy, including the current one-hole restriction,
+belongs to elaboration rather than the parser.
+
+## Synthesis boundary
+
+Fine has one compiler-owned semantics. It does not accept user-defined object
+languages, evaluators, raw Horn clauses, or SemGuS-LIB. Candidate program
+syntax and its semantic Z3 term are nevertheless distinct representations:
+decoding a selector assignment or proof is not `lift`, and lowering a Fine body
+to its Z3 meaning is a one-way compiler operation. See
+`research/synthesis-pressure-test.md` for the selected refutation-synthesis
+slice, result vocabulary, and provenance obligations.
 
 ## Rainfall identity and coverage
 

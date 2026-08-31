@@ -299,7 +299,7 @@ endif()
 ################################################################################
 
 cmake_dependent_option(FINE_BUILD_EXECUTABLE
-    "Build the Fine executable" ON
+    "Build the Fine executable" OFF
     "CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR;Z3_BUILD_LIBZ3_CORE" OFF)
 
 if (FINE_BUILD_EXECUTABLE)

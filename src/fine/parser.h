@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -43,12 +44,16 @@ struct Type {
 };
 
 struct Expr {
-    enum class Kind { name, boolean, tuple };
+    enum class Kind { name, boolean, integer, tuple, binary, conditional };
+    enum class BinaryOp { equal, greater_equal, less_equal, logical_and,
+                          logical_or, add, subtract };
 
     Kind kind = Kind::name;
     SourceSpan span;
     std::string name;
     bool boolean_value = false;
+    std::string integer_text;
+    BinaryOp binary_op = BinaryOp::equal;
     std::vector<Expr> elements;
 };
 
@@ -82,6 +87,9 @@ struct ModelDecl {
     SourceSpan span;
     std::string name;
     Type type;
+    // Empty means a model-shaped hole. A present table is a concrete model
+    // witness, using the same syntax as an ordinary table binding.
+    std::optional<TableLiteral> value;
 };
 
 struct NamedArgument {
@@ -97,7 +105,21 @@ struct ProofDecl {
     Expr gives;
 };
 
-using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl>;
+struct Parameter {
+    SourceSpan span;
+    std::string name;
+    Type type;
+};
+
+struct SynthDecl {
+    SourceSpan span;
+    std::string name;
+    std::vector<Parameter> parameters;
+    Type result_type;
+    std::vector<Expr> ensures;
+};
+
+using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, SynthDecl>;
 
 struct Document {
     SourceSpan span;
@@ -106,5 +128,10 @@ struct Document {
 
 // Throws ParseError on the first lexical or syntactic error.
 Document parse(std::string_view source);
+
+// Parse one ordinary Fine expression and require end of input. This is used by
+// witness round trips; it shares the declaration parser's lexer and precedence
+// implementation rather than introducing a printer-only syntax.
+Expr parse_expression(std::string_view source);
 
 } // namespace fine::syntax

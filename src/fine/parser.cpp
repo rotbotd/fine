@@ -10,10 +10,15 @@ namespace {
 enum class TokenKind {
     eof,
     identifier,
+    integer,
     enum_kw,
     let_kw,
     model_kw,
     proof_kw,
+    synth_kw,
+    ensures_kw,
+    if_kw,
+    else_kw,
     takes_kw,
     gives_kw,
     table_kw,
@@ -27,6 +32,13 @@ enum class TokenKind {
     comma,
     semicolon,
     equal,
+    equal_equal,
+    greater_equal,
+    less_equal,
+    logical_and,
+    logical_or,
+    plus,
+    minus,
 };
 
 struct Token {
@@ -43,10 +55,15 @@ static char const* spelling(TokenKind kind) {
     switch (kind) {
     case TokenKind::eof: return "end of file";
     case TokenKind::identifier: return "an identifier";
+    case TokenKind::integer: return "an integer";
     case TokenKind::enum_kw: return "`enum`";
     case TokenKind::let_kw: return "`let`";
     case TokenKind::model_kw: return "`model`";
     case TokenKind::proof_kw: return "`proof`";
+    case TokenKind::synth_kw: return "`synth`";
+    case TokenKind::ensures_kw: return "`ensures`";
+    case TokenKind::if_kw: return "`if`";
+    case TokenKind::else_kw: return "`else`";
     case TokenKind::takes_kw: return "`takes`";
     case TokenKind::gives_kw: return "`gives`";
     case TokenKind::table_kw: return "`table`";
@@ -60,6 +77,13 @@ static char const* spelling(TokenKind kind) {
     case TokenKind::comma: return "`,`";
     case TokenKind::semicolon: return "`;`";
     case TokenKind::equal: return "`=`";
+    case TokenKind::equal_equal: return "`==`";
+    case TokenKind::greater_equal: return "`>=`";
+    case TokenKind::less_equal: return "`<=`";
+    case TokenKind::logical_and: return "`&&`";
+    case TokenKind::logical_or: return "`||`";
+    case TokenKind::plus: return "`+`";
+    case TokenKind::minus: return "`-`";
     }
     return "a token";
 }
@@ -82,6 +106,29 @@ public:
             return {keyword(text), {begin, position()}, text};
         }
 
+        if (c >= '0' && c <= '9') {
+            std::size_t start = offset_;
+            advance();
+            while (!at_end() && peek() >= '0' && peek() <= '9') advance();
+            return {TokenKind::integer, {begin, position()},
+                    source_.substr(start, offset_ - start)};
+        }
+
+        if ((c == '=' && peek(1) == '=') ||
+            (c == '>' && peek(1) == '=') ||
+            (c == '<' && peek(1) == '=') ||
+            (c == '&' && peek(1) == '&') ||
+            (c == '|' && peek(1) == '|')) {
+            advance();
+            advance();
+            TokenKind kind = c == '=' ? TokenKind::equal_equal
+                             : c == '>' ? TokenKind::greater_equal
+                             : c == '<' ? TokenKind::less_equal
+                             : c == '&' ? TokenKind::logical_and
+                                        : TokenKind::logical_or;
+            return {kind, {begin, position()}, source_.substr(begin.offset, 2)};
+        }
+
         advance();
         TokenKind kind;
         switch (c) {
@@ -93,6 +140,8 @@ public:
         case ',': kind = TokenKind::comma; break;
         case ';': kind = TokenKind::semicolon; break;
         case '=': kind = TokenKind::equal; break;
+        case '+': kind = TokenKind::plus; break;
+        case '-': kind = TokenKind::minus; break;
         default:
             throw ParseError({begin, position()},
                              std::string("unexpected character `") + c + "`");
@@ -143,6 +192,10 @@ private:
         if (text == "let") return TokenKind::let_kw;
         if (text == "model") return TokenKind::model_kw;
         if (text == "proof") return TokenKind::proof_kw;
+        if (text == "synth") return TokenKind::synth_kw;
+        if (text == "ensures") return TokenKind::ensures_kw;
+        if (text == "if") return TokenKind::if_kw;
+        if (text == "else") return TokenKind::else_kw;
         if (text == "takes") return TokenKind::takes_kw;
         if (text == "gives") return TokenKind::gives_kw;
         if (text == "table") return TokenKind::table_kw;
@@ -163,33 +216,26 @@ public:
             switch (current_.kind) {
             case TokenKind::enum_kw: result.declarations.emplace_back(enum_decl()); break;
             case TokenKind::let_kw: result.declarations.emplace_back(let_decl()); break;
-            case TokenKind::model_kw: {
-                if (has_model_)
-                    fail("this source slice permits one `model` hole; the first was at " +
-                         std::to_string(model_span_.begin.line) + ":" +
-                         std::to_string(model_span_.begin.column));
-                ModelDecl decl = model_decl();
-                has_model_ = true;
-                model_span_ = decl.span;
-                result.declarations.emplace_back(std::move(decl));
-                break;
-            }
+            case TokenKind::model_kw: result.declarations.emplace_back(model_decl()); break;
             case TokenKind::proof_kw: result.declarations.emplace_back(proof_decl()); break;
+            case TokenKind::synth_kw: result.declarations.emplace_back(synth_decl()); break;
             default:
-                fail("expected a declaration beginning with `enum`, `let`, `model`, or `proof`");
+                fail("expected a declaration beginning with `enum`, `let`, `model`, `proof`, or `synth`");
             }
         }
-        if (!has_model_)
-            fail("expected exactly one array-shaped `model` hole in this source slice");
         result.span = {begin, current_.span.end};
+        return result;
+    }
+
+    Expr expression_document() {
+        Expr result = expr();
+        take(TokenKind::eof, "after the expression");
         return result;
     }
 
 private:
     Lexer lexer_;
     Token current_{};
-    bool has_model_ = false;
-    SourceSpan model_span_{};
 
     void advance() { current_ = lexer_.next(); }
     [[noreturn]] void fail(std::string message) const {
@@ -254,9 +300,12 @@ private:
         take(TokenKind::colon, "after the model-hole name");
         Type annotation = type();
         if (annotation.kind != Type::Kind::table)
-            fail("a `model` hole must have an array-shaped `Table(key, value)` type");
-        Token close = take(TokenKind::semicolon, "after the model-hole declaration");
-        return {joined(first.span, close.span), std::string(name.text), std::move(annotation)};
+            fail("a `model` declaration must have an array-shaped `Table(key, value)` type");
+        std::optional<TableLiteral> value;
+        if (accept(TokenKind::equal)) value = table_literal();
+        Token close = take(TokenKind::semicolon, "after the model declaration");
+        return {joined(first.span, close.span), std::string(name.text),
+                std::move(annotation), std::move(value)};
     }
 
     ProofDecl proof_decl() {
@@ -274,6 +323,39 @@ private:
         Token close = take(TokenKind::right_brace, "to close the proof");
         return {joined(first.span, close.span), std::string(name.text),
                 std::move(takes), std::move(gives)};
+    }
+
+    SynthDecl synth_decl() {
+        Token first = take(TokenKind::synth_kw);
+        Token name = take(TokenKind::identifier, "after `synth`");
+        take(TokenKind::left_paren, "after the synthesized function name");
+        std::vector<Parameter> parameters;
+        while (current_.kind != TokenKind::right_paren) {
+            Token parameter_name = take(TokenKind::identifier, "as a parameter name");
+            take(TokenKind::colon, "after the parameter name");
+            Type parameter_type = type();
+            parameters.push_back({joined(parameter_name.span, parameter_type.span),
+                                  std::string(parameter_name.text),
+                                  std::move(parameter_type)});
+            if (!accept(TokenKind::comma) && current_.kind != TokenKind::right_paren)
+                fail("expected `,` or `)` after a parameter");
+        }
+        take(TokenKind::right_paren);
+        take(TokenKind::colon, "before the synthesized result type");
+        Type result_type = type();
+        take(TokenKind::left_brace, "before the synthesis specification");
+        take(TokenKind::ensures_kw, "as the synthesis specification");
+        take(TokenKind::left_brace, "after `ensures`");
+        std::vector<Expr> ensures;
+        while (current_.kind != TokenKind::right_brace) {
+            ensures.push_back(expr());
+            take(TokenKind::semicolon, "after an ensured condition");
+        }
+        if (ensures.empty()) fail("a synthesis declaration needs at least one condition");
+        take(TokenKind::right_brace, "to close `ensures`");
+        Token close = take(TokenKind::right_brace, "to close the synthesis declaration");
+        return {joined(first.span, close.span), std::string(name.text),
+                std::move(parameters), std::move(result_type), std::move(ensures)};
     }
 
     Type type() {
@@ -311,7 +393,62 @@ private:
         return result;
     }
 
-    Expr expr() {
+    static Expr binary(Expr::BinaryOp op, Expr left, Expr right) {
+        Expr result;
+        result.kind = Expr::Kind::binary;
+        result.span = joined(left.span, right.span);
+        result.binary_op = op;
+        result.elements.push_back(std::move(left));
+        result.elements.push_back(std::move(right));
+        return result;
+    }
+
+    Expr expr() { return logical_or(); }
+
+    Expr logical_or() {
+        Expr result = logical_and();
+        while (accept(TokenKind::logical_or))
+            result = binary(Expr::BinaryOp::logical_or, std::move(result), logical_and());
+        return result;
+    }
+
+    Expr logical_and() {
+        Expr result = equality();
+        while (accept(TokenKind::logical_and))
+            result = binary(Expr::BinaryOp::logical_and, std::move(result), equality());
+        return result;
+    }
+
+    Expr equality() {
+        Expr result = relational();
+        while (accept(TokenKind::equal_equal))
+            result = binary(Expr::BinaryOp::equal, std::move(result), relational());
+        return result;
+    }
+
+    Expr relational() {
+        Expr result = additive();
+        for (;;) {
+            if (accept(TokenKind::greater_equal))
+                result = binary(Expr::BinaryOp::greater_equal, std::move(result), additive());
+            else if (accept(TokenKind::less_equal))
+                result = binary(Expr::BinaryOp::less_equal, std::move(result), additive());
+            else return result;
+        }
+    }
+
+    Expr additive() {
+        Expr result = primary();
+        for (;;) {
+            if (accept(TokenKind::plus))
+                result = binary(Expr::BinaryOp::add, std::move(result), primary());
+            else if (accept(TokenKind::minus))
+                result = binary(Expr::BinaryOp::subtract, std::move(result), primary());
+            else return result;
+        }
+    }
+
+    Expr primary() {
         if (current_.kind == TokenKind::identifier) {
             Token name = take(TokenKind::identifier);
             Expr result;
@@ -329,12 +466,42 @@ private:
             result.boolean_value = value.kind == TokenKind::true_kw;
             return result;
         }
+        if (current_.kind == TokenKind::integer) {
+            Token value = take(TokenKind::integer);
+            Expr result;
+            result.kind = Expr::Kind::integer;
+            result.span = value.span;
+            result.integer_text = std::string(value.text);
+            return result;
+        }
+        if (current_.kind == TokenKind::if_kw) {
+            Token first = take(TokenKind::if_kw);
+            Expr condition = expr();
+            take(TokenKind::left_brace, "before the true branch");
+            Expr yes = expr();
+            take(TokenKind::right_brace, "after the true branch");
+            take(TokenKind::else_kw, "after the true branch");
+            take(TokenKind::left_brace, "before the false branch");
+            Expr no = expr();
+            Token close = take(TokenKind::right_brace, "after the false branch");
+            Expr result;
+            result.kind = Expr::Kind::conditional;
+            result.span = joined(first.span, close.span);
+            result.elements.push_back(std::move(condition));
+            result.elements.push_back(std::move(yes));
+            result.elements.push_back(std::move(no));
+            return result;
+        }
         if (current_.kind == TokenKind::left_paren) {
             Token first = take(TokenKind::left_paren);
+            Expr first_element = expr();
+            if (!accept(TokenKind::comma)) {
+                take(TokenKind::right_paren, "to close the grouped expression");
+                return first_element;
+            }
             Expr result;
             result.kind = Expr::Kind::tuple;
-            result.elements.push_back(expr());
-            take(TokenKind::comma, "between tuple elements");
+            result.elements.push_back(std::move(first_element));
             result.elements.push_back(expr());
             while (accept(TokenKind::comma)) {
                 if (current_.kind == TokenKind::right_paren) break;
@@ -344,7 +511,7 @@ private:
             result.span = joined(first.span, close.span);
             return result;
         }
-        fail("expected a name, Boolean, or tuple expression");
+        fail("expected a name, integer, Boolean, tuple, or conditional expression");
     }
 
     TableLiteral table_literal() {
@@ -415,6 +582,10 @@ std::string ParseError::format(std::string_view filename, std::string_view sourc
 
 Document parse(std::string_view source) {
     return Parser(source).document();
+}
+
+Expr parse_expression(std::string_view source) {
+    return Parser(source).expression_document();
 }
 
 } // namespace fine::syntax

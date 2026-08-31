@@ -7,6 +7,7 @@ add_executable(fine-bin
   main.cpp
   parser.cpp
   runtime.cpp
+  synthesis.cpp
 )
 set_target_properties(fine-bin PROPERTIES OUTPUT_NAME fine)
 target_link_libraries(fine-bin PRIVATE libz3)

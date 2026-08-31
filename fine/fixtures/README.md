@@ -43,6 +43,21 @@ Run the parsed Fine source through the fork:
 fine run fine/fixtures/two-state-bisim.fine
 ```
 
+The first native synthesis fixture uses Fine's fixed integer-expression
+semantics and the ground-instance refutation loop:
+
+```console
+fine run fine/fixtures/synth-max.fine
+```
+
+It synthesizes the two-argument maximum as a conditional, checks the returned
+body against the untouched specification, then parses and reifies the printed
+body to the identical same-manager semantic AST.
+
+`synth-projection.fine` and `synth-max-three.fine` are anti-hardcoding gates:
+the first closes with one core term and no conditional, while the second has a
+renamed function and requires three core terms and nested conditionals.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.

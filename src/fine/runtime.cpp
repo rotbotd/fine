@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "synthesis.h"
 
 #include "c++/z3++.h"
 
@@ -19,7 +20,7 @@ using TypePtr = std::shared_ptr<struct RuntimeType>;
 struct EnumInfo;
 
 struct RuntimeType {
-    enum class Kind { boolean, enumeration, tuple, table };
+    enum class Kind { boolean, integer, enumeration, tuple, table };
 
     Kind kind;
     z3::sort sort;
@@ -47,12 +48,18 @@ struct Binding {
     syntax::SourceSpan span;
 };
 
+struct TypedExpression {
+    TypePtr type;
+    z3::expr expression;
+};
+
 struct SurfaceValue {
     enum class Kind { boolean, enumeration, tuple };
 
     Kind kind = Kind::boolean;
     bool boolean = false;
-    std::string name;
+    EnumInfo* enumeration = nullptr;
+    unsigned case_index = 0;
     std::vector<SurfaceValue> elements;
 };
 
@@ -75,33 +82,20 @@ public:
     explicit Runtime(std::ostream& output)
         : output_(output), bool_type_(std::make_shared<RuntimeType>(
                                RuntimeType::Kind::boolean,
-                               context_.bool_sort(), "Bool")) {
+                               context_.bool_sort(), "Bool")),
+          int_type_(std::make_shared<RuntimeType>(
+              RuntimeType::Kind::integer, context_.int_sort(), "Int")) {
         types_.emplace("Bool", bool_type_);
+        types_.emplace("Int", int_type_);
     }
 
-    int execute(syntax::Document const& document) {
-        syntax::ProofDecl const* proof = nullptr;
-        for (syntax::Declaration const& declaration : document.declarations) {
-            if (auto const* item = std::get_if<syntax::EnumDecl>(&declaration)) {
-                declare_enum(*item);
-            } else if (auto const* item = std::get_if<syntax::LetDecl>(&declaration)) {
-                declare_let(*item);
-            } else if (auto const* item = std::get_if<syntax::ModelDecl>(&declaration)) {
-                declare_model(*item);
-            } else if (auto const* item = std::get_if<syntax::ProofDecl>(&declaration)) {
-                if (proof)
-                    reject(item->span, "this source slice admits exactly one proof");
-                proof = item;
-            }
-        }
-        if (!proof) reject(document.span, "expected one `proof bisimulation` declaration");
-        return execute_bisimulation(*proof);
-    }
+    int execute(syntax::Document const& document);
 
 private:
     z3::context context_;
     std::ostream& output_;
     TypePtr bool_type_;
+    TypePtr int_type_;
     std::map<std::string, TypePtr> types_;
     std::map<std::string, std::unique_ptr<EnumInfo>> enums_;
     std::map<std::string, std::pair<EnumInfo*, unsigned>> cases_;
@@ -215,6 +209,11 @@ private:
                 reject(expression.span, "Boolean value does not have type `" +
                                             expected->display + "`");
             return context_.bool_val(expression.boolean_value);
+        case syntax::Expr::Kind::integer:
+            if (expected->kind != RuntimeType::Kind::integer)
+                reject(expression.span, "integer value does not have type `" +
+                                            expected->display + "`");
+            return context_.int_val(expression.integer_text.c_str());
         case syntax::Expr::Kind::name: {
             if (expected->kind != RuntimeType::Kind::enumeration)
                 reject(expression.span, "name `" + expression.name +
@@ -238,6 +237,10 @@ private:
             return (*expected->tuple_constructor)(
                 value(expression.elements[0], expected->arguments[0]),
                 value(expression.elements[1], expected->arguments[1]));
+        case syntax::Expr::Kind::binary:
+        case syntax::Expr::Kind::conditional:
+            reject(expression.span,
+                   "computed expressions are not admitted as literal table cells");
         }
         reject(expression.span, "unknown Fine value form");
     }
@@ -247,12 +250,18 @@ private:
         TypePtr type = resolve_type(declaration.type);
         if (type->kind != RuntimeType::Kind::table)
             reject(declaration.type.span, "a `let` binding in this slice must be a Table");
+        z3::expr result = table_value(type, declaration.value);
+        bindings_.emplace(declaration.name,
+                          Binding{type, result, false, declaration.span});
+    }
+
+    z3::expr table_value(TypePtr const& type, syntax::TableLiteral const& literal) {
         TypePtr const& domain = type->arguments[0];
         TypePtr const& range = type->arguments[1];
-        z3::expr result = z3::const_array(
-            domain->sort, value(declaration.value.default_value, range));
+        z3::expr result = z3::const_array(domain->sort,
+                                          value(literal.default_value, range));
         std::vector<z3::expr> keys;
-        for (syntax::TableEntry const& entry : declaration.value.entries) {
+        for (syntax::TableEntry const& entry : literal.entries) {
             z3::expr key = value(entry.key, domain);
             for (z3::expr const& previous : keys) {
                 if (Z3_is_eq_ast(context_, key, previous))
@@ -261,8 +270,7 @@ private:
             keys.push_back(key);
             result = z3::store(result, key, value(entry.value, range));
         }
-        bindings_.emplace(declaration.name,
-                          Binding{type, result, false, declaration.span});
+        return result;
     }
 
     void declare_model(syntax::ModelDecl const& declaration) {
@@ -270,9 +278,11 @@ private:
         TypePtr type = resolve_type(declaration.type);
         if (type->kind != RuntimeType::Kind::table)
             reject(declaration.type.span, "a `model` hole must have Table type");
-        z3::expr hole = context_.constant(declaration.name.c_str(), type->sort);
+        z3::expr hole = declaration.value
+                            ? table_value(type, *declaration.value)
+                            : context_.constant(declaration.name.c_str(), type->sort);
         bindings_.emplace(declaration.name,
-                          Binding{type, hole, true, declaration.span});
+                          Binding{type, hole, !declaration.value, declaration.span});
     }
 
     Binding const& binding(syntax::Expr const& expression, std::string const& role) const {
@@ -286,6 +296,253 @@ private:
 
     static bool same(TypePtr const& left, TypePtr const& right) {
         return left.get() == right.get();
+    }
+
+    using ExpressionEnvironment = std::map<std::string, TypedExpression>;
+
+    TypedExpression elaborate_expression(
+        syntax::Expr const& expression,
+        ExpressionEnvironment const& environment) {
+        switch (expression.kind) {
+        case syntax::Expr::Kind::name: {
+            auto found = environment.find(expression.name);
+            if (found == environment.end())
+                reject(expression.span, "unknown value `" + expression.name + "`");
+            return found->second;
+        }
+        case syntax::Expr::Kind::boolean:
+            return {bool_type_, context_.bool_val(expression.boolean_value)};
+        case syntax::Expr::Kind::integer:
+            return {int_type_, context_.int_val(expression.integer_text.c_str())};
+        case syntax::Expr::Kind::tuple:
+            reject(expression.span, "tuple expressions are not admitted in synth specs yet");
+        case syntax::Expr::Kind::binary: {
+            if (expression.elements.size() != 2)
+                throw std::runtime_error("internal Fine binary expression arity");
+            TypedExpression left = elaborate_expression(expression.elements[0], environment);
+            TypedExpression right = elaborate_expression(expression.elements[1], environment);
+            switch (expression.binary_op) {
+            case syntax::Expr::BinaryOp::equal:
+                if (!same(left.type, right.type) ||
+                    left.type->kind == RuntimeType::Kind::table)
+                    reject(expression.span, "both sides of `==` must have the same value type");
+                return {bool_type_, left.expression == right.expression};
+            case syntax::Expr::BinaryOp::greater_equal:
+            case syntax::Expr::BinaryOp::less_equal:
+                if (!same(left.type, int_type_) || !same(right.type, int_type_))
+                    reject(expression.span, "ordered comparison requires two Int values");
+                return {bool_type_, expression.binary_op ==
+                                        syntax::Expr::BinaryOp::greater_equal
+                                    ? left.expression >= right.expression
+                                    : left.expression <= right.expression};
+            case syntax::Expr::BinaryOp::logical_and:
+            case syntax::Expr::BinaryOp::logical_or:
+                if (!same(left.type, bool_type_) || !same(right.type, bool_type_))
+                    reject(expression.span, "Boolean connective requires two Bool values");
+                return {bool_type_, expression.binary_op ==
+                                        syntax::Expr::BinaryOp::logical_and
+                                    ? left.expression && right.expression
+                                    : left.expression || right.expression};
+            case syntax::Expr::BinaryOp::add:
+            case syntax::Expr::BinaryOp::subtract:
+                if (!same(left.type, int_type_) || !same(right.type, int_type_))
+                    reject(expression.span, "integer arithmetic requires two Int values");
+                return {int_type_, expression.binary_op == syntax::Expr::BinaryOp::add
+                                       ? left.expression + right.expression
+                                       : left.expression - right.expression};
+            }
+            throw std::runtime_error("internal Fine binary operator");
+        }
+        case syntax::Expr::Kind::conditional: {
+            if (expression.elements.size() != 3)
+                throw std::runtime_error("internal Fine conditional arity");
+            TypedExpression condition =
+                elaborate_expression(expression.elements[0], environment);
+            TypedExpression yes = elaborate_expression(expression.elements[1], environment);
+            TypedExpression no = elaborate_expression(expression.elements[2], environment);
+            if (!same(condition.type, bool_type_))
+                reject(expression.elements[0].span, "an `if` condition must have type Bool");
+            if (!same(yes.type, no.type))
+                reject(expression.span, "both `if` branches must have the same type");
+            return {yes.type, z3::ite(condition.expression, yes.expression, no.expression)};
+        }
+        }
+        throw std::runtime_error("internal Fine expression kind");
+    }
+
+    syntax::Expr lift_expression(
+        z3::expr const& expression,
+        std::vector<std::pair<std::string, z3::expr>> const& parameters) const {
+        for (auto const& [name, parameter] : parameters) {
+            if (Z3_is_eq_ast(context_, expression, parameter)) {
+                syntax::Expr result;
+                result.kind = syntax::Expr::Kind::name;
+                result.name = name;
+                return result;
+            }
+        }
+        if (expression.is_true() || expression.is_false()) {
+            syntax::Expr result;
+            result.kind = syntax::Expr::Kind::boolean;
+            result.boolean_value = expression.is_true();
+            return result;
+        }
+        std::string numeral;
+        if (expression.is_numeral(numeral)) {
+            syntax::Expr result;
+            result.kind = syntax::Expr::Kind::integer;
+            result.integer_text = std::move(numeral);
+            return result;
+        }
+        if (!expression.is_app())
+            reject({}, "lift encountered a non-application synthesis term");
+
+        Z3_decl_kind kind = expression.decl().decl_kind();
+        if (kind == Z3_OP_ITE && expression.num_args() == 3) {
+            syntax::Expr result;
+            result.kind = syntax::Expr::Kind::conditional;
+            result.elements.push_back(lift_expression(expression.arg(0), parameters));
+            result.elements.push_back(lift_expression(expression.arg(1), parameters));
+            result.elements.push_back(lift_expression(expression.arg(2), parameters));
+            return result;
+        }
+
+        syntax::Expr::BinaryOp operation;
+        switch (kind) {
+        case Z3_OP_EQ: operation = syntax::Expr::BinaryOp::equal; break;
+        case Z3_OP_GE: operation = syntax::Expr::BinaryOp::greater_equal; break;
+        case Z3_OP_LE: operation = syntax::Expr::BinaryOp::less_equal; break;
+        case Z3_OP_AND: operation = syntax::Expr::BinaryOp::logical_and; break;
+        case Z3_OP_OR: operation = syntax::Expr::BinaryOp::logical_or; break;
+        case Z3_OP_ADD: operation = syntax::Expr::BinaryOp::add; break;
+        case Z3_OP_SUB: operation = syntax::Expr::BinaryOp::subtract; break;
+        default:
+            reject({}, "lift encountered an operation outside the admitted synth body");
+        }
+        if (expression.num_args() != 2)
+            reject({}, "lift encountered a non-binary admitted operation");
+        syntax::Expr result;
+        result.kind = syntax::Expr::Kind::binary;
+        result.binary_op = operation;
+        result.elements.push_back(lift_expression(expression.arg(0), parameters));
+        result.elements.push_back(lift_expression(expression.arg(1), parameters));
+        return result;
+    }
+
+    static char const* operator_text(syntax::Expr::BinaryOp operation) {
+        switch (operation) {
+        case syntax::Expr::BinaryOp::equal: return "==";
+        case syntax::Expr::BinaryOp::greater_equal: return ">=";
+        case syntax::Expr::BinaryOp::less_equal: return "<=";
+        case syntax::Expr::BinaryOp::logical_and: return "&&";
+        case syntax::Expr::BinaryOp::logical_or: return "||";
+        case syntax::Expr::BinaryOp::add: return "+";
+        case syntax::Expr::BinaryOp::subtract: return "-";
+        }
+        return "?";
+    }
+
+    static void print_expression(std::ostream& output,
+                                 syntax::Expr const& expression) {
+        switch (expression.kind) {
+        case syntax::Expr::Kind::name: output << expression.name; return;
+        case syntax::Expr::Kind::boolean:
+            output << (expression.boolean_value ? "true" : "false");
+            return;
+        case syntax::Expr::Kind::integer: output << expression.integer_text; return;
+        case syntax::Expr::Kind::tuple:
+            output << '(';
+            for (std::size_t i = 0; i < expression.elements.size(); ++i) {
+                if (i) output << ", ";
+                print_expression(output, expression.elements[i]);
+            }
+            output << ')';
+            return;
+        case syntax::Expr::Kind::binary:
+            output << '(';
+            print_expression(output, expression.elements[0]);
+            output << ' ' << operator_text(expression.binary_op) << ' ';
+            print_expression(output, expression.elements[1]);
+            output << ')';
+            return;
+        case syntax::Expr::Kind::conditional:
+            output << "if ";
+            print_expression(output, expression.elements[0]);
+            output << " { ";
+            print_expression(output, expression.elements[1]);
+            output << " } else { ";
+            print_expression(output, expression.elements[2]);
+            output << " }";
+            return;
+        }
+    }
+
+    int execute_synthesis(syntax::SynthDecl const& declaration) {
+        reserve_value_name(declaration.name, declaration.span);
+        TypePtr result_type = resolve_type(declaration.result_type);
+        if (!same(result_type, int_type_))
+            reject(declaration.result_type.span,
+                   "the first synthesis slice returns Int");
+        if (declaration.parameters.empty())
+            reject(declaration.span, "a synthesized function needs a parameter");
+
+        ExpressionEnvironment parameter_environment;
+        std::vector<std::pair<std::string, z3::expr>> named_parameters;
+        std::vector<z3::expr> parameters;
+        for (std::size_t i = 0; i < declaration.parameters.size(); ++i) {
+            syntax::Parameter const& parameter = declaration.parameters[i];
+            if (parameter.name == "result")
+                reject(parameter.span, "`result` is reserved for the synthesis result");
+            TypePtr type = resolve_type(parameter.type);
+            if (!same(type, int_type_))
+                reject(parameter.type.span,
+                       "the first synthesis slice admits only Int parameters");
+            std::string internal = "Fine.synth." + declaration.name + ".arg" +
+                                   std::to_string(i);
+            z3::expr value = context_.int_const(internal.c_str());
+            if (!parameter_environment.emplace(
+                    parameter.name, TypedExpression{type, value}).second)
+                reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
+            named_parameters.emplace_back(parameter.name, value);
+            parameters.push_back(value);
+        }
+
+        std::string result_name = "Fine.synth." + declaration.name + ".result";
+        z3::expr result = context_.int_const(result_name.c_str());
+        ExpressionEnvironment specification_environment = parameter_environment;
+        specification_environment.emplace("result", TypedExpression{int_type_, result});
+        z3::expr specification = context_.bool_val(true);
+        for (syntax::Expr const& condition : declaration.ensures) {
+            TypedExpression elaborated =
+                elaborate_expression(condition, specification_environment);
+            if (!same(elaborated.type, bool_type_))
+                reject(condition.span, "an ensured condition must have type Bool");
+            specification = specification && elaborated.expression;
+        }
+
+        RefutationSynthesizer synthesizer(context_, declaration.name, parameters,
+                                           result, specification);
+        SynthesisResult synthesized = synthesizer.run();
+        syntax::Expr lifted = lift_expression(synthesized.witness, named_parameters);
+        std::ostringstream rendered;
+        print_expression(rendered, lifted);
+        std::string body = rendered.str();
+        syntax::Expr reparsed = syntax::parse_expression(body);
+        TypedExpression roundtrip =
+            elaborate_expression(reparsed, parameter_environment);
+        if (!same(roundtrip.type, result_type) ||
+            !Z3_is_eq_ast(context_, roundtrip.expression, synthesized.witness))
+            reject(declaration.span,
+                   "parse(print(lift(witness))) violated exact AST identity");
+
+        output_ << "source-program: synthesized " << declaration.name << " from "
+                << synthesized.selections.size() << " ground instances; core kept "
+                << synthesized.core_indices.size() << '\n';
+        output_ << body << '\n';
+        output_ << "verification: no counterexample\n";
+        output_ << "parse(print(lift(witness))): exact ast identity (diagnostic ast_id: "
+                << Z3_get_ast_id(context_, synthesized.witness) << ")\n";
+        return 0;
     }
 
     static void expect_table(Binding const& binding, syntax::SourceSpan span,
@@ -419,14 +676,27 @@ private:
         }
 
         SurfaceTable lifted = lift_table(relation.type, canonical);
-        z3::expr roundtrip = reify_table(relation.type, lifted);
+        std::string witness_source = render_model_witness(
+            inputs.at("relation")->name, relation.type, lifted);
+        syntax::Document witness_document = syntax::parse(witness_source);
+        if (witness_document.declarations.size() != 1)
+            throw std::runtime_error("internal Fine witness parser returned extra declarations");
+        auto const* witness = std::get_if<syntax::ModelDecl>(
+            &witness_document.declarations.front());
+        if (!witness || !witness->value || witness->name != inputs.at("relation")->name)
+            throw std::runtime_error("internal Fine witness parser changed the declaration");
+        TypePtr parsed_type = resolve_type(witness->type);
+        if (!same(parsed_type, relation.type))
+            throw std::runtime_error("internal Fine witness parser changed the model type");
+        z3::expr roundtrip = table_value(parsed_type, *witness->value);
         if (!Z3_is_eq_ast(context_, canonical, roundtrip))
-            reject(proof.span, "reify(lift(x)) violated exact AST identity");
+            reject(proof.span,
+                   "parse(print(lift(x))) violated exact AST identity after reification");
 
         output_ << "sat: z3 filled model-shaped hole "
                 << inputs.at("relation")->name << '\n';
-        print_table(inputs.at("relation")->name, lifted);
-        output_ << "reify(lift(x)): exact ast identity (diagnostic ast_id: "
+        output_ << witness_source;
+        output_ << "parse(print(lift(x))): exact ast identity (diagnostic ast_id: "
                 << Z3_get_ast_id(context_, canonical) << ")\n";
         return 0;
     }
@@ -451,8 +721,8 @@ private:
 
     SurfaceValue lift_value(TypePtr const& type, z3::expr const& expression) const {
         if (type->kind == RuntimeType::Kind::boolean) {
-            if (expression.is_true()) return {SurfaceValue::Kind::boolean, true, {}, {}};
-            if (expression.is_false()) return {SurfaceValue::Kind::boolean, false, {}, {}};
+            if (expression.is_true()) return {SurfaceValue::Kind::boolean, true};
+            if (expression.is_false()) return {SurfaceValue::Kind::boolean, false};
             reject({}, "lift encountered a non-literal Boolean");
         }
         if (type->kind == RuntimeType::Kind::enumeration) {
@@ -460,7 +730,7 @@ private:
                 if (Z3_is_eq_ast(context_, expression,
                                  type->enumeration->values[i]))
                     return {SurfaceValue::Kind::enumeration, false,
-                            type->enumeration->case_names[i], {}};
+                            type->enumeration, i, {}};
             }
             reject({}, "lift encountered a value outside enum `" + type->display + "`");
         }
@@ -482,9 +752,9 @@ private:
             return context_.bool_val(value.boolean);
         if (type->kind == RuntimeType::Kind::enumeration &&
             value.kind == SurfaceValue::Kind::enumeration) {
-            auto found = cases_.find(value.name);
-            if (found != cases_.end() && found->second.first == type->enumeration)
-                return found->second.first->values[found->second.second];
+            if (value.enumeration == type->enumeration &&
+                value.case_index < type->enumeration->values.size())
+                return type->enumeration->values[value.case_index];
         }
         if (type->kind == RuntimeType::Kind::tuple &&
             value.kind == SurfaceValue::Kind::tuple && value.elements.size() == 2)
@@ -536,7 +806,7 @@ private:
             output << (value.boolean ? "true" : "false");
             return;
         case SurfaceValue::Kind::enumeration:
-            output << value.name;
+            output << value.enumeration->case_names[value.case_index];
             return;
         case SurfaceValue::Kind::tuple:
             output << '(';
@@ -549,20 +819,67 @@ private:
         }
     }
 
-    void print_table(std::string const& name, SurfaceTable const& table) {
-        output_ << "model " << name << " = table(default: ";
-        print_value(output_, table.default_value);
-        output_ << ") {\n";
+    static void print_table_expression(std::ostream& output,
+                                       SurfaceTable const& table) {
+        output << "table(default: ";
+        print_value(output, table.default_value);
+        output << ") {\n";
         for (SurfaceEntry const& entry : table.entries) {
-            output_ << "  ";
-            print_value(output_, entry.key);
-            output_ << ": ";
-            print_value(output_, entry.value);
-            output_ << ",\n";
+            output << "  ";
+            print_value(output, entry.key);
+            output << ": ";
+            print_value(output, entry.value);
+            output << ",\n";
         }
-        output_ << "};\n";
+        output << '}';
+    }
+
+    static std::string render_model_witness(std::string const& name,
+                                            TypePtr const& type,
+                                            SurfaceTable const& table) {
+        std::ostringstream output;
+        output << "model " << name << ": " << type->display << " = ";
+        print_table_expression(output, table);
+        output << ";\n";
+        return output.str();
     }
 };
+
+int Runtime::execute(syntax::Document const& document) {
+    syntax::ProofDecl const* proof = nullptr;
+    syntax::SynthDecl const* synth = nullptr;
+    syntax::ModelDecl const* model_hole = nullptr;
+    for (syntax::Declaration const& declaration : document.declarations) {
+        if (auto const* item = std::get_if<syntax::EnumDecl>(&declaration)) {
+            declare_enum(*item);
+        } else if (auto const* item = std::get_if<syntax::LetDecl>(&declaration)) {
+            declare_let(*item);
+        } else if (auto const* item = std::get_if<syntax::ModelDecl>(&declaration)) {
+            declare_model(*item);
+            if (!item->value) {
+                if (model_hole)
+                    reject(item->span,
+                           "this proof slice admits exactly one model-shaped hole");
+                model_hole = item;
+            }
+        } else if (auto const* item = std::get_if<syntax::ProofDecl>(&declaration)) {
+            if (proof || synth)
+                reject(item->span,
+                       "this source slice admits one executable declaration");
+            proof = item;
+        } else if (auto const* item = std::get_if<syntax::SynthDecl>(&declaration)) {
+            if (proof || synth)
+                reject(item->span,
+                       "this source slice admits one executable declaration");
+            synth = item;
+        }
+    }
+    if (synth) return execute_synthesis(*synth);
+    if (!proof) reject(document.span, "expected one `proof` or `synth` declaration");
+    if (!model_hole)
+        reject(document.span, "expected one model-shaped hole for the proof result");
+    return execute_bisimulation(*proof);
+}
 
 } // namespace
 
