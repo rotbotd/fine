@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fine-lang.invalid/schema/rainfall-event-v1.json",
+  "title": "Fine rainfall event v1",
+  "type": "object",
+  "required": ["schema", "sequence", "phase", "event", "term"],
+  "properties": {
+    "schema": { "const": "fine.rainfall.v1" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "phase": { "type": "string" },
+    "event": { "enum": ["intern", "rewrite", "assert", "model-value"] },
+    "rule": { "type": ["string", "null"] },
+    "term": { "$ref": "#/$defs/term" },
+    "replacement": { "anyOf": [{ "$ref": "#/$defs/term" }, { "type": "null" }] }
+  },
+  "$defs": {
+    "term": {
+      "type": "object",
+      "required": ["identity", "kind", "children", "fine"],
+      "properties": {
+        "identity": { "$ref": "#/$defs/identity" },
+        "kind": { "type": "string" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/identity" }
+        },
+        "fine": { "type": "string" }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "required": ["manager", "handle", "ast_id"],
+      "properties": {
+        "manager": {
+          "type": "string",
+          "description": "Opaque identity of one live ast_manager"
+        },
+        "handle": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Never-reused key into the recorder's strong ast_ref registry"
+        },
+        "ast_id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Z3's diagnostic live-node ID; not the durable identity key"
+        }
+      }
+    }
+  }
+}

@@ -295,6 +295,18 @@ if (Z3_BUILD_EXECUTABLE)
 endif()
 
 ################################################################################
+# Fine executable
+################################################################################
+
+cmake_dependent_option(FINE_BUILD_EXECUTABLE
+    "Build the Fine executable" ON
+    "CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR;Z3_BUILD_LIBZ3_CORE" OFF)
+
+if (FINE_BUILD_EXECUTABLE)
+    add_subdirectory(fine)
+endif()
+
+################################################################################
 # z3-test
 ################################################################################
 
