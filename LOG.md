@@ -1,0 +1,90 @@
+# Fine development log
+
+This file is append-only. It records implementation history, experiments, exact
+coverage claims, and closed failures. The current architecture belongs in the
+project documentation; Lynn's runtime prompt should retain only the present
+invariants, runnable state, and unresolved edge.
+
+## 2026-08-31 — first model-to-syntax slice (`82ad50742`)
+
+The first runnable vertical slice reused Z3's manager-local term identity and
+closed the required `reify(lift(x)) = x` direction for a finite model witness.
+Numeric Z3 AST IDs were retained only as diagnostics; live terms were held by
+strong `z3::expr` references behind never-reused manager-scoped handles. The
+initial internal mapping, SMT-LIB fixture, runtime identity spike, and rainfall
+schema were added below `fine/`.
+
+## 2026-08-31 — source parser and bisimulation runtime (`377ae5cc3`)
+
+The hardcoded demo was replaced by a source-spanned parser and runtime.
+`fine run fine/fixtures/two-state-bisim.fine` parses enums, Boolean tables, one
+model-shaped table hole, and `proof`/`takes`/`gives`; `fine demo-bisim` embeds and
+runs that checked-in source. Z3, with quantified two-directional clauses and
+MBQI enabled, fills an array-shaped two-state bisimulation hole. Fine enumerates
+the four finite cells into a deterministic constant-array-plus-stores term,
+lifts it to Fine table syntax, reifies it, and checks exact same-manager AST
+identity.
+
+## 2026-08-31 — native synthesis slice (`cb66459fa`)
+
+A twelve-angle pressure test was recorded and the first native synthesis path
+was closed. Model witnesses print as typed, parseable `model` declarations, pass
+through the ordinary parser/elaborator, and reify to exact same-manager AST
+identity. Lifted enum values retain resolved enum identity rather than only case
+text.
+
+`fine run fine/fixtures/synth-max.fine` parses a generic Int `synth` plus
+`ensures`, fairly enumerates Fine's built-in integer terms by exact size, grows
+labelled failing instances, takes the unsat core, assembles the Reynolds-style
+conditional, independently checks the untouched specification, then parses and
+reifies the printed body. It returns
+`if right >= left { right } else { left }`; projection and three-argument
+fixtures are anti-hardcoding gates. Fine keeps one built-in semantics. It does
+not expose user-defined object-language semantics, evaluators, raw Horn clauses,
+or a SemGuS surface; SemGuS is only a source of internal backend ideas.
+
+## 2026-08-31 — first public rainfall replay (`a1a13ab71`)
+
+`fine rain fine/fixtures/synth-max.fine` began streaming JSONL for the native
+synthesis run: public query boundaries and polarities, completed counterexample
+assignments, deterministic candidate selection, labelled instance activation,
+the unsat core, conditional assembly, one public simplification, a fresh
+independent counterexample query, and the parse/reify-checked Fine source
+witness.
+
+The v2 schema uses six semantic kinds: object, scope, constraint, derive,
+transform, and transition. Every event states producer coverage and uses
+explicit evidence references rather than treating sequence as cause. Each term
+is held by a strong `z3::expr` reference behind `(run, recorder, manager,
+handle)`. Model evaluation is labelled equality under that completed model,
+never a theory rewrite. This slice explicitly did not claim Z3-internal rewrite
+or solver-search coverage.
+
+## 2026-08-31 — scoped internal theory-rewrite producer (`ff74d15fb`, `38eb6d205`)
+
+The generic Z3 commit added a synchronous optional observer to `th_rewriter`;
+the separate Fine commit attached it only to native synthesis's postprocessing
+simplifier. The max replay gained four non-reflexive `z3.theory-rewrite` events:
+`right >= right -> true`, `right == right -> true`, `(... || true) -> true`, and
+the final conjunction collapse.
+
+Each event holds both same-manager endpoints strongly and records family,
+declaration, continuation status, and exact producer coverage. Coverage is
+limited to successful `th_rewriter_cfg::reduce_app` applications after child
+rewriting, including push/pull-ITE work performed at that wrapper. It excludes
+substitutions, variables, quantifiers, macros, cache hits, other rewriter
+instantiations, and solver search. The generic Z3 observation hook and Fine
+integration remain separate commits and patch series.
+
+## 2026-08-31 — bisimulation public-boundary replay (`ff60e1c0c`)
+
+`fine rain fine/fixtures/two-state-bisim.fine` emits 35 JSONL events: four
+elaborated constraints, the MBQI-enabled public model query, four completed
+finite-cell evaluations, deterministic false-default-array-plus-true-stores
+extensionalization, and the parse/reify-checked Fine model witness. Model cells
+are explicitly equality under the returned model. No solver-internal events are
+emitted, so the replay does not claim which quantifier instantiations, MBQI
+steps, or search decisions caused `sat`.
+
+The clean Nix artifact was
+`/nix/store/jzhnh4vx0jbd5ciwyk2iv3xc4j3x2fz8-fine-0.0.1`.
