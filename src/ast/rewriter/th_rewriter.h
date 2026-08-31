@@ -26,10 +26,22 @@ class expr_substitution;
 
 class expr_solver;
 
+// Optional observer for successful builtin theory-application reductions.
+// The input has the already-rewritten children supplied to
+// th_rewriter_cfg::reduce_app. This does not cover other rewriter
+// instantiations, substitutions, variables, quantifiers, or solver search.
+class th_rewriter_observer {
+public:
+    virtual ~th_rewriter_observer() = default;
+    virtual void on_rewrite(ast_manager& manager, app* before, expr* after,
+                            br_status status) = 0;
+};
+
 class th_rewriter {
     struct     imp;
     imp *      m_imp;
     params_ref m_params;
+    th_rewriter_observer* m_observer = nullptr;
 public:
     th_rewriter(ast_manager & m, params_ref const & p = params_ref());
     ~th_rewriter();
@@ -41,6 +53,7 @@ public:
 
     void set_flat_and_or(bool f);
     void set_order_eq(bool f);
+    void set_observer(th_rewriter_observer* observer);
 
     unsigned get_cache_size() const;
     unsigned get_num_steps() const;
@@ -76,4 +89,3 @@ public:
 
 
 };
-

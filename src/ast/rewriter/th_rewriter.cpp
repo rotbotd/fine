@@ -82,9 +82,19 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     bool                m_enable_der = true;
     bool                m_nested_der = false;
     bool                m_push_quantifiers = false;
+    th_rewriter_observer* m_observer = nullptr;
 
 
     ast_manager & m() const { return m_b_rw.m(); }
+
+    void observe_rewrite(func_decl* f, unsigned num, expr* const* args,
+                         expr* result, br_status status) {
+        if (!m_observer) return;
+        app_ref before(m());
+        before = m().mk_app(f, num, args);
+        if (before.get() != result)
+            m_observer->on_rewrite(m(), before, result, status);
+    }
 
     void updt_local_params(params_ref const & _p) {
         rewriter_params p(_p);
@@ -658,6 +668,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                    tout << f->get_name() << "\n";
                    for (unsigned i = 0; i < num; ++i) tout << mk_ismt2_pp(args[i], m()) << "\n";
                    tout << "---------->\n" << mk_ismt2_pp(result, m()) << "\n";);
+            observe_rewrite(f, num, args, result, st);
             return st;
         }
         if (m_push_ite_bv || m_push_ite_arith) {
@@ -680,6 +691,8 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                tout << f->get_name() << "\n";
                for (unsigned i = 0; i < num; ++i) tout << mk_ismt2_pp(args[i], m()) << "\n";
                tout << "---------->\n" << mk_ismt2_pp(result, m()) << "\n";);
+        if (st != BR_FAILED)
+            observe_rewrite(f, num, args, result, st);
         return st;
     }
 
@@ -1017,9 +1030,11 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
 
 struct th_rewriter::imp : public rewriter_tpl<th_rewriter_cfg> {
     th_rewriter_cfg m_cfg;
-    imp(ast_manager & m, params_ref const & p):
+    imp(ast_manager & m, params_ref const & p,
+        th_rewriter_observer* observer = nullptr):
         rewriter_tpl<th_rewriter_cfg>(m, m.proofs_enabled(), m_cfg),
         m_cfg(m, p) {
+        m_cfg.m_observer = observer;
     }
     expr_ref mk_app(func_decl* f, unsigned sz, expr* const* args) {
         return m_cfg.mk_app(f, sz, args);
@@ -1033,7 +1048,7 @@ struct th_rewriter::imp : public rewriter_tpl<th_rewriter_cfg> {
 
 th_rewriter::th_rewriter(ast_manager & m, params_ref const & p):
     m_params(p) {
-    m_imp = alloc(imp, m, p);
+    m_imp = alloc(imp, m, p, m_observer);
 }
 
 ast_manager & th_rewriter::m() const {
@@ -1061,6 +1076,11 @@ void th_rewriter::set_order_eq(bool f) {
     m_imp->cfg().m_b_rw.set_order_eq(f);
 }
 
+void th_rewriter::set_observer(th_rewriter_observer* observer) {
+    m_observer = observer;
+    m_imp->cfg().m_observer = observer;
+}
+
 th_rewriter::~th_rewriter() {
     dealloc(m_imp);
 }
@@ -1076,7 +1096,7 @@ unsigned th_rewriter::get_num_steps() const {
 void th_rewriter::cleanup() {
     ast_manager & m = m_imp->m();
     m_imp->~imp();
-    new (m_imp) imp(m, m_params);
+    new (m_imp) imp(m, m_params, m_observer);
 }
 
 void th_rewriter::reset() {
