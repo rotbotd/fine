@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+namespace fine {
+
+inline constexpr std::string_view demo_source = R"FINE_SOURCE(@FINE_DEMO_SOURCE@)FINE_SOURCE";
+
+} // namespace fine

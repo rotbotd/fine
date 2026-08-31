@@ -36,9 +36,14 @@
           runHook preInstallCheck
           output="$($out/bin/fine demo-bisim)"
           echo "$output"
-          grep -F "(left-0, right-0): true" <<<"$output"
-          grep -F "(left-1, right-1): true" <<<"$output"
+          grep -F "(left_0, right_0): true" <<<"$output"
+          grep -F "(left_1, right_1): true" <<<"$output"
           grep -F "reify(lift(x)): exact ast identity" <<<"$output"
+          parsed="$($out/bin/fine run "$src/fine/fixtures/two-state-bisim.fine")"
+          echo "$parsed"
+          grep -F "model bisim = table(default: false)" <<<"$parsed"
+          grep -F "(left_0, right_0): true" <<<"$parsed"
+          grep -F "reify(lift(x)): exact ast identity" <<<"$parsed"
           runHook postInstallCheck
         '';
       };

@@ -52,6 +52,58 @@ Latte's web-oriented `const`. Do not copy Latte's typeclass machinery.
 
 Rainfall follows this closed loop; it does not delay the first model return.
 
+## Parsed vertical slice
+
+The next closed loop accepts the same bisimulation as a Fine source file. Its
+surface is deliberately narrower than its runtime substrate:
+
+```fine
+enum LeftState { left_0, left_1 }
+enum RightState { right_0, right_1 }
+
+let left_step: Table((LeftState, LeftState), Bool) =
+  table(default: false) {
+    (left_0, left_1): true,
+    (left_1, left_0): true,
+  };
+
+let right_step: Table((RightState, RightState), Bool) =
+  table(default: false) {
+    (right_0, right_1): true,
+    (right_1, right_0): true,
+  };
+
+let left_label: Table(LeftState, Bool) = table(default: false) {
+  left_1: true,
+};
+
+let right_label: Table(RightState, Bool) = table(default: false) {
+  right_1: true,
+};
+
+model bisim: Table((LeftState, RightState), Bool);
+
+proof bisimulation {
+  takes(
+    relation: bisim,
+    left_step: left_step,
+    right_step: right_step,
+    left_label: left_label,
+    right_label: right_label,
+    initial: (left_0, right_0),
+  );
+  gives(bisim);
+}
+```
+
+`Table` is Z3 `Array`, including the product index sort; it is not a
+compiler-owned function type. `model` introduces exactly one model-shaped
+array hole. `proof bisimulation` is a named proof form, not a first-class
+function: its named `takes` fields elaborate to the quantified two-directional
+bisimulation clauses, and `gives` names the hole to return. The parser produces
+syntax containing source spans and no Z3 objects. Elaboration resolves that
+syntax against manager-owned enum, product, array, and Boolean sorts.
+
 ## Rainfall identity and coverage
 
 Z3's numeric AST IDs are diagnostic labels, not durable identities. Z3 may

@@ -1,6 +1,8 @@
 # Two-state bisimulation fixture
 
-`two-state-bisim-array.smt2` contains two labelled transition systems. Each has
+`two-state-bisim.fine` is the executable Fine source fixture.
+`two-state-bisim-array.smt2` is its direct SMT-LIB counterpart. Both contain
+two labelled transition systems. Each has
 two states and alternates between state 0 and state 1. The model-shaped hole
 `bisim` has sort `Array Pair Bool`, where `Pair` is the datatype product of a
 left state and a right state. It is deliberately not declared as a two-argument
@@ -33,6 +35,12 @@ Run it directly with Z3:
 
 ```console
 z3 fine/fixtures/two-state-bisim-array.smt2
+```
+
+Run the parsed Fine source through the fork:
+
+```console
+fine run fine/fixtures/two-state-bisim.fine
 ```
 
 The fixture prints both Z3's array value and all four selected cells; the cell

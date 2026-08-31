@@ -1,0 +1,37 @@
+// Two finite transition systems which alternate forever. Boolean labels make
+// state 0 observable as false and state 1 observable as true.
+enum LeftState { left_0, left_1 }
+enum RightState { right_0, right_1 }
+
+let left_step: Table((LeftState, LeftState), Bool) = table(default: false) {
+    (left_0, left_1): true,
+    (left_1, left_0): true,
+};
+
+let right_step: Table((RightState, RightState), Bool) = table(default: false) {
+    (right_0, right_1): true,
+    (right_1, right_0): true,
+};
+
+let left_label: Table(LeftState, Bool) = table(default: false) {
+    left_1: true,
+};
+
+let right_label: Table(RightState, Bool) = table(default: false) {
+    right_1: true,
+};
+
+// `model` denotes an actual model-shaped hole, not a typeclass mechanism.
+model bisim: Table((LeftState, RightState), Bool);
+
+proof bisimulation {
+    takes(
+        relation: bisim,
+        left_step: left_step,
+        right_step: right_step,
+        left_label: left_label,
+        right_label: right_label,
+        initial: (left_0, right_0),
+    );
+    gives(bisim);
+}
