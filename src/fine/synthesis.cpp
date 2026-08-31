@@ -1,4 +1,5 @@
 #include "synthesis.h"
+#include "internal_rewrite.h"
 #include "rainfall.h"
 
 #include <algorithm>
@@ -365,7 +366,8 @@ SynthesisResult RefutationSynthesizer::run() {
              RainfallRecorder::number_field("core_size", core_indices.size()),
              RainfallRecorder::string_field("evidence_query", core_query)});
     }
-    z3::expr witness = assembled.simplify();
+    z3::expr witness = simplify_with_rainfall(
+        assembled, rainfall_, {run_scope, "transform:public-simplify"});
     if (rainfall_) {
         rainfall_->record(
             "transform", "z3.simplify", {run_scope}, "z3.public-api",

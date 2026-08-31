@@ -4,6 +4,7 @@ file(READ "${FINE_DEMO_FIXTURE}" FINE_DEMO_SOURCE)
 configure_file(demo_source.h.in demo_source.h @ONLY)
 
 add_executable(fine-bin
+  internal_rewrite.cpp
   main.cpp
   parser.cpp
   rainfall.cpp
@@ -12,8 +13,13 @@ add_executable(fine-bin
 )
 set_target_properties(fine-bin PROPERTIES OUTPUT_NAME fine)
 target_link_libraries(fine-bin PRIVATE libz3)
+foreach(define ${Z3_COMPONENT_CXX_DEFINES})
+  target_compile_definitions(fine-bin PRIVATE ${define})
+endforeach()
 target_include_directories(fine-bin PRIVATE
   "${CMAKE_CURRENT_BINARY_DIR}"
+  "${PROJECT_BINARY_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/src"
   "${PROJECT_SOURCE_DIR}/src/api"
 )
 

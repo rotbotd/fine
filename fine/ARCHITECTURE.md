@@ -139,10 +139,20 @@ references explicitly. Each term declaration carries identity
 `ast_id_at_observation` as a diagnostic. The recorder holds every registered
 `z3::expr` strongly until the run ends.
 
+The soft fork adds a synchronous optional observer to `th_rewriter`. Fine
+attaches it only to the ordinary theory rewriter used for native synthesis
+postprocessing. Every successful, non-reflexive `reduce_app` step emits a
+`z3.theory-rewrite` transform with the application rebuilt from its
+already-rewritten children and the wrapper's returned term. The callback runs
+after push/pull-ITE handling at that wrapper boundary and records whether the
+generic engine will recursively rewrite the result. Both endpoints are
+interned in the same manager and enter rainfall's strong registry before the
+callback returns.
+
 There is also no honest single “all rewrites” hook. The generic recursive
 rewriter commits results along several paths, while solver propagation and
-some formula transformations do not pass through it at all. The first hook
-belongs around `th_rewriter_cfg::reduce_app`, where both interned endpoints of
-a builtin theory rewrite are available. Rainfall must label that coverage
-precisely and add other producers rather than calling one partial stream the
-solver's entire execution.
+some formula transformations do not pass through it at all. This hook covers
+only the observed `th_rewriter_cfg::reduce_app` path; it misses substitutions,
+variables, quantifiers, macro expansion, cache reuse, other rewriter
+instantiations, and solver propagation. Later producers must be added rather
+than calling this partial stream the solver's entire execution.

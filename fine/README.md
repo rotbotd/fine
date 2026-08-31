@@ -31,6 +31,9 @@ synthesis review and the narrowed built-in-semantics plan are recorded in
 `rain` writes JSONL only. Its first live replay follows native maximum
 synthesis through public solver queries, completed counterexample values,
 candidate selection, labelled instance activation, the unsat core, conditional
-assembly, simplification, an independent verification query, and the checked
-Fine source witness. Every event names its producer and coverage; this stream
-does not pretend to contain Z3's internal rewrite or search steps.
+assembly, the successful builtin theory-application reductions inside its one
+public simplification, an independent verification query, and the checked Fine
+source witness. Every event names its producer and coverage. The internal
+events cover only the observed `th_rewriter::reduce_app` path; this stream does
+not pretend to contain substitutions, quantifier rewrites, other rewriter
+instances, or solver search.

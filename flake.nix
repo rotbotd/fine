@@ -80,6 +80,13 @@
           ]
           positions = [operations.index(operation) for operation in required]
           assert positions == sorted(positions), (required, positions)
+          internal = [event for event in events
+                      if event["operation"] == "z3.theory-rewrite"]
+          assert internal
+          assert operations.index("synth.assemble-core") < internal[0]["sequence"]
+          assert internal[-1]["sequence"] < operations.index("z3.simplify")
+          assert all(event["producer"]["component"] ==
+                     "z3.th_rewriter.reduce_app" for event in internal)
           terms = [event for event in events if event["operation"] == "term.declare"]
           handles = [event["data"]["identity"]["handle"] for event in terms]
           assert handles == list(range(len(handles)))
