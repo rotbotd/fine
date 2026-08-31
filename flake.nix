@@ -102,6 +102,53 @@
           assert all(event["data"]["relation"] == "equality-under-this-model"
                      for event in models)
           PY
+          bisim_rain="$($out/bin/fine rain "$src/fine/fixtures/two-state-bisim.fine")"
+          echo "$bisim_rain"
+          RAIN="$bisim_rain" ${pkgs.python3}/bin/python - <<'PY'
+          import json, os
+          events = [json.loads(line) for line in os.environ["RAIN"].splitlines()]
+          assert events
+          assert [event["sequence"] for event in events] == list(range(len(events)))
+          operations = [event["operation"] for event in events]
+          required = [
+              "bisim.run.open",
+              "bisim.clause.assert",
+              "solver.query.open",
+              "solver.query.result",
+              "model.eval-cell",
+              "bisim.extensionalize-model",
+              "fine.model-witness",
+              "fine.witness.accept",
+              "bisim.run.close",
+          ]
+          positions = [operations.index(operation) for operation in required]
+          assert positions == sorted(positions), (required, positions)
+          clauses = [event for event in events
+                     if event["operation"] == "bisim.clause.assert"]
+          assert [event["data"]["role"] for event in clauses] == [
+              "labels-agree", "left-step-matched", "right-step-matched",
+              "initial-related"]
+          queries = [event for event in events
+                     if event["operation"] == "solver.query.result"]
+          assert len(queries) == 1
+          assert queries[0]["data"]["status"] == "sat"
+          assert queries[0]["data"]["polarity"] == "model-exists"
+          cells = [event for event in events
+                   if event["operation"] == "model.eval-cell"]
+          assert len(cells) == 4
+          assert all(event["data"]["relation"] == "equality-under-this-model"
+                     for event in cells)
+          assert all(event["data"]["model_completion"] for event in cells)
+          witnesses = [event for event in events
+                       if event["operation"] == "fine.model-witness"]
+          assert len(witnesses) == 1
+          assert witnesses[0]["data"]["parse_reify_exact_identity"] is True
+          assert "(left_0, right_0): true" in witnesses[0]["data"]["source"]
+          assert "z3.theory-rewrite" not in operations
+          terms = [event for event in events if event["operation"] == "term.declare"]
+          handles = [event["data"]["identity"]["handle"] for event in terms]
+          assert handles == list(range(len(handles)))
+          PY
           runHook postInstallCheck
         '';
       };

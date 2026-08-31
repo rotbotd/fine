@@ -19,6 +19,7 @@ cmake --build build/fine --target fine-bin
 ./build/fine/fine run fine/fixtures/two-state-bisim.fine
 ./build/fine/fine run fine/fixtures/synth-max.fine
 ./build/fine/fine rain fine/fixtures/synth-max.fine
+./build/fine/fine rain fine/fixtures/two-state-bisim.fine
 ```
 
 `demo-bisim` embeds that exact checked-in Fine fixture; it is not a second
@@ -28,7 +29,7 @@ rainfall trace identity rules are in `ARCHITECTURE.md`. The twelve-angle
 synthesis review and the narrowed built-in-semantics plan are recorded in
 `research/synthesis-pressure-test.md`.
 
-`rain` writes JSONL only. Its first live replay follows native maximum
+`rain` writes JSONL only. The synthesis replay follows native maximum
 synthesis through public solver queries, completed counterexample values,
 candidate selection, labelled instance activation, the unsat core, conditional
 assembly, the successful builtin theory-application reductions inside its one
@@ -37,3 +38,9 @@ source witness. Every event names its producer and coverage. The internal
 events cover only the observed `th_rewriter::reduce_app` path; this stream does
 not pretend to contain substitutions, quantifier rewrites, other rewriter
 instances, or solver search.
+
+The bisimulation replay records the four elaborated quantified constraints,
+the public MBQI-enabled model query, every completed finite relation cell, the
+deterministic constant-array-plus-stores extensionalization, and the checked
+Fine model witness. It deliberately has no internal solver events yet: the
+query result reports what Z3 returned, not how MBQI or search produced it.

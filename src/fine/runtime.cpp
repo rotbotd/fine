@@ -646,6 +646,26 @@ private:
             reject(proof.gives.span, "`gives` must return the relation model hole");
         z3::expr initial = value(*inputs.at("initial"), relation_domain);
 
+        std::string run_scope = "bisim:" + inputs.at("relation")->name;
+        if (rainfall_) {
+            rainfall_->record(
+                "scope", "bisim.run.open", {run_scope}, "fine.bisimulation",
+                "Fine's finite bisimulation elaboration, one public solver query, model extensionalization, and source round trip; excludes Z3-internal search",
+                {RainfallRecorder::string_field(
+                     "relation", rainfall_->term(relation.value)),
+                 RainfallRecorder::string_field(
+                     "left_step", rainfall_->term(left_step.value)),
+                 RainfallRecorder::string_field(
+                     "right_step", rainfall_->term(right_step.value)),
+                 RainfallRecorder::string_field(
+                     "left_label", rainfall_->term(left_label.value)),
+                 RainfallRecorder::string_field(
+                     "right_label", rainfall_->term(right_label.value)),
+                 RainfallRecorder::string_field(
+                     "initial", rainfall_->term(initial)),
+                 RainfallRecorder::boolean_field("mbqi", true)});
+        }
+
         z3::expr left = context_.constant("Fine.left", left_type->sort);
         z3::expr right = context_.constant("Fine.right", right_type->sort);
         z3::expr left_next = context_.constant("Fine.left_next", left_type->sort);
@@ -667,25 +687,82 @@ private:
             return z3::select(right_step.value, tuple(right_step_domain, from, to));
         };
 
+        std::vector<std::pair<std::string, z3::expr>> assertions;
+        assertions.emplace_back(
+            "labels-agree",
+            z3::forall(left, right,
+                z3::implies(related(left, right),
+                    z3::select(left_label.value, left) ==
+                    z3::select(right_label.value, right))));
+        assertions.emplace_back(
+            "left-step-matched",
+            z3::forall(left, right, left_next,
+                z3::implies(related(left, right) && steps_left(left, left_next),
+                    z3::exists(right_next,
+                        steps_right(right, right_next) &&
+                        related(left_next, right_next)))));
+        assertions.emplace_back(
+            "right-step-matched",
+            z3::forall(left, right, right_next,
+                z3::implies(related(left, right) &&
+                                steps_right(right, right_next),
+                    z3::exists(left_next,
+                        steps_left(left, left_next) &&
+                        related(left_next, right_next)))));
+        assertions.emplace_back("initial-related",
+                                z3::select(relation.value, initial));
+
         z3::solver solver(context_);
         z3::params parameters(context_);
         parameters.set("mbqi", true);
         solver.set(parameters);
-        solver.add(z3::forall(left, right,
-            z3::implies(related(left, right),
-                z3::select(left_label.value, left) ==
-                z3::select(right_label.value, right))));
-        solver.add(z3::forall(left, right, left_next,
-            z3::implies(related(left, right) && steps_left(left, left_next),
-                z3::exists(right_next,
-                    steps_right(right, right_next) && related(left_next, right_next)))));
-        solver.add(z3::forall(left, right, right_next,
-            z3::implies(related(left, right) && steps_right(right, right_next),
-                z3::exists(left_next,
-                    steps_left(left, left_next) && related(left_next, right_next)))));
-        solver.add(z3::select(relation.value, initial));
+        std::vector<std::string> assertion_references;
+        for (auto const& [role, assertion] : assertions) {
+            solver.add(assertion);
+            if (rainfall_) {
+                std::string reference = rainfall_->term(assertion);
+                assertion_references.push_back(reference);
+                rainfall_->record(
+                    "constraint", "bisim.clause.assert", {run_scope},
+                    "fine.bisimulation",
+                    "Fully elaborated bisimulation clause asserted through Z3's public solver API",
+                    {RainfallRecorder::string_field("role", role),
+                     RainfallRecorder::string_field("assertion", reference)});
+            }
+        }
+
+        std::string query = "query:0";
+        if (rainfall_) {
+            rainfall_->record(
+                "scope", "solver.query.open", {run_scope, query},
+                "fine.bisimulation", "Public solver assertion boundary",
+                {RainfallRecorder::string_field("id", query),
+                 RainfallRecorder::string_field(
+                     "purpose", "find a finite bisimulation relation model"),
+                 RainfallRecorder::raw_field(
+                     "assertions",
+                     RainfallRecorder::string_array(assertion_references)),
+                 RainfallRecorder::string_field("polarity", "model-exists"),
+                 RainfallRecorder::boolean_field("mbqi", true)});
+        }
 
         z3::check_result result = solver.check();
+        if (rainfall_) {
+            char const* status = result == z3::sat
+                                     ? "sat"
+                                     : result == z3::unsat ? "unsat" : "unknown";
+            rainfall_->record(
+                "transition", "solver.query.result", {run_scope, query},
+                "z3.public-api",
+                "Final public check result only; no claim about solver search, MBQI steps, or internal cause",
+                {RainfallRecorder::string_field("query", query),
+                 RainfallRecorder::string_field("status", status),
+                 RainfallRecorder::string_field("polarity", "model-exists")});
+            rainfall_->record(
+                "scope", "solver.query.close", {run_scope, query},
+                "fine.bisimulation", "Public solver query lifetime",
+                {RainfallRecorder::string_field("id", query)});
+        }
         if (result != z3::sat) {
             std::string detail = result == z3::unknown
                                      ? "unknown: " + solver.reason_unknown()
@@ -695,15 +772,56 @@ private:
 
         z3::model model = solver.get_model();
         z3::expr canonical = z3::const_array(relation_domain->sort, context_.bool_val(false));
+        std::string cell_evidence = "[";
+        bool first_cell = true;
         for (z3::expr const& l : left_type->enumeration->values) {
             for (z3::expr const& r : right_type->enumeration->values) {
                 z3::expr key = tuple(relation_domain, l, r);
-                z3::expr cell = model.eval(z3::select(relation.value, key), true);
+                z3::expr selection = z3::select(relation.value, key);
+                z3::expr cell = model.eval(selection, true);
                 if (!cell.is_true() && !cell.is_false())
                     reject(proof.span, "model returned a non-Boolean relation cell");
+                if (rainfall_) {
+                    std::string key_reference = rainfall_->term(key);
+                    std::string selection_reference = rainfall_->term(selection);
+                    std::string value_reference = rainfall_->term(cell);
+                    rainfall_->record(
+                        "derive", "model.eval-cell", {run_scope},
+                        "z3.public-api",
+                        "Completed evaluation of one finite relation selection under the model returned by the named satisfiable query",
+                        {RainfallRecorder::string_field("evidence_query", query),
+                         RainfallRecorder::string_field("key", key_reference),
+                         RainfallRecorder::string_field(
+                             "selection", selection_reference),
+                         RainfallRecorder::string_field("value", value_reference),
+                         RainfallRecorder::boolean_field("model_completion", true),
+                         RainfallRecorder::string_field(
+                             "relation", "equality-under-this-model")});
+                    if (!first_cell) cell_evidence += ',';
+                    first_cell = false;
+                    cell_evidence +=
+                        "{\"key\":" + RainfallRecorder::quote(key_reference) +
+                        ",\"selection\":" +
+                        RainfallRecorder::quote(selection_reference) +
+                        ",\"value\":" +
+                        RainfallRecorder::quote(value_reference) + "}";
+                }
                 if (cell.is_true())
                     canonical = z3::store(canonical, key, context_.bool_val(true));
             }
+        }
+        cell_evidence += ']';
+        if (rainfall_) {
+            rainfall_->record(
+                "derive", "bisim.extensionalize-model", {run_scope},
+                "fine.bisimulation",
+                "Complete finite-domain enumeration assembled into Fine's deterministic false-default array plus true stores",
+                {RainfallRecorder::string_field("evidence_query", query),
+                 RainfallRecorder::raw_field("cells", cell_evidence),
+                 RainfallRecorder::string_field(
+                     "output", rainfall_->term(canonical)),
+                 RainfallRecorder::string_field(
+                     "policy", "false-default-then-enumeration-order-true-stores")});
         }
 
         SurfaceTable lifted = lift_table(relation.type, canonical);
@@ -723,6 +841,32 @@ private:
         if (!Z3_is_eq_ast(context_, canonical, roundtrip))
             reject(proof.span,
                    "parse(print(lift(x))) violated exact AST identity after reification");
+
+        if (rainfall_) {
+            rainfall_->record(
+                "object", "fine.model-witness", {run_scope}, "fine.runtime",
+                "Lifted, printed, parsed, and elaborated model witness with exact same-manager AST identity",
+                {RainfallRecorder::string_field(
+                     "declaration", inputs.at("relation")->name),
+                 RainfallRecorder::string_field("source", witness_source),
+                 RainfallRecorder::string_field(
+                     "semantic_term", rainfall_->term(canonical)),
+                 RainfallRecorder::boolean_field(
+                     "parse_reify_exact_identity", true)});
+            rainfall_->record(
+                "transition", "fine.witness.accept", {run_scope}, "fine.runtime",
+                "Satisfiable model query plus finite extensionalization and Fine source round-trip identity check",
+                {RainfallRecorder::string_field(
+                     "declaration", inputs.at("relation")->name),
+                 RainfallRecorder::string_field("evidence_query", query),
+                 RainfallRecorder::string_field("status", "model-witness"),
+                 RainfallRecorder::boolean_field(
+                     "source_roundtrip_exact_identity", true)});
+            rainfall_->record(
+                "scope", "bisim.run.close", {run_scope}, "fine.runtime",
+                "Finite bisimulation model and Fine source witness round trip",
+                {RainfallRecorder::string_field("status", "model-witness")});
+        }
 
         output_ << "sat: z3 filled model-shaped hole "
                 << inputs.at("relation")->name << '\n';
@@ -907,9 +1051,6 @@ int Runtime::execute(syntax::Document const& document) {
     }
     if (synth) return execute_synthesis(*synth);
     if (!proof) reject(document.span, "expected one `proof` or `synth` declaration");
-    if (rainfall_)
-        reject(proof->span,
-               "the first live rainfall slice admits `synth`; bisimulation replay is not wired yet");
     if (!model_hole)
         reject(document.span, "expected one model-shaped hole for the proof result");
     return execute_bisimulation(*proof);

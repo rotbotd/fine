@@ -139,6 +139,14 @@ references explicitly. Each term declaration carries identity
 `ast_id_at_observation` as a diagnostic. The recorder holds every registered
 `z3::expr` strongly until the run ends.
 
+The bisimulation producer records all four public assertions, the one
+MBQI-enabled satisfiability boundary, completed evaluation of every cell in the
+finite relation, deterministic extensionalization into an admitted array term,
+and the exact source round trip. A completed model value is labelled only as
+equality under that returned model. There is no solver-internal bisimulation
+producer yet, so this replay says nothing about which instantiations or search
+steps caused `sat`.
+
 The soft fork adds a synchronous optional observer to `th_rewriter`. Fine
 attaches it only to the ordinary theory rewriter used for native synthesis
 postprocessing. Every successful, non-reflexive `reduce_app` step emits a
