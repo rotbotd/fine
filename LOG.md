@@ -88,3 +88,40 @@ steps, or search decisions caused `sat`.
 
 The clean Nix artifact was
 `/nix/store/jzhnh4vx0jbd5ciwyk2iv3xc4j3x2fz8-fine-0.0.1`.
+
+## 2026-08-31 — accepted MBQI-instance replay (`ce59633d9`)
+
+The bisimulation query now disables E-matching, preserves three source qids
+(`fine.bisim.labels-agree`, `fine.bisim.left-step-matched`, and
+`fine.bisim.right-step-matched`), and attaches a non-blocking user propagator to
+Z3's existing `qi_queue::on_binding` callback. No new generic Z3 hook was needed:
+the public callback already sits after the redundancy checker and
+rewrite-to-true rejection and before lemma insertion. Fine records each accepted
+nontrivial ground instance as `z3.mbqi-instance`, with the preprocessed
+quantifier, bound ground terms, preserved source role, and explicit
+`mbqi-only-query` attribution.
+
+The two-state fixture now emits 50 events. Six accepted instances occur before
+the public `sat` result: one labels-agree instance, three left-step-matched
+instances, and two right-step-matched instances. This is evidence that these
+ground instances entered the query, not a claim that any one instance caused
+the result. The callback does not expose candidates discarded before
+`on_binding`, the auxiliary model-checker context, quantifier blocking, or CDCL
+search decisions; fresh auxiliary contexts intentionally receive a no-op
+observer because they use a different AST manager.
+
+Validation used the local build plus both runnable slices, then the full clean
+flake build:
+
+```
+cmake --build build/fine
+./build/fine/fine run fine/fixtures/two-state-bisim.fine
+./build/fine/fine rain fine/fixtures/two-state-bisim.fine
+./build/fine/fine run fine/fixtures/synth-max.fine
+nix build --no-link --print-out-paths
+```
+
+The flake checks assert MBQI enabled and E-matching disabled, a nonempty instance
+set, all instance events preceding the result, the exact producer and engine,
+and the exact three source roles. The clean artifact is
+`/nix/store/m29hxiapp2awjz3ang87wvn5byy5p9qf-fine-0.0.1`.
