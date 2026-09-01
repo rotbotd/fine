@@ -42,12 +42,16 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     source_nodes: dict[str, dict[str, Any]] = {}
     parse_node_ids: set[int] = set()
     terms: dict[str, dict[str, Any]] = {}
+    holes: dict[str, dict[str, Any]] = {}
+    arm_witnesses: dict[str, dict[str, Any]] = {}
     term_handles: set[int] = set()
     term_lift_validations: set[str] = set()
     event_ids: set[str] = set()
     events_by_id: dict[str, dict[str, Any]] = {}
     evidence: list[dict[str, Any]] = []
     terminal_sequence: int | None = None
+    match_run = False
+    match_witness_count = 0
 
     for sequence, event in enumerate(events):
         _require(event.get("schema") == "fine.rainfall.v2",
@@ -72,6 +76,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
         data = event.get("data")
         _require(isinstance(operation, str) and isinstance(data, dict),
                  f"event {sequence}: malformed operation or data")
+        if operation == "synth.run.open" and "matched_parameter" in data:
+            match_run = True
 
         if operation == "source.document.declare":
             document = data.get("id")
@@ -190,6 +196,67 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             _require(data.get("rendering_hash") == terms[term].get("rendering_hash"),
                      f"event {sequence}: exact lift validates a different rendering")
             term_lift_validations.add(term)
+        elif operation == "synth.hole.declare":
+            hole = data.get("id")
+            _require(isinstance(hole, str) and hole not in holes,
+                     f"event {sequence}: missing or reused synthesis hole ID")
+            _require(data.get("snapshot") in snapshots and data.get("source") in source_nodes,
+                     f"event {sequence}: synthesis hole has unknown source identity")
+            _require(source_nodes[data["source"]].get("snapshot") == data.get("snapshot") and
+                     source_nodes[data["source"]].get("syntax_kind") == "expr.hole",
+                     f"event {sequence}: synthesis hole source is not a hole in its snapshot")
+            _require(isinstance(data.get("name"), str) and data["name"] and
+                     data.get("expected_type") == "Int" and
+                     data.get("grammar") == "fine.qf-lia-int.v1",
+                     f"event {sequence}: synthesis hole has malformed typed grammar")
+            inputs = data.get("grammar_inputs")
+            _require(isinstance(inputs, list) and all(item in terms for item in inputs),
+                     f"event {sequence}: synthesis hole grammar names unknown terms")
+            holes[hole] = data
+        elif operation == "synth.arm.close":
+            hole = data.get("hole")
+            _require(hole in holes and hole not in arm_witnesses and
+                     isinstance(data.get("constructor"), str) and data["constructor"] and
+                     isinstance(data.get("body"), str) and data["body"] and
+                     data.get("semantic_term") in terms and data.get("status") == "verified",
+                     f"event {sequence}: malformed or repeated synthesized arm witness")
+            arm_witnesses[hole] = data
+        elif operation == "fine.match-witness":
+            match_witness_count += 1
+            _require(match_run and match_witness_count == 1,
+                     f"event {sequence}: unexpected or repeated match witness")
+            replacements = data.get("replacements")
+            _require(data.get("semantic_term") in terms and data.get("verified") is True and
+                     isinstance(replacements, list) and
+                     data.get("open_arms") == len(replacements),
+                     f"event {sequence}: malformed verified match witness")
+            ranges: list[tuple[int, int]] = []
+            named_holes: set[str] = set()
+            for replacement in replacements:
+                _require(isinstance(replacement, dict) and
+                         set(replacement) == {"hole", "from", "to", "insert"},
+                         f"event {sequence}: malformed match replacement")
+                hole = replacement.get("hole")
+                begin, end = replacement.get("from"), replacement.get("to")
+                _require(hole in holes and hole not in named_holes and
+                         isinstance(begin, int) and isinstance(end, int) and
+                         isinstance(replacement.get("insert"), str) and replacement["insert"],
+                         f"event {sequence}: match replacement names an invalid hole")
+                span = source_nodes[holes[hole]["source"]]["span"]
+                _require((begin, end) == (span["begin"]["offset"], span["end"]["offset"]),
+                         f"event {sequence}: match replacement moved outside its source hole")
+                _require(hole in arm_witnesses and
+                         replacement["insert"] == arm_witnesses[hole]["body"],
+                         f"event {sequence}: match replacement disagrees with its verified arm witness")
+                named_holes.add(hole)
+                ranges.append((begin, end))
+            _require(ranges == sorted(ranges) and
+                     all(ranges[i - 1][1] <= ranges[i][0] for i in range(1, len(ranges))),
+                     f"event {sequence}: match replacements overlap or are unordered")
+            _require(named_holes == set(holes),
+                     f"event {sequence}: match witness does not replace every open hole")
+            _require(set(arm_witnesses) == set(holes),
+                     f"event {sequence}: match witness has an unverified open arm")
         elif operation == "source.term.evidence":
             evidence.append(data)
         elif operation.startswith("z3.clause."):
@@ -237,6 +304,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
              "replay has no terminal run close")
     _require(term_lift_validations == set(terms),
              "replay does not exact-validate every generated Fine term")
+    _require(not match_run or match_witness_count == 1,
+             "match synthesis replay has no unique verified match witness")
 
     allowed = {"exact", "desugared", "generated", "internal_z3"}
     for index, edge in enumerate(evidence):

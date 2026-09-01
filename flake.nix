@@ -115,6 +115,81 @@
           grep -F "source-program: synthesized largest from 3 ground instances; core kept 3" <<<"$three"
           grep -F "else { if" <<<"$three"
           grep -F "verification: no counterexample" <<<"$three"
+          match_open="$($out/bin/fine run "$src/fine/fixtures/synth-match-open.fine")"
+          echo "$match_open"
+          grep -F "source-match: synthesized unwrap with 1 open arms" <<<"$match_open"
+          grep -F "some(value) => value" <<<"$match_open"
+          grep -F "verification: no counterexample" <<<"$match_open"
+          match_materialized="$($out/bin/fine run "$src/fine/fixtures/synth-match-materialized.fine")"
+          echo "$match_materialized"
+          grep -F "verified-match: unwrap with 0 open arms; selected 0 ground instances" \
+            <<<"$match_materialized"
+          grep -F "some(value) => value" <<<"$match_materialized"
+          match_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/synth-match-open.fine" > "$match_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/synth-match-open.fine" "$match_rain"
+          match_hostile_dir="$(mktemp -d)"
+          ${pkgs.python3}/bin/python - "$match_rain" "$match_hostile_dir" <<'PY'
+          import copy, json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          target = pathlib.Path(sys.argv[2])
+          for name in ("span", "insert"):
+              changed = copy.deepcopy(events)
+              witness = next(event for event in changed
+                             if event["operation"] == "fine.match-witness")
+              replacement = witness["data"]["replacements"][0]
+              if name == "span":
+                  replacement["from"] += 1
+              else:
+                  replacement["insert"] = "fallback"
+              (target / f"{name}.rain").write_text(
+                  "\n".join(json.dumps(event, separators=(",", ":"))
+                             for event in changed) + "\n")
+          PY
+          for hostile in "$match_hostile_dir"/*.rain; do
+            if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+              "$src/fine/fixtures/synth-match-open.fine" "$hostile"; then
+              echo "match Rainfall accepted a mutated source replacement" >&2
+              exit 1
+            fi
+          done
+          match_host="$(mktemp -d)"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host init \
+            "$match_host" "$src/fine/fixtures/synth-match-open.fine" >/dev/null
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host run \
+            "$match_host" --fine "$out/bin/fine" >/dev/null
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host materialize \
+            "$match_host" >/dev/null
+          ${pkgs.python3}/bin/python - "$match_host" <<'PY'
+          import json, pathlib, sys
+          host = pathlib.Path(sys.argv[1])
+          state = json.loads((host / "state.json").read_text())
+          assert state["display_snapshot"]["revision"] == 1
+          assert "some(value) => value" in state["display_source"]
+          assert "?payload" not in state["display_source"]
+          assert state["generations"][state["current_generation"]]["status"] == "requested"
+          PY
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host run \
+            "$match_host" --fine "$out/bin/fine" >/dev/null
+          ${pkgs.python3}/bin/python - "$match_host" <<'PY'
+          import json, pathlib, sys
+          host = pathlib.Path(sys.argv[1])
+          state = json.loads((host / "state.json").read_text())
+          record = state["generations"][state["current_generation"]]
+          assert record["status"] == "admitted"
+          events = [json.loads(line) for line in (host / record["trace_file"]).read_text().splitlines()]
+          operations = [event["operation"] for event in events]
+          assert "synth.hole.declare" not in operations
+          assert "synth.candidate.select" not in operations
+          witnesses = [event for event in events
+                       if event["operation"] == "fine.match-witness"]
+          assert len(witnesses) == 1
+          assert witnesses[0]["data"]["open_arms"] == 0
+          assert witnesses[0]["data"]["replacements"] == []
+          assert operations.count("solver.query.open") == 1
+          assert operations.count("solver.query.result") == 1
+          PY
           rain="$($out/bin/fine rain "$src/fine/fixtures/synth-max.fine")"
           echo "$rain"
           RAIN="$rain" ${pkgs.python3}/bin/python - <<'PY'

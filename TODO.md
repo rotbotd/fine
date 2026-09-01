@@ -60,18 +60,30 @@ consume this exact generated layer rather than replace it.
 
 ## Next vertical slice: one interruptible match
 
-- [ ] Give an open source expression a stable, snapshot-scoped hole identity and
+- [x] Give an open source expression a stable, snapshot-scoped hole identity and
       a typed synthesis grammar.
-- [ ] Let a datatype match contain completed arms and independently open arms;
-      compile each open arm to a named solver generation.
+- [x] Let a datatype match contain completed and open arms, and give each open
+      arm a named Rainfall query scope with its own independently verified result.
+- [ ] Split those arm scopes into independently cancellable host generations;
+      the first slice still evaluates them sequentially inside one source-bound
+      generation.
 - [ ] Project the current residual Fine formula and observed activity onto each
       open arm without treating query scope as causal proof evidence.
 - [ ] Interrupt one running arm, edit or fill another, and discard only
       generations bound to the predecessor snapshot.
-- [ ] Admit a solver-produced match built from the same AST constructors accepted
-      from user source, then materialize it with one host-owned source transaction.
-- [ ] Re-run the materialized file and demonstrate verification with no grammar
+- [x] Admit each solver-produced arm through the same AST constructors accepted
+      from user source, assemble and verify the whole match, then materialize all
+      open arms with one host-owned source transaction.
+- [x] Re-run the materialized file and demonstrate verification with no grammar
       enumeration or synthesis query.
+
+The closed fixture is `synth-match-open.fine`: `?payload` has the fixed
+`fine.qf-lia-int.v1` grammar over `fallback` and the `some` field `value`. Its
+admitted replacement is exactly `value`. `fine-rain-host materialize` applies
+that replacement, advances the revision, issues a new generation, and the new
+trace contains one whole-match verification query but no hole declaration or
+candidate selection. The remaining edge is live residual projection and
+per-arm cancellation, not witness-to-source identity.
 
 ## Failure-directed lemmas after the match slice
 

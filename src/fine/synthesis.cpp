@@ -21,8 +21,10 @@ public:
                         std::vector<z3::expr> const& parameters)
         : context_(context) {
         by_size_.resize(2);
-        for (z3::expr const& parameter : parameters)
-            add_unique(by_size_[1], parameter);
+        for (z3::expr const& parameter : parameters) {
+            if (parameter.get_sort().is_int())
+                add_unique(by_size_[1], parameter);
+        }
         add_unique(by_size_[1], context_.int_val(0));
         add_unique(by_size_[1], context_.int_val(1));
     }
@@ -132,17 +134,22 @@ std::string model_assignments(
 RefutationSynthesizer::RefutationSynthesizer(
     z3::context& context, std::string declaration_name,
     std::vector<z3::expr> parameters, z3::expr result_placeholder,
-    z3::expr specification, RainfallRecorder* rainfall)
+    z3::expr specification, RainfallRecorder* rainfall,
+    std::vector<z3::expr> grammar_inputs, bool arm_scope)
     : context_(context), declaration_name_(std::move(declaration_name)),
       parameters_(std::move(parameters)),
       result_placeholder_(std::move(result_placeholder)),
-      specification_(std::move(specification)), rainfall_(rainfall) {}
+      specification_(std::move(specification)), rainfall_(rainfall),
+      grammar_inputs_(std::move(grammar_inputs)), arm_scope_(arm_scope) {
+    if (grammar_inputs_.empty())
+        grammar_inputs_ = parameters_;
+}
 
 SynthesisResult RefutationSynthesizer::run() {
-    std::string run_scope = "synth:" + declaration_name_;
+    std::string run_scope = (arm_scope_ ? "synth-arm:" : "synth:") + declaration_name_;
     if (rainfall_) {
         rainfall_->record(
-            "scope", "synth.run.open", {run_scope}, "fine.synthesis",
+            "scope", arm_scope_ ? "synth.arm.open" : "synth.run.open", {run_scope}, "fine.synthesis",
             "Fine's native QF-LIA refutation loop; excludes Z3-internal rewrites and search steps",
             {RainfallRecorder::string_field("name", declaration_name_),
              RainfallRecorder::raw_field("parameters",
@@ -165,7 +172,7 @@ SynthesisResult RefutationSynthesizer::run() {
             context_.constant(name.c_str(), parameters_[i].get_sort()));
     }
 
-    CandidateEnumerator candidates(context_, parameters_);
+    CandidateEnumerator candidates(context_, grammar_inputs_);
     z3::solver gamma(context_);
     std::vector<SynthesisSelection> selections;
     z3::expr_vector active(context_);

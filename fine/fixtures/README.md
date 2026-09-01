@@ -58,6 +58,19 @@ body to the identical same-manager semantic AST.
 the first closes with one core term and no conditional, while the second has a
 renamed function and requires three core terms and nested conditionals.
 
+`synth-match-open.fine` is the first source-program interruption boundary. It
+fixes an exhaustive `MaybeInt` match, leaves the whole `some` arm as the named
+typed hole `?payload`, and keeps the `none` arm as ordinary source. The hole's
+integer grammar contains the unmatched integer parameter and the constructor's
+integer field. Fine synthesizes `value`, reparses and reifies that arm to exact
+same-manager identity, assembles the same match representation used by source,
+and refutes the negation of the completed match specification in a fresh query.
+Rainfall retains the exact hole span and the verified arm body as one admitted
+replacement. `fine-rain-host materialize` applies all such replacements in one
+revision transaction. `synth-match-materialized.fine` is the expected result;
+its trace has the whole-match verification query but no hole declaration,
+candidate enumeration, or synthesis query.
+
 `check-counterexample.fine` refutes a false subtraction claim and returns the
 negative/positive assignment `a = -1, b = 1` as a parseable Fine
 `counterexample` witness. The negative value gates literal lifting rather than

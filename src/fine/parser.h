@@ -46,7 +46,7 @@ namespace fine::syntax {
     };
 
     struct Expr {
-        enum class Kind { name, boolean, integer, tuple, call, binary, conditional };
+        enum class Kind { name, boolean, integer, tuple, call, binary, conditional, hole };
         enum class BinaryOp { equal, greater_equal, less_equal, logical_and, logical_or, add, subtract };
 
         Kind kind = Kind::name;
@@ -161,6 +161,8 @@ namespace fine::syntax {
         std::string name;
         std::vector<Parameter> parameters;
         Type result_type;
+        std::optional<Expr> scrutinee;
+        std::vector<MatchArm> arms;
         std::vector<Expr> ensures;
         std::size_t node_id = 0;
     };

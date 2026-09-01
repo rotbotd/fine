@@ -18,6 +18,7 @@ cmake --build build/fine --target fine-bin
 ./build/fine/fine demo-bisim
 ./build/fine/fine run fine/fixtures/two-state-bisim.fine
 ./build/fine/fine run fine/fixtures/synth-max.fine
+./build/fine/fine run fine/fixtures/synth-match-open.fine
 ./build/fine/fine run fine/fixtures/check-counterexample.fine
 ./build/fine/fine run fine/fixtures/check-valid.fine
 ./build/fine/fine run fine/fixtures/check-datatype-counterexample.fine
@@ -42,6 +43,7 @@ python fine/rainfall_generation_cli.py admit request.json edited.fine \
 python fine/rainfall_host_cli.py init .fine-live edited.fine \
   --document document:editor > launch.json
 python fine/rainfall_host_cli.py run .fine-live --fine ./build/fine/fine
+python fine/rainfall_host_cli.py materialize .fine-live
 python fine/rainfall_live_cli.py .fine-browser \
   fine/fixtures/two-state-bisim.fine --fine ./build/fine/fine
 ```
@@ -99,6 +101,17 @@ records the E-matching-only query's admitted clauses and any accepted instances;
 query scope never substitutes for a causal link. The translation, papers, and
 remaining STLC boundary are in `research/induction-translation.md`.
 
+The first interruptible synthesis fixture fixes an exhaustive datatype match
+while leaving one whole arm as `?payload`. Rainfall gives that source node a
+snapshot-scoped typed grammar, records the independently verified lifted arm,
+and binds its exact source span to the replacement text. Fine then assembles
+and freshly verifies the whole match. `fine-rain-host materialize` accepts only
+the current admitted trace and applies every verified arm replacement as one
+host-owned edit transaction. Re-running the resulting source follows the normal
+completed-arm path: its trace contains one whole-match verification query and
+no candidate enumeration. Per-arm cancellation and residual display are not in
+this slice.
+
 For every rain, the first objects bind the run to a fresh opaque document and an
 exact source snapshot (revision, SHA-256 hash, and byte length). Parsed declarations
 and expressions have snapshot-scoped source identities. The `check` elaborator
@@ -134,7 +147,10 @@ to transported/unplaced, supersedes the previous request, issues the next one,
 and atomically replaces the state. `run` executes Fine without holding that
 lock, so edits remain responsive, then reopens the latest state for admission.
 This deliberately permits a real late completion and proves that it is
-discarded. The host is a filesystem protocol and test harness, not an editor UI.
+discarded. `materialize` validates the current admitted match witness and feeds
+its exact replacements back through one `advance`, so the new bytes are never
+mistaken for evidence admitted under the predecessor revision. The host is a
+filesystem protocol and test harness, not an editor UI.
 
 `fine-rain-live` is the first deliberately small editor integration. It serves a
 local browser textarea and an evidence pane from `127.0.0.1`, turns each changed

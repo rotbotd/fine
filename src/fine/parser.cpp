@@ -46,6 +46,7 @@ namespace fine::syntax {
             logical_or,
             plus,
             minus,
+            question,
         };
 
         struct Token {
@@ -98,6 +99,7 @@ namespace fine::syntax {
             case TokenKind::logical_or: return "`||`";
             case TokenKind::plus: return "`+`";
             case TokenKind::minus: return "`-`";
+            case TokenKind::question: return "`?`";
             }
             return "a token";
         }
@@ -157,6 +159,7 @@ namespace fine::syntax {
                 case '=': kind = TokenKind::equal; break;
                 case '+': kind = TokenKind::plus; break;
                 case '-': kind = TokenKind::minus; break;
+                case '?': kind = TokenKind::question; break;
                 default: throw ParseError({begin, position()}, std::string("unexpected character `") + c + "`");
                 }
                 return {kind, {begin, position()}, source_.substr(begin.offset, 1)};
@@ -455,6 +458,38 @@ namespace fine::syntax {
                 take(TokenKind::colon, "before the synthesized result type");
                 Type result_type = type();
                 take(TokenKind::left_brace, "before the synthesis specification");
+                std::optional<Expr> scrutinee;
+                std::vector<MatchArm> arms;
+                if (current_.kind == TokenKind::match_kw) {
+                    take(TokenKind::match_kw);
+                    scrutinee = expr();
+                    take(TokenKind::left_brace, "after the matched expression");
+                    while (current_.kind != TokenKind::right_brace) {
+                        Token constructor = take(TokenKind::identifier, "as a match constructor");
+                        std::vector<MatchBinding> bindings;
+                        SourceSpan pattern_span = constructor.span;
+                        if (accept(TokenKind::left_paren)) {
+                            while (current_.kind != TokenKind::right_paren) {
+                                Token binding = take(TokenKind::identifier, "as a pattern binding");
+                                bindings.push_back({binding.span, std::string(binding.text)});
+                                pattern_span = joined(constructor.span, binding.span);
+                                if (!accept(TokenKind::comma) && current_.kind != TokenKind::right_paren)
+                                    fail("expected `,` or `)` after a pattern binding");
+                            }
+                            Token close_pattern = take(TokenKind::right_paren, "to close the pattern");
+                            pattern_span = joined(constructor.span, close_pattern.span);
+                        }
+                        take(TokenKind::fat_arrow, "after the match pattern");
+                        Expr value = expr();
+                        arms.push_back({joined(pattern_span, value.span), std::string(constructor.text),
+                                        std::move(bindings), std::move(value)});
+                        if (!accept(TokenKind::comma) && current_.kind != TokenKind::right_brace)
+                            fail("expected `,` or `}` after a match arm");
+                    }
+                    if (arms.empty())
+                        fail("a synthesis match needs at least one arm");
+                    take(TokenKind::right_brace, "to close the synthesis match");
+                }
                 take(TokenKind::ensures_kw, "as the synthesis specification");
                 take(TokenKind::left_brace, "after `ensures`");
                 std::vector<Expr> ensures;
@@ -467,7 +502,7 @@ namespace fine::syntax {
                 take(TokenKind::right_brace, "to close `ensures`");
                 Token close = take(TokenKind::right_brace, "to close the synthesis declaration");
                 return {joined(first.span, close.span), std::string(name.text), std::move(parameters),
-                        std::move(result_type), std::move(ensures)};
+                        std::move(result_type), std::move(scrutinee), std::move(arms), std::move(ensures)};
             }
 
             std::vector<Parameter> parameters() {
@@ -640,6 +675,15 @@ namespace fine::syntax {
             }
 
             Expr primary() {
+                if (current_.kind == TokenKind::question) {
+                    Token first = take(TokenKind::question);
+                    Token name = take(TokenKind::identifier, "as the hole name");
+                    Expr result;
+                    result.kind = Expr::Kind::hole;
+                    result.name = std::string(name.text);
+                    result.span = joined(first.span, name.span);
+                    return identified(std::move(result));
+                }
                 if (current_.kind == TokenKind::identifier) {
                     Token name = take(TokenKind::identifier);
                     Expr result;
@@ -723,7 +767,7 @@ namespace fine::syntax {
                     result.span = joined(first.span, close.span);
                     return identified(std::move(result));
                 }
-                fail("expected a name, call, integer, Boolean, tuple, or conditional expression");
+                fail("expected a name, call, integer, Boolean, tuple, conditional, or hole expression");
             }
 
             TableLiteral table_literal() {

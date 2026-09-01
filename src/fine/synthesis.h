@@ -37,7 +37,9 @@ public:
     RefutationSynthesizer(z3::context& context, std::string declaration_name,
                           std::vector<z3::expr> parameters,
                           z3::expr result_placeholder, z3::expr specification,
-                          RainfallRecorder* rainfall = nullptr);
+                          RainfallRecorder* rainfall = nullptr,
+                          std::vector<z3::expr> grammar_inputs = {},
+                          bool arm_scope = false);
 
     SynthesisResult run();
 
@@ -48,6 +50,8 @@ private:
     z3::expr result_placeholder_;
     z3::expr specification_;
     RainfallRecorder* rainfall_;
+    std::vector<z3::expr> grammar_inputs_;
+    bool arm_scope_ = false;
 };
 
 } // namespace fine

@@ -1,0 +1,14 @@
+enum MaybeInt {
+  none,
+  some(value: Int),
+}
+
+synth unwrap(input: MaybeInt, fallback: Int): Int {
+  match input {
+    none => fallback,
+    some(value) => value,
+  }
+  ensures {
+    (input == none && result == fallback) || input == some(result);
+  }
+}

@@ -227,27 +227,66 @@ def _transport_annotations(annotations: list[dict[str, Any]], displayed_source: 
     return result
 
 
+def _advance_locked(host: Path, state: dict[str, Any], edits: list[Edit]) -> dict[str, Any]:
+    old_source = state["display_source"].encode("utf-8")
+    _require(bool(edits), "an empty transaction does not advance a revision")
+    displayed_source = apply_edits(old_source, edits)
+    try:
+        displayed_text = displayed_source.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise HostError("transaction produced non-UTF-8 Fine source") from error
+    previous = state["generations"][state["current_generation"]]
+    if previous["status"] == "requested":
+        previous["status"] = "superseded"
+    state["display_snapshot"] = source_identity(
+        displayed_source, state["document"]["id"], state["display_snapshot"]["revision"] + 1)
+    state["display_source"] = displayed_text
+    state["annotations"] = _transport_annotations(state["annotations"], displayed_source, edits)
+    _issue_generation(host, state, displayed_source)
+    save_state(host, state)
+    return _launch_description(host, state)
+
+
 def advance(host: Path, edit_value: Any) -> dict[str, Any]:
     with locked(host):
         state = load_state(host)
-        old_source = state["display_source"].encode("utf-8")
-        edits = load_edits(edit_value, len(old_source))
-        _require(bool(edits), "an empty transaction does not advance a revision")
-        displayed_source = apply_edits(old_source, edits)
-        try:
-            displayed_text = displayed_source.decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise HostError("transaction produced non-UTF-8 Fine source") from error
-        previous = state["generations"][state["current_generation"]]
-        if previous["status"] == "requested":
-            previous["status"] = "superseded"
-        state["display_snapshot"] = source_identity(
-            displayed_source, state["document"]["id"], state["display_snapshot"]["revision"] + 1)
-        state["display_source"] = displayed_text
-        state["annotations"] = _transport_annotations(state["annotations"], displayed_source, edits)
-        _issue_generation(host, state, displayed_source)
-        save_state(host, state)
-        return _launch_description(host, state)
+        edits = load_edits(edit_value, len(state["display_source"].encode("utf-8")))
+        return _advance_locked(host, state, edits)
+
+
+def materialize(host: Path) -> dict[str, Any]:
+    """Apply the current admitted match witness as one host-owned transaction."""
+    with locked(host):
+        state = load_state(host)
+        generation = state["current_generation"]
+        record = state["generations"][generation]
+        _require(record["status"] == "admitted",
+                 "only the current admitted generation can be materialized")
+        trace_file = record.get("trace_file")
+        _require(isinstance(trace_file, str) and trace_file,
+                 "admitted generation has no retained trace")
+        source = state["display_source"].encode("utf-8")
+        events = load_events((host / trace_file).read_text().splitlines())
+        validate(source, events)
+        witnesses = [event for event in events
+                     if event.get("operation") == "fine.match-witness"]
+        _require(len(witnesses) == 1, "current trace has no unique match witness")
+        replacements = witnesses[0]["data"].get("replacements")
+        _require(isinstance(replacements, list) and replacements,
+                 "current match witness has no open arms to materialize")
+        for replacement in replacements:
+            begin, end = replacement["from"], replacement["to"]
+            _require(source[begin:end].startswith(b"?"),
+                     "current source no longer contains the admitted hole text")
+        edit_values = [
+            {key: replacement[key] for key in ("from", "to", "insert")}
+            for replacement in replacements
+        ]
+        edits = load_edits(edit_values, len(source))
+        result = _advance_locked(host, state, edits)
+        result["materialized_from"] = generation
+        result["replacements"] = len(replacements)
+        return result
 
 
 def _record_completion(host: Path, state: dict[str, Any], generation: str,
@@ -345,6 +384,8 @@ def main() -> int:
     complete_parser.add_argument("host", type=Path)
     complete_parser.add_argument("generation")
     complete_parser.add_argument("rainfall", type=Path)
+    materialize_parser = commands.add_parser("materialize")
+    materialize_parser.add_argument("host", type=Path)
     state_parser = commands.add_parser("state")
     state_parser.add_argument("host", type=Path)
     arguments = parser.parse_args()
@@ -358,6 +399,8 @@ def main() -> int:
             result = run_generation(arguments.host, arguments.fine, arguments.generation)
         elif arguments.command == "complete":
             result = complete(arguments.host, arguments.generation, arguments.rainfall.read_bytes())
+        elif arguments.command == "materialize":
+            result = materialize(arguments.host)
         else:
             with locked(arguments.host):
                 result = load_state(arguments.host)

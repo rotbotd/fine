@@ -56,9 +56,9 @@ term covered by the round-trip law.
 
 Use braced expression blocks, explicit call parentheses, named arguments,
 enums, vertical matches, and `proof` / `takes` / `gives`. Use `let` rather than
-Latte's web-oriented `const`. Do not copy Latte's typeclass machinery. This is
-the surface direction, not a claim that every form is implemented: constructor
-calls exist, while vertical `match` is still absent.
+Latte's web-oriented `const`. Do not copy Latte's typeclass machinery. Vertical
+`match` is currently declaration-level only: recursive `function` and partial
+`synth` declarations have it, but arbitrary expressions do not.
 
 ## First vertical slice
 
@@ -140,6 +140,28 @@ decoding a selector assignment or proof is not `lift`, and lowering a Fine body
 to its Z3 meaning is a one-way compiler operation. See
 `research/synthesis-pressure-test.md` for the selected refutation-synthesis
 slice, result vocabulary, and provenance obligations.
+
+The first interruptible source slice admits an exhaustive datatype match inside
+`synth`. A whole arm may be a named hole such as `?payload`; that parse-local
+node becomes a snapshot-scoped Rainfall object with expected type `Int` and the
+fixed `fine.qf-lia-int.v1` grammar. The grammar inputs are precisely the integer
+parameters still in scope plus integer fields bound by that constructor. A
+completed arm is elaborated normally. Each open arm is instantiated at its
+constructor with fresh field terms, synthesized in a named `synth-arm` scope,
+lifted to ordinary arm syntax, and reparsed/reified to the identical semantic
+term. The resulting arms are assembled with the same datatype recognizers and
+accessors used for a source match; a fresh public query refutes the negation of
+the complete specification.
+
+`fine.match-witness` does not merely print the result. It binds each exact hole
+range to the body recorded by that arm's verified close event. Replay rejects a
+moved range, changed insertion, unknown hole, or missing arm witness.
+`fine-rain-host materialize` validates the retained trace against the current
+admitted generation and applies all replacements under the host lock as one
+ordinary revision advance. The new generation reparses the materialized arms
+and performs only whole-match verification: it has no hole or candidate events.
+Arm searches are still sequential inside one source generation, so this is not
+yet independent per-arm cancellation or residual projection.
 
 ## External structural induction
 
@@ -298,6 +320,14 @@ failure is recorded and leaves transported markers in place. This harness uses
 POSIX `flock`, ordinary subprocess execution, and atomic local-filesystem rename;
 it is not itself an editor, cross-machine collaboration protocol, or a claim
 that cancellation succeeded.
+
+Materialization uses the same transaction machinery rather than writing around
+it. `materialize` accepts only the current admitted generation, reloads and
+validates its retained trace against the current bytes, requires one match
+witness with nonempty verified replacements, and checks that every named range
+still contains a hole. It then performs one `_advance_locked` transaction. The
+resulting source is deliberately unadmitted until the newly issued generation
+finishes; old annotations are transported in the meantime.
 
 `fine-rain-live` is a thin local browser client around this same host. It derives
 one minimal UTF-8 byte edit from each submitted textarea value, calls `advance`,
