@@ -1101,3 +1101,32 @@ nix flake check
 ```
 
 No runtime claim or clean artifact changed.
+
+## 2026-09-01 — native indexed-family encoding follow-up
+
+Surveyed alternatives to F*'s universal `Term`/`HasType` encoding after h
+rejected that representation for Fine. The added section in
+`fine/research/gadts-smt.md` separates five candidates rather than treating
+"erasure" as one design:
+
+- ATS keeps program values and static indices in separate sorts, represents
+  proof-only indexed families as erasable `dataprop`s, and sends index constraints
+  to a solver. This is the closest source-language precedent for Fine's `Step`.
+- DML and Thoralf use the solver only for a restricted, explicitly sorted index
+  constraint domain. They preserve a thin many-sorted target but do not provide
+  solver-visible derivation induction.
+- Inductively interpreted constrained Horn clauses represent proof-irrelevant
+  indexed families as least predicates and perform induction on predicate
+  derivations while delegating branch formulas to SMT. The cofinite dependent
+  function field still requires an elaboration before ordinary finite CHCs.
+- The index-erasure analyses of Brady--McBride--McKinna and Ghostbuster identify
+  families whose indices are recoverable from constructor structure, permitting a
+  native ADT plus checked/synthesized indices rather than a uniform raw carrier.
+- SMT-LIB 3's current proposal adds dependent function types but explicitly keeps
+  algebraic datatypes non-dependent, so there is no imminent standard native GADT
+  target that removes the compiler representation choice.
+
+The resulting candidate is a hybrid: ATS-style static index sorts and proof
+erasure; native Z3 datatypes whenever indices are structurally synthesizable; and
+an inductive-relation/CHC layer for ghost indexed families. This is research only;
+no implementation, runtime, or artifact claim changed.

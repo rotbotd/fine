@@ -134,3 +134,69 @@ terms is ornamental. If the erased encoding can make the grammar intrinsically
 index-directed without turning all typing into F*'s quantified `HasType`
 universe, it earns the invariant change. Otherwise the honest scope is
 closed-index specialization, with general GADTs deferred beyond v1.
+
+## More native candidates than F*'s universal `Term`
+
+The strongest existing precedent is ATS's separation of *statics* from runtime
+values. Indexed datatypes and proof-only indexed families (`dataprop`) range over
+explicit static sorts such as `int`, `type`, or a user-defined syntax sort. The
+typechecker turns constructor and pattern use into constraints over those native
+index sorts; proof terms are required to be total and are erased after checking.
+There is no requirement that ordinary program values, integers, and object syntax
+share one universal carrier. Chen and Xi's
+[Combining Programming with Theorem Proving](https://www.cs.bu.edu/~hwxi/atslangweb/MYDATA/CPwTP-icfp05.pdf)
+gives the constraint-generation boundary, while Xi's
+[ATS language account](https://www.researchgate.net/publication/225190597_ATS_A_Language_That_Combines_Programming_with_Theorem_Proving)
+shows indexed datatypes and `dataprop` side by side. This is the closest source
+architecture for Fine's `Step`: keep `Tm` a native Z3 datatype, make `Step` an
+indexed ghost family, erase its witnesses from value-level SMT, and send only its
+index constraints and proof obligations to Z3.
+
+DML and Thoralf isolate an even smaller use of automation. DML restricts indices
+to a separately chosen constraint domain and reduces checking to constraint
+satisfaction there; its examples include an indexed representation and evaluator
+for simply typed lambda calculus. See Xi and Pfenning,
+[Dependent Types in Practical Programming](https://www.cs.cmu.edu/~fp/papers/popl99.pdf).
+Thoralf leaves GADT elaboration in GHC and asks an SMT solver only to establish
+equalities between type indices that already have direct SMT sorts. See Otwani and
+Eisenberg,
+[The Thoralf Plugin](https://richarde.dev/papers/2018/thoralf/thoralf.pdf).
+Both support keeping the solver signature many-sorted, but neither by itself gives
+Fine solver-visible derivation construction or induction.
+
+For proof-irrelevant indexed families, constrained Horn clauses are a second real
+backend rather than merely a different surface encoding. Constructors become
+definite clauses defining `Step(before, after)` as a least predicate; elimination
+is induction on the derivation of an atom. Unno and Torii's
+[Automating Induction for Solving Horn Clauses](https://arxiv.org/abs/1610.06768)
+does exactly that separation: an induction engine case-analyzes derivation rules
+and an ordinary SMT solver discharges the resulting background-theory obligations.
+This is unusually close to Fine's intended Rainfall loop. The important limitation
+for the locally nameless test is syntactic: a constructor premise of the form
+`forall x outside L, Step(open b x, open b' x)` is not an ordinary finite Horn
+body. It needs lambda lifting/defunctionalization or a source proof elaboration
+before it reaches the CHC layer.
+
+Two erasure papers explain how much native datatype structure can survive. Brady,
+McBride, and McKinna's
+[Inductive Families Need Not Store Their Indices](https://www.research.ed.ac.uk/en/publications/inductive-families-need-not-store-their-indices)
+derives when indices and even constructor tags are recoverable from elimination.
+Zakian et al.'s
+[Ghostbuster](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/D8FEC9439E1D550CC05CFEC7AD5F1E1D/S0956796818000114a.pdf/ghostbuster-a-tool-for-simplifying-and-converting-gadts.pdf)
+turns a checked class of GADTs into ordinary ADTs plus round-tripping conversions,
+distinguishing indices synthesized from structure from indices that require an
+explicit runtime representation. For Fine this suggests a per-family analysis:
+use a native Z3 datatype when every index is constructor-synthesizable, and fall
+back to a ghost relation or retained index field only where information flow says
+the index cannot be recovered. It is not a general encoding for the higher-order
+cofinite field in `Step`, but it is strictly better than assigning every family the
+same erased representation.
+
+There is no current standard native dependent-datatype target to wait for. The
+preliminary [SMT-LIB 3 proposal](https://smt-lib.org/version3.shtml) adds
+higher-order functions and dependent function types, but deliberately leaves
+algebraic datatypes non-dependent on values. Consequently the plausible Fine
+design is a hybrid, not a hidden solver feature: ATS-style separate index sorts
+and proof erasure at the source boundary; native Z3 datatypes for ordinary and
+index-synthesizable data; and an inductive-predicate/CHC representation only for
+ghost families whose derivations matter to proofs.
