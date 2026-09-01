@@ -44,7 +44,7 @@ struct Type {
 };
 
 struct Expr {
-    enum class Kind { name, boolean, integer, tuple, binary, conditional };
+    enum class Kind { name, boolean, integer, tuple, call, binary, conditional };
     enum class BinaryOp { equal, greater_equal, less_equal, logical_and,
                           logical_or, add, subtract };
 
@@ -57,11 +57,22 @@ struct Expr {
     std::vector<Expr> elements;
 };
 
+struct EnumField {
+    SourceSpan span;
+    std::string name;
+    Type type;
+};
+
+struct EnumCase {
+    SourceSpan span;
+    std::string name;
+    std::vector<EnumField> fields;
+};
+
 struct EnumDecl {
     SourceSpan span;
     std::string name;
-    std::vector<std::string> cases;
-    std::vector<SourceSpan> case_spans;
+    std::vector<EnumCase> cases;
 };
 
 struct TableEntry {

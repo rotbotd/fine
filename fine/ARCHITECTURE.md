@@ -38,7 +38,9 @@ term covered by the round-trip law.
 
 Use braced expression blocks, explicit call parentheses, named arguments,
 enums, vertical matches, and `proof` / `takes` / `gives`. Use `let` rather than
-Latte's web-oriented `const`. Do not copy Latte's typeclass machinery.
+Latte's web-oriented `const`. Do not copy Latte's typeclass machinery. This is
+the surface direction, not a claim that every form is implemented: constructor
+calls exist, while vertical `match` is still absent.
 
 ## First vertical slice
 
@@ -126,16 +128,26 @@ slice, result vocabulary, and provenance obligations.
 `check name(parameters) { assumes { ... } ensures { ... } }` turns a source
 claim into one satisfiability query: the assumptions are conjoined with the
 negation of the guarantees. `unsat` means there is no counterexample in the
-admitted Int/Bool domain. `sat` is not collapsed to a diagnostic string: Fine
+admitted value domain. `sat` is not collapsed to a diagnostic string: Fine
 completes every parameter under that returned model and emits a typed,
 parseable `counterexample name { ... }` declaration.
 
-The round-trip law applies separately to each primitive assignment. Lifting a
-Z3 integer numeral or Boolean produces ordinary Fine literal syntax, including
-negative integer literals; parsing and elaborating it in the same manager must
-recover the exact AST. The witness declaration itself is a source envelope and
-is deliberately not executable. This first check slice has no quantifiers,
-arrays, enums, shrinking, or claim that the returned model is a minimal
+The round-trip law applies separately to each assignment. Ints, Bools, finite
+enums, binary tuples, and monomorphic algebraic datatypes lift to ordinary Fine
+syntax; parsing and elaborating the result in the same manager must recover the
+exact AST. Negative integers remain numerals. An enum declaration containing a
+field-bearing constructor lowers directly to one Z3 datatype; its constructor
+fields may refer directly to the enclosing type, so recursive trees are real
+Z3 constructor terms rather than tagged arrays. Constructor calls are
+positional even though declarations name their fields.
+
+This datatype slice has no projection syntax, patterns, exhaustiveness check,
+mutual recursion, parametric types, indexed constructors, codata, or datatype
+synthesis. Recursive self-reference is admitted only as a direct field type;
+other referenced types must already be declared. Pure nullary enums retain the
+finite enumeration path used by bisimulation. The witness declaration itself
+is a source envelope and is deliberately not executable. Checks still have no
+quantifiers, arrays, shrinking, or claim that the returned model is a minimal
 counterexample.
 
 ## Rainfall identity and coverage

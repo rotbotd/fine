@@ -1,0 +1,20 @@
+// A recursive Fine enum lowers directly to one Z3 datatype. The returned
+// constructor tree and finite enum tag must survive lift, print, parse, and
+// elaboration unchanged.
+enum Tree {
+  leaf,
+  node(value: Int, left: Tree, right: Tree),
+}
+
+enum Mark { marked, unmarked }
+
+check node_is_leaf(tree: Tree, mark: Mark) {
+  assumes {
+    tree == node(7, leaf, leaf);
+    mark == marked;
+  }
+  ensures {
+    tree == leaf;
+    mark == unmarked;
+  }
+}

@@ -282,8 +282,29 @@ private:
             fail("an enum needs at least one case");
         for (;;) {
             Token item = take(TokenKind::identifier, "as an enum case");
-            result.cases.emplace_back(item.text);
-            result.case_spans.push_back(item.span);
+            EnumCase enum_case;
+            enum_case.name = std::string(item.text);
+            SourceSpan case_span = item.span;
+            if (accept(TokenKind::left_paren)) {
+                while (current_.kind != TokenKind::right_paren) {
+                    Token field_name = take(
+                        TokenKind::identifier, "as a constructor field name");
+                    take(TokenKind::colon, "after the constructor field name");
+                    Type field_type = type();
+                    case_span = joined(item.span, field_type.span);
+                    enum_case.fields.push_back(
+                        {joined(field_name.span, field_type.span),
+                         std::string(field_name.text), std::move(field_type)});
+                    if (!accept(TokenKind::comma) &&
+                        current_.kind != TokenKind::right_paren)
+                        fail("expected `,` or `)` after a constructor field");
+                }
+                Token close = take(TokenKind::right_paren,
+                                   "to close the constructor fields");
+                case_span = joined(item.span, close.span);
+            }
+            enum_case.span = case_span;
+            result.cases.push_back(std::move(enum_case));
             if (!accept(TokenKind::comma)) break;
             if (current_.kind == TokenKind::right_brace) break;
         }
@@ -519,9 +540,22 @@ private:
         if (current_.kind == TokenKind::identifier) {
             Token name = take(TokenKind::identifier);
             Expr result;
+            result.name = std::string(name.text);
+            if (accept(TokenKind::left_paren)) {
+                result.kind = Expr::Kind::call;
+                while (current_.kind != TokenKind::right_paren) {
+                    result.elements.push_back(expr());
+                    if (!accept(TokenKind::comma) &&
+                        current_.kind != TokenKind::right_paren)
+                        fail("expected `,` or `)` after a call argument");
+                }
+                Token close = take(TokenKind::right_paren,
+                                   "to close the constructor call");
+                result.span = joined(name.span, close.span);
+                return result;
+            }
             result.kind = Expr::Kind::name;
             result.span = name.span;
-            result.name = std::string(name.text);
             return result;
         }
         if (current_.kind == TokenKind::true_kw || current_.kind == TokenKind::false_kw) {
@@ -587,7 +621,7 @@ private:
             result.span = joined(first.span, close.span);
             return result;
         }
-        fail("expected a name, integer, Boolean, tuple, or conditional expression");
+        fail("expected a name, call, integer, Boolean, tuple, or conditional expression");
     }
 
     TableLiteral table_literal() {

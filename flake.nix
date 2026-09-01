@@ -61,6 +61,17 @@
           echo "$verified"
           grep -F "verified: addition_preserves_left" <<<"$verified"
           grep -F "counterexample: none" <<<"$verified"
+          datatype="$($out/bin/fine run "$src/fine/fixtures/check-datatype-counterexample.fine")"
+          echo "$datatype"
+          grep -F "refuted: node_is_leaf" <<<"$datatype"
+          grep -F "tree: Tree = node(7, leaf, leaf);" <<<"$datatype"
+          grep -F "mark: Mark = marked;" <<<"$datatype"
+          grep -F "parse(print(lift(values))): exact ast identity" <<<"$datatype"
+          tuple="$($out/bin/fine run "$src/fine/fixtures/check-tuple-counterexample.fine")"
+          echo "$tuple"
+          grep -F "refuted: pair_claim" <<<"$tuple"
+          grep -F "pair: (Int, Bool) = (7, true);" <<<"$tuple"
+          grep -F "parse(print(lift(values))): exact ast identity" <<<"$tuple"
           projection="$($out/bin/fine run "$src/fine/fixtures/synth-projection.fine")"
           grep -F "source-program: synthesized keep from 1 ground instances; core kept 1" <<<"$projection"
           grep -Fx "value" <<<"$projection"
@@ -240,6 +251,29 @@
           assert "b: Int = 1;" in witnesses[0]["data"]["source"]
           assert "z3.theory-rewrite" not in operations
           assert "z3.mbqi-instance" not in operations
+          PY
+          datatype_rain="$($out/bin/fine rain "$src/fine/fixtures/check-datatype-counterexample.fine")"
+          RAIN="$datatype_rain" ${pkgs.python3}/bin/python - <<'PY'
+          import json, os
+          events = [json.loads(line) for line in os.environ["RAIN"].splitlines()]
+          assignments = [event for event in events
+                         if event["operation"] == "model.eval-assignment"]
+          assert [event["data"]["parameter"] for event in assignments] == [
+              "tree", "mark"
+          ]
+          assert all(event["data"]["relation"] == "equality-under-this-model"
+                     for event in assignments)
+          witnesses = [event for event in events
+                       if event["operation"] == "fine.counterexample-witness"]
+          assert len(witnesses) == 1
+          witness = witnesses[0]["data"]
+          assert witness["parse_reify_exact_identity"] is True
+          assert "tree: Tree = node(7, leaf, leaf);" in witness["source"]
+          assert "mark: Mark = marked;" in witness["source"]
+          terms = [event for event in events
+                   if event["operation"] == "term.declare"]
+          assert any("node 7 leaf leaf" in event["data"]["text"]
+                     for event in terms)
           PY
           runHook postInstallCheck
         '';

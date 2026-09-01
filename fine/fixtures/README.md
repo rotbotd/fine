@@ -65,6 +65,14 @@ allowing the printer to smuggle SMT-LIB syntax into the source. `check-valid.fin
 uses addition over mathematical integers to exercise the separate `unsat` / no
 counterexample path.
 
+`check-datatype-counterexample.fine` declares a recursive `Tree` with `leaf`
+and field-bearing `node` constructors, forces the model value
+`node(7, leaf, leaf)`, and returns that exact constructor tree as parseable Fine
+syntax alongside the nullary enum value `marked`.
+`check-tuple-counterexample.fine` separately makes a binary tuple an ordinary
+check parameter and returns `(7, true)`. Both fixtures gate exact same-manager
+round trips rather than merely comparing printed text.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.

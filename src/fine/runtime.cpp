@@ -21,15 +21,17 @@ namespace {
 using TypePtr = std::shared_ptr<struct RuntimeType>;
 
 struct EnumInfo;
+struct DatatypeInfo;
 
 struct RuntimeType {
-    enum class Kind { boolean, integer, enumeration, tuple, table };
+    enum class Kind { boolean, integer, enumeration, datatype, tuple, table };
 
     Kind kind;
     z3::sort sort;
     std::string display;
     std::vector<TypePtr> arguments;
     EnumInfo* enumeration = nullptr;
+    DatatypeInfo* datatype = nullptr;
     std::unique_ptr<z3::func_decl> tuple_constructor;
 
     RuntimeType(Kind kind, z3::sort sort, std::string display)
@@ -42,6 +44,24 @@ struct EnumInfo {
     std::vector<std::string> case_names;
     std::vector<z3::func_decl> constructors;
     std::vector<z3::expr> values;
+};
+
+struct DatatypeCaseInfo {
+    std::string name;
+    std::vector<std::string> field_names;
+    std::vector<TypePtr> field_types;
+    z3::func_decl constructor;
+    z3::func_decl recognizer;
+    std::vector<z3::func_decl> accessors;
+
+    DatatypeCaseInfo(z3::context& context)
+        : constructor(context), recognizer(context) {}
+};
+
+struct DatatypeInfo {
+    std::string name;
+    TypePtr type;
+    std::vector<DatatypeCaseInfo> cases;
 };
 
 struct Binding {
@@ -57,13 +77,14 @@ struct TypedExpression {
 };
 
 struct SurfaceValue {
-    enum class Kind { boolean, enumeration, tuple };
+    enum class Kind { boolean, enumeration, datatype, tuple };
 
     Kind kind = Kind::boolean;
     bool boolean = false;
     EnumInfo* enumeration = nullptr;
     unsigned case_index = 0;
     std::vector<SurfaceValue> elements;
+    DatatypeInfo* datatype = nullptr;
 };
 
 struct SurfaceEntry {
@@ -108,6 +129,8 @@ private:
     std::map<std::string, TypePtr> types_;
     std::map<std::string, std::unique_ptr<EnumInfo>> enums_;
     std::map<std::string, std::pair<EnumInfo*, unsigned>> cases_;
+    std::map<std::string, std::unique_ptr<DatatypeInfo>> datatypes_;
+    std::map<std::string, std::pair<DatatypeInfo*, unsigned>> constructors_;
     std::map<std::string, Binding> bindings_;
     std::map<std::string, TypePtr> compound_types_;
     std::set<std::string> value_names_;
@@ -126,15 +149,31 @@ private:
         reserve_type_name(declaration.name, declaration.span);
         std::set<std::string> local_cases;
         for (std::size_t i = 0; i < declaration.cases.size(); ++i) {
-            std::string const& name = declaration.cases[i];
+            std::string const& name = declaration.cases[i].name;
             if (!local_cases.insert(name).second)
-                reject(declaration.case_spans[i], "duplicate enum case `" + name + "`");
-            reserve_value_name(name, declaration.case_spans[i]);
+                reject(declaration.cases[i].span,
+                       "duplicate enum case `" + name + "`");
+            reserve_value_name(name, declaration.cases[i].span);
+            std::set<std::string> local_fields;
+            for (syntax::EnumField const& field : declaration.cases[i].fields) {
+                if (!local_fields.insert(field.name).second)
+                    reject(field.span, "duplicate field `" + field.name +
+                                           "` in constructor `" + name + "`");
+            }
+        }
+
+        bool has_fields = std::any_of(
+            declaration.cases.begin(), declaration.cases.end(),
+            [](syntax::EnumCase const& item) { return !item.fields.empty(); });
+        if (has_fields) {
+            declare_datatype(declaration);
+            return;
         }
 
         std::vector<char const*> names;
         names.reserve(declaration.cases.size());
-        for (std::string const& name : declaration.cases) names.push_back(name.c_str());
+        for (syntax::EnumCase const& item : declaration.cases)
+            names.push_back(item.name.c_str());
         z3::func_decl_vector constructors(context_);
         z3::func_decl_vector testers(context_);
         z3::sort sort = context_.enumeration_sort(
@@ -143,7 +182,8 @@ private:
 
         auto info = std::make_unique<EnumInfo>();
         info->name = declaration.name;
-        info->case_names = declaration.cases;
+        for (syntax::EnumCase const& item : declaration.cases)
+            info->case_names.push_back(item.name);
         TypePtr type = std::make_shared<RuntimeType>(
             RuntimeType::Kind::enumeration, sort, declaration.name);
         info->type = type;
@@ -157,6 +197,102 @@ private:
             cases_.emplace(stable->case_names[i], std::make_pair(stable, i));
         types_.emplace(declaration.name, type);
         enums_.emplace(declaration.name, std::move(info));
+    }
+
+    void declare_datatype(syntax::EnumDecl const& declaration) {
+        z3::constructors z3_constructors(context_);
+        std::vector<std::vector<bool>> self_fields;
+        std::vector<std::vector<TypePtr>> resolved_fields;
+        self_fields.reserve(declaration.cases.size());
+        resolved_fields.reserve(declaration.cases.size());
+
+        z3::symbol datatype_name = context_.str_symbol(declaration.name.c_str());
+        for (syntax::EnumCase const& item : declaration.cases) {
+            std::vector<z3::symbol> field_names;
+            std::vector<z3::sort> field_sorts;
+            std::vector<bool> case_self_fields;
+            std::vector<TypePtr> case_resolved_fields;
+            for (syntax::EnumField const& field : item.fields) {
+                field_names.push_back(context_.str_symbol(field.name.c_str()));
+                bool self = field.type.kind == syntax::Type::Kind::named &&
+                            field.type.name == declaration.name;
+                case_self_fields.push_back(self);
+                if (self) {
+                    field_sorts.push_back(context_.datatype_sort(datatype_name));
+                    case_resolved_fields.push_back(nullptr);
+                } else {
+                    TypePtr type = resolve_type(field.type);
+                    if (type->kind == RuntimeType::Kind::table)
+                        reject(field.type.span,
+                               "Table fields are outside Fine's first datatype slice");
+                    field_sorts.push_back(type->sort);
+                    case_resolved_fields.push_back(type);
+                }
+            }
+            std::string recognizer = "is_" + item.name;
+            z3_constructors.add(
+                context_.str_symbol(item.name.c_str()),
+                context_.str_symbol(recognizer.c_str()),
+                static_cast<unsigned>(field_names.size()), field_names.data(),
+                field_sorts.data());
+            self_fields.push_back(std::move(case_self_fields));
+            resolved_fields.push_back(std::move(case_resolved_fields));
+        }
+
+        z3::sort sort = context_.datatype(datatype_name, z3_constructors);
+        auto info = std::make_unique<DatatypeInfo>();
+        info->name = declaration.name;
+        TypePtr type = std::make_shared<RuntimeType>(
+            RuntimeType::Kind::datatype, sort, declaration.name);
+        info->type = type;
+        type->datatype = info.get();
+
+        for (std::size_t i = 0; i < declaration.cases.size(); ++i) {
+            syntax::EnumCase const& item = declaration.cases[i];
+            DatatypeCaseInfo case_info(context_);
+            case_info.name = item.name;
+            z3::func_decl_vector accessors(context_);
+            z3_constructors.query(static_cast<unsigned>(i),
+                                  case_info.constructor,
+                                  case_info.recognizer, accessors);
+            for (std::size_t j = 0; j < item.fields.size(); ++j) {
+                case_info.field_names.push_back(item.fields[j].name);
+                case_info.field_types.push_back(
+                    self_fields[i][j] ? type : resolved_fields[i][j]);
+                case_info.accessors.push_back(accessors[static_cast<unsigned>(j)]);
+            }
+            info->cases.push_back(std::move(case_info));
+        }
+
+        DatatypeInfo* stable = info.get();
+        for (unsigned i = 0; i < stable->cases.size(); ++i)
+            constructors_.emplace(stable->cases[i].name,
+                                  std::make_pair(stable, i));
+        types_.emplace(declaration.name, type);
+        datatypes_.emplace(declaration.name, std::move(info));
+    }
+
+    TypePtr tuple_type(TypePtr const& first, TypePtr const& second,
+                       syntax::SourceSpan span) {
+        if (first->kind == RuntimeType::Kind::table ||
+            second->kind == RuntimeType::Kind::table)
+            reject(span, "table values cannot be tuple components in Fine v1");
+        std::string key = "(" + first->display + ", " + second->display + ")";
+        auto found = compound_types_.find(key);
+        if (found != compound_types_.end()) return found->second;
+
+        char const* fields[] = {"first", "second"};
+        z3::sort sorts[] = {first->sort, second->sort};
+        z3::func_decl_vector projections(context_);
+        std::string z3_name = "Fine.Pair." + std::to_string(tuple_sequence_++);
+        z3::func_decl constructor = context_.tuple_sort(
+            z3_name.c_str(), 2, fields, sorts, projections);
+        TypePtr result = std::make_shared<RuntimeType>(
+            RuntimeType::Kind::tuple, constructor.range(), key);
+        result->arguments = {first, second};
+        result->tuple_constructor = std::make_unique<z3::func_decl>(constructor);
+        compound_types_.emplace(key, result);
+        return result;
     }
 
     TypePtr resolve_type(syntax::Type const& syntax_type) {
@@ -175,27 +311,8 @@ private:
         TypePtr first = resolve_type(syntax_type.arguments[0]);
         TypePtr second = resolve_type(syntax_type.arguments[1]);
 
-        if (syntax_type.kind == syntax::Type::Kind::tuple) {
-            if (first->kind == RuntimeType::Kind::table ||
-                second->kind == RuntimeType::Kind::table)
-                reject(syntax_type.span, "table values cannot be tuple components in Fine v1");
-            std::string key = "(" + first->display + ", " + second->display + ")";
-            auto found = compound_types_.find(key);
-            if (found != compound_types_.end()) return found->second;
-
-            char const* fields[] = {"first", "second"};
-            z3::sort sorts[] = {first->sort, second->sort};
-            z3::func_decl_vector projections(context_);
-            std::string z3_name = "Fine.Pair." + std::to_string(tuple_sequence_++);
-            z3::func_decl constructor = context_.tuple_sort(
-                z3_name.c_str(), 2, fields, sorts, projections);
-            TypePtr result = std::make_shared<RuntimeType>(
-                RuntimeType::Kind::tuple, constructor.range(), key);
-            result->arguments = {first, second};
-            result->tuple_constructor = std::make_unique<z3::func_decl>(constructor);
-            compound_types_.emplace(key, result);
-            return result;
-        }
+        if (syntax_type.kind == syntax::Type::Kind::tuple)
+            return tuple_type(first, second, syntax_type.span);
 
         if (first->kind == RuntimeType::Kind::table ||
             second->kind == RuntimeType::Kind::table)
@@ -224,6 +341,23 @@ private:
                                             expected->display + "`");
             return context_.int_val(expression.integer_text.c_str());
         case syntax::Expr::Kind::name: {
+            if (expected->kind == RuntimeType::Kind::datatype) {
+                auto found = constructors_.find(expression.name);
+                if (found == constructors_.end())
+                    reject(expression.span, "unknown constructor `" +
+                                                expression.name + "`");
+                if (found->second.first != expected->datatype)
+                    reject(expression.span, "constructor `" + expression.name +
+                                                "` belongs to `" +
+                                                found->second.first->name + "`, not `" +
+                                                expected->display + "`");
+                DatatypeCaseInfo const& item =
+                    found->second.first->cases[found->second.second];
+                if (!item.field_types.empty())
+                    reject(expression.span, "constructor `" + expression.name +
+                                                "` requires arguments");
+                return item.constructor();
+            }
             if (expected->kind != RuntimeType::Kind::enumeration)
                 reject(expression.span, "name `" + expression.name +
                                             "` is not a value of type `" +
@@ -236,6 +370,34 @@ private:
                                             "` belongs to `" + found->second.first->name +
                                             "`, not `" + expected->display + "`");
             return found->second.first->values[found->second.second];
+        }
+        case syntax::Expr::Kind::call: {
+            if (expected->kind != RuntimeType::Kind::datatype)
+                reject(expression.span, "constructor call does not have type `" +
+                                            expected->display + "`");
+            auto found = constructors_.find(expression.name);
+            if (found == constructors_.end())
+                reject(expression.span, "unknown constructor `" +
+                                            expression.name + "`");
+            if (found->second.first != expected->datatype)
+                reject(expression.span, "constructor `" + expression.name +
+                                            "` belongs to `" +
+                                            found->second.first->name + "`, not `" +
+                                            expected->display + "`");
+            DatatypeCaseInfo const& item =
+                found->second.first->cases[found->second.second];
+            if (expression.elements.size() != item.field_types.size())
+                reject(expression.span, "constructor `" + expression.name +
+                                            "` expects " +
+                                            std::to_string(item.field_types.size()) +
+                                            " arguments");
+            std::vector<z3::expr> arguments;
+            arguments.reserve(expression.elements.size());
+            for (std::size_t i = 0; i < expression.elements.size(); ++i)
+                arguments.push_back(value(expression.elements[i],
+                                          item.field_types[i]));
+            return item.constructor(static_cast<unsigned>(arguments.size()),
+                                    arguments.data());
         }
         case syntax::Expr::Kind::tuple:
             if (expected->kind != RuntimeType::Kind::tuple)
@@ -315,16 +477,64 @@ private:
         switch (expression.kind) {
         case syntax::Expr::Kind::name: {
             auto found = environment.find(expression.name);
-            if (found == environment.end())
+            if (found != environment.end()) return found->second;
+            auto enum_case = cases_.find(expression.name);
+            if (enum_case != cases_.end())
+                return {enum_case->second.first->type,
+                        enum_case->second.first->values[enum_case->second.second]};
+            auto constructor = constructors_.find(expression.name);
+            if (constructor == constructors_.end())
                 reject(expression.span, "unknown value `" + expression.name + "`");
-            return found->second;
+            DatatypeCaseInfo const& item =
+                constructor->second.first->cases[constructor->second.second];
+            if (!item.field_types.empty())
+                reject(expression.span, "constructor `" + expression.name +
+                                            "` requires arguments");
+            return {constructor->second.first->type, item.constructor()};
         }
         case syntax::Expr::Kind::boolean:
             return {bool_type_, context_.bool_val(expression.boolean_value)};
         case syntax::Expr::Kind::integer:
             return {int_type_, context_.int_val(expression.integer_text.c_str())};
-        case syntax::Expr::Kind::tuple:
-            reject(expression.span, "tuple expressions are not admitted in synth specs yet");
+        case syntax::Expr::Kind::tuple: {
+            if (expression.elements.size() != 2)
+                reject(expression.span, "Fine v1 tuples contain exactly two values");
+            TypedExpression first =
+                elaborate_expression(expression.elements[0], environment);
+            TypedExpression second =
+                elaborate_expression(expression.elements[1], environment);
+            TypePtr type = tuple_type(first.type, second.type, expression.span);
+            return {type, (*type->tuple_constructor)(first.expression,
+                                                     second.expression)};
+        }
+        case syntax::Expr::Kind::call: {
+            auto found = constructors_.find(expression.name);
+            if (found == constructors_.end())
+                reject(expression.span, "unknown constructor `" +
+                                            expression.name + "`");
+            DatatypeInfo* datatype = found->second.first;
+            DatatypeCaseInfo const& item = datatype->cases[found->second.second];
+            if (expression.elements.size() != item.field_types.size())
+                reject(expression.span, "constructor `" + expression.name +
+                                            "` expects " +
+                                            std::to_string(item.field_types.size()) +
+                                            " arguments");
+            std::vector<z3::expr> arguments;
+            arguments.reserve(expression.elements.size());
+            for (std::size_t i = 0; i < expression.elements.size(); ++i) {
+                TypedExpression argument =
+                    elaborate_expression(expression.elements[i], environment);
+                if (!same(argument.type, item.field_types[i]))
+                    reject(expression.elements[i].span,
+                           "argument `" + item.field_names[i] + "` of `" +
+                               item.name + "` must have type `" +
+                               item.field_types[i]->display + "`");
+                arguments.push_back(argument.expression);
+            }
+            return {datatype->type,
+                    item.constructor(static_cast<unsigned>(arguments.size()),
+                                     arguments.data())};
+        }
         case syntax::Expr::Kind::binary: {
             if (expression.elements.size() != 2)
                 throw std::runtime_error("internal Fine binary expression arity");
@@ -438,6 +648,79 @@ private:
         return result;
     }
 
+    syntax::Expr lift_typed_expression(z3::expr const& expression,
+                                       TypePtr const& type) const {
+        if (type->kind == RuntimeType::Kind::boolean) {
+            if (!expression.is_true() && !expression.is_false())
+                reject({}, "lift encountered a non-literal Bool model value");
+            syntax::Expr result;
+            result.kind = syntax::Expr::Kind::boolean;
+            result.boolean_value = expression.is_true();
+            return result;
+        }
+        if (type->kind == RuntimeType::Kind::integer) {
+            std::string numeral;
+            if (!expression.is_numeral(numeral))
+                reject({}, "lift encountered a non-numeral Int model value");
+            syntax::Expr result;
+            result.kind = syntax::Expr::Kind::integer;
+            result.integer_text = std::move(numeral);
+            return result;
+        }
+        if (type->kind == RuntimeType::Kind::enumeration) {
+            for (unsigned i = 0; i < type->enumeration->values.size(); ++i) {
+                if (Z3_is_eq_ast(context_, expression,
+                                 type->enumeration->values[i])) {
+                    syntax::Expr result;
+                    result.kind = syntax::Expr::Kind::name;
+                    result.name = type->enumeration->case_names[i];
+                    return result;
+                }
+            }
+            reject({}, "lift encountered a value outside enum `" +
+                           type->display + "`");
+        }
+        if (type->kind == RuntimeType::Kind::datatype) {
+            if (!expression.is_app())
+                reject({}, "lift encountered a non-constructor value for `" +
+                               type->display + "`");
+            for (DatatypeCaseInfo const& item : type->datatype->cases) {
+                if (!Z3_is_eq_func_decl(context_, expression.decl(),
+                                        item.constructor))
+                    continue;
+                if (expression.num_args() != item.field_types.size())
+                    throw std::runtime_error(
+                        "internal datatype constructor arity mismatch");
+                syntax::Expr result;
+                result.kind = item.field_types.empty()
+                                  ? syntax::Expr::Kind::name
+                                  : syntax::Expr::Kind::call;
+                result.name = item.name;
+                for (unsigned i = 0; i < expression.num_args(); ++i)
+                    result.elements.push_back(lift_typed_expression(
+                        expression.arg(i), item.field_types[i]));
+                return result;
+            }
+            reject({}, "lift encountered a value outside datatype `" +
+                           type->display + "`");
+        }
+        if (type->kind == RuntimeType::Kind::tuple) {
+            if (!expression.is_app() || expression.num_args() != 2 ||
+                !Z3_is_eq_func_decl(context_, expression.decl(),
+                                    *type->tuple_constructor))
+                reject({}, "lift encountered a value outside tuple `" +
+                               type->display + "`");
+            syntax::Expr result;
+            result.kind = syntax::Expr::Kind::tuple;
+            result.elements.push_back(
+                lift_typed_expression(expression.arg(0), type->arguments[0]));
+            result.elements.push_back(
+                lift_typed_expression(expression.arg(1), type->arguments[1]));
+            return result;
+        }
+        reject({}, "lift does not admit values of type `" + type->display + "`");
+    }
+
     static char const* operator_text(syntax::Expr::BinaryOp operation) {
         switch (operation) {
         case syntax::Expr::BinaryOp::equal: return "==";
@@ -459,6 +742,14 @@ private:
             output << (expression.boolean_value ? "true" : "false");
             return;
         case syntax::Expr::Kind::integer: output << expression.integer_text; return;
+        case syntax::Expr::Kind::call:
+            output << expression.name << '(';
+            for (std::size_t i = 0; i < expression.elements.size(); ++i) {
+                if (i) output << ", ";
+                print_expression(output, expression.elements[i]);
+            }
+            output << ')';
+            return;
         case syntax::Expr::Kind::tuple:
             output << '(';
             for (std::size_t i = 0; i < expression.elements.size(); ++i) {
@@ -593,9 +884,12 @@ private:
         for (std::size_t i = 0; i < declaration.parameters.size(); ++i) {
             syntax::Parameter const& parameter = declaration.parameters[i];
             TypePtr type = resolve_type(parameter.type);
-            if (!same(type, int_type_) && !same(type, bool_type_))
+            if (!same(type, int_type_) && !same(type, bool_type_) &&
+                type->kind != RuntimeType::Kind::enumeration &&
+                type->kind != RuntimeType::Kind::datatype &&
+                type->kind != RuntimeType::Kind::tuple)
                 reject(parameter.type.span,
-                       "the first check slice admits only Int and Bool parameters");
+                       "check parameters admit Int, Bool, enums, datatypes, and tuples");
             std::string internal = "Fine.check." + declaration.name + ".arg" +
                                    std::to_string(i);
             z3::expr term = context_.constant(internal.c_str(), type->sort);
@@ -697,7 +991,7 @@ private:
         rendered << "counterexample " << declaration.name << " {\n";
         for (CheckParameter const& parameter : parameters) {
             z3::expr value = model.eval(parameter.term, true);
-            syntax::Expr lifted = lift_expression(value, {});
+            syntax::Expr lifted = lift_typed_expression(value, parameter.type);
             values.push_back(value);
             rendered << "  " << parameter.name << ": " << parameter.type->display
                      << " = ";
@@ -748,7 +1042,7 @@ private:
             rainfall_->record(
                 "object", "fine.counterexample-witness", {run_scope},
                 "fine.runtime",
-                "Lifted, printed, parsed, and elaborated primitive assignments with exact same-manager AST identity",
+                "Lifted, printed, parsed, and elaborated admitted value assignments with exact same-manager AST identity",
                 {RainfallRecorder::string_field("declaration", declaration.name),
                  RainfallRecorder::string_field("source", witness_source),
                  RainfallRecorder::boolean_field(
@@ -1138,6 +1432,24 @@ private:
             }
             reject({}, "lift encountered a value outside enum `" + type->display + "`");
         }
+        if (type->kind == RuntimeType::Kind::datatype && expression.is_app()) {
+            for (unsigned i = 0; i < type->datatype->cases.size(); ++i) {
+                DatatypeCaseInfo const& item = type->datatype->cases[i];
+                if (!Z3_is_eq_func_decl(context_, expression.decl(),
+                                        item.constructor))
+                    continue;
+                SurfaceValue result;
+                result.kind = SurfaceValue::Kind::datatype;
+                result.case_index = i;
+                result.datatype = type->datatype;
+                for (unsigned j = 0; j < expression.num_args(); ++j)
+                    result.elements.push_back(
+                        lift_value(item.field_types[j], expression.arg(j)));
+                return result;
+            }
+            reject({}, "lift encountered a value outside datatype `" +
+                           type->display + "`");
+        }
         if (type->kind == RuntimeType::Kind::tuple && expression.is_app() &&
             expression.num_args() == 2 &&
             Z3_is_eq_func_decl(context_, expression.decl(), *type->tuple_constructor)) {
@@ -1159,6 +1471,23 @@ private:
             if (value.enumeration == type->enumeration &&
                 value.case_index < type->enumeration->values.size())
                 return type->enumeration->values[value.case_index];
+        }
+        if (type->kind == RuntimeType::Kind::datatype &&
+            value.kind == SurfaceValue::Kind::datatype &&
+            value.datatype == type->datatype &&
+            value.case_index < type->datatype->cases.size()) {
+            DatatypeCaseInfo const& item =
+                type->datatype->cases[value.case_index];
+            if (value.elements.size() != item.field_types.size())
+                throw std::runtime_error(
+                    "internal Fine datatype surface arity mismatch");
+            std::vector<z3::expr> arguments;
+            arguments.reserve(value.elements.size());
+            for (std::size_t i = 0; i < value.elements.size(); ++i)
+                arguments.push_back(
+                    reify_value(item.field_types[i], value.elements[i]));
+            return item.constructor(static_cast<unsigned>(arguments.size()),
+                                    arguments.data());
         }
         if (type->kind == RuntimeType::Kind::tuple &&
             value.kind == SurfaceValue::Kind::tuple && value.elements.size() == 2)
@@ -1212,6 +1541,20 @@ private:
         case SurfaceValue::Kind::enumeration:
             output << value.enumeration->case_names[value.case_index];
             return;
+        case SurfaceValue::Kind::datatype: {
+            DatatypeCaseInfo const& item =
+                value.datatype->cases[value.case_index];
+            output << item.name;
+            if (!value.elements.empty()) {
+                output << '(';
+                for (std::size_t i = 0; i < value.elements.size(); ++i) {
+                    if (i) output << ", ";
+                    print_value(output, value.elements[i]);
+                }
+                output << ')';
+            }
+            return;
+        }
         case SurfaceValue::Kind::tuple:
             output << '(';
             for (std::size_t i = 0; i < value.elements.size(); ++i) {
