@@ -1,5 +1,6 @@
 #include "runtime.h"
 #include "clause_observer.h"
+#include "fixedpoint_observer.h"
 #include "quantifier_observer.h"
 #include "rainfall.h"
 #include "synthesis.h"
@@ -1594,11 +1595,11 @@ namespace fine {
 
             int execute_proof_family_check(syntax::CheckDecl const &declaration) {
                 reserve_value_name(declaration.name, declaration.span);
-                if (!declaration.parameters.empty())
-                    reject(declaration.span, "a least-relation membership check must be ground (no parameters)");
                 if (declaration.induction_parameter)
                     reject(*declaration.induction_span,
                            "proof-family membership does not yet implement derivation induction");
+                if (!declaration.parameters.empty())
+                    return execute_proof_family_invariant(declaration);
                 if (!declaration.assumes.empty())
                     reject(declaration.span, "a least-relation membership check cannot yet mix ordinary assumptions");
                 if (declaration.ensures.size() != 1)
@@ -1617,16 +1618,27 @@ namespace fine {
                 source_edge_within_.clear();
                 z3::expr query = elaborated.expression;
 
-                if (rainfall_)
+                std::unique_ptr<RainfallFixedpointObserver> fixedpoint_observer;
+                if (rainfall_) {
                     rainfall_->record(
                         "scope", "proof-check.run.open", {run_scope}, "fine.fixedpoint",
-                        "One public least-relation membership query; records admitted constructor rules and the public result, not Spacer internals",
+                        "One public least-relation membership query; records admitted constructor rules, public Spacer callback boundaries, and the public result",
                         {RainfallRecorder::string_field("declaration", declaration.name),
                          RainfallRecorder::string_field("family", source_query.name),
                          RainfallRecorder::string_field("query", rainfall_->term(query)),
                          RainfallRecorder::boolean_field("ground", true)});
+                    z3::params parameters(context_);
+                    parameters.set("engine", "spacer");
+                    parameters.set("spacer.p3.share_invariants", true);
+                    parameters.set("spacer.p3.share_lemmas", true);
+                    fixedpoint_.set(parameters);
+                    fixedpoint_observer = std::make_unique<RainfallFixedpointObserver>(
+                        fixedpoint_, *rainfall_, std::vector<std::string>{run_scope});
+                }
 
                 z3::check_result result = fixedpoint_.query(query);
+                if (fixedpoint_observer)
+                    fixedpoint_observer->rethrow_if_failed();
                 if (result == z3::unknown)
                     reject(source_query.span,
                            "least-relation membership was unknown: " + fixedpoint_.reason_unknown());
@@ -1648,6 +1660,130 @@ namespace fine {
                 output_ << (derived ? "derived: " : "not-derived: ") << declaration.name << '\n';
                 output_ << "proof-family: " << source_query.name << '\n';
                 output_ << "proof-witness: erased\n";
+                return 0;
+            }
+
+            int execute_proof_family_invariant(syntax::CheckDecl const &declaration) {
+                if (declaration.assumes.size() != 1)
+                    reject(declaration.span,
+                           "a proof-family invariant needs exactly one assumed family atom");
+                syntax::Expr const &source_membership = declaration.assumes.front();
+                if (source_membership.kind != syntax::Expr::Kind::call ||
+                    !proof_families_.contains(source_membership.name))
+                    reject(source_membership.span,
+                           "the invariant assumption must be a direct proof-family call");
+
+                std::function<void(syntax::Expr const &)> reject_family_in_guarantee =
+                    [&](syntax::Expr const &expression) {
+                        if (expression.kind == syntax::Expr::Kind::call &&
+                            proof_families_.contains(expression.name))
+                            reject(expression.span,
+                                   "proof-family atoms are not yet admitted inside invariant guarantees");
+                        for (syntax::Expr const &child : expression.elements)
+                            reject_family_in_guarantee(child);
+                    };
+                for (syntax::Expr const &condition : declaration.ensures)
+                    reject_family_in_guarantee(condition);
+
+                ExpressionEnvironment environment;
+                z3::expr_vector formal_parameters(context_);
+                std::set<std::string> parameter_names;
+                for (std::size_t i = 0; i < declaration.parameters.size(); ++i) {
+                    syntax::Parameter const &parameter = declaration.parameters[i];
+                    if (!parameter_names.insert(parameter.name).second)
+                        reject(parameter.span, "duplicate check parameter `" + parameter.name + "`");
+                    TypePtr type = resolve_type(parameter.type);
+                    if (type->kind == RuntimeType::Kind::table)
+                        reject(parameter.type.span,
+                               "proof-family invariant parameters must be native Fine values, not Table");
+                    std::string internal = "Fine.proof-check." + declaration.name + ".arg" +
+                                           std::to_string(i);
+                    z3::expr term = context_.constant(internal.c_str(), type->sort);
+                    environment.emplace(parameter.name, TypedExpression{type, term});
+                    formal_parameters.push_back(term);
+                }
+
+                std::string run_scope = "proof-check:" + declaration.name;
+                capture_source_edges_ = true;
+                source_edge_within_ = {run_scope};
+                TypedExpression membership = elaborate_expression(source_membership, environment);
+                z3::expr guarantees = context_.bool_val(true);
+                for (syntax::Expr const &condition : declaration.ensures) {
+                    TypedExpression elaborated = elaborate_expression(condition, environment);
+                    if (!same(elaborated.type, bool_type_))
+                        reject(condition.span, "proof-family invariant guarantee must have type Bool");
+                    guarantees = guarantees && elaborated.expression;
+                }
+                capture_source_edges_ = false;
+                source_edge_within_.clear();
+
+                std::string counterexample_name = "Fine.proof-check." + declaration.name + ".counterexample";
+                z3::func_decl counterexample = context_.function(
+                    counterexample_name.c_str(), 0, nullptr, context_.bool_sort());
+                fixedpoint_.register_relation(counterexample);
+                z3::expr query = counterexample();
+                z3::expr counterexample_body = membership.expression && !guarantees;
+                z3::expr counterexample_rule = z3::implies(counterexample_body, query);
+                counterexample_rule = z3::forall(formal_parameters, counterexample_rule);
+                std::string rule_name = declaration.name + ".counterexample";
+                fixedpoint_.add_rule(counterexample_rule, context_.str_symbol(rule_name.c_str()));
+
+                std::unique_ptr<RainfallFixedpointObserver> fixedpoint_observer;
+                if (rainfall_) {
+                    rainfall_->source_term(declaration.node_id, declaration.span, "decl.check",
+                                           counterexample_rule, "generated", {run_scope});
+                    rainfall_->record(
+                        "scope", "proof-check.run.open", {run_scope}, "fine.fixedpoint",
+                        "One counterexample-reachability query over a least proof-family relation; exposes compiler translation, public Spacer callbacks, and the public answer, not rule matches or a source proof witness",
+                        {RainfallRecorder::string_field("declaration", declaration.name),
+                         RainfallRecorder::string_field("family", source_membership.name),
+                         RainfallRecorder::number_field("parameters", declaration.parameters.size()),
+                         RainfallRecorder::boolean_field("ground", false)});
+                    rainfall_->record(
+                        "transform", "proof-check.invariant.translate", {run_scope}, "fine.elaborator",
+                        "Compiler-owned negated-guarantee reachability rule over the least family relation",
+                        {RainfallRecorder::string_field("membership", rainfall_->term(membership.expression)),
+                         RainfallRecorder::string_field("guarantees", rainfall_->term(guarantees)),
+                         RainfallRecorder::string_field("counterexample_rule", rainfall_->term(counterexample_rule)),
+                         RainfallRecorder::string_field("query", rainfall_->term(query)),
+                         RainfallRecorder::string_field("polarity", "counterexample-reachable")});
+                    z3::params parameters(context_);
+                    parameters.set("engine", "spacer");
+                    parameters.set("spacer.p3.share_invariants", true);
+                    parameters.set("spacer.p3.share_lemmas", true);
+                    fixedpoint_.set(parameters);
+                    fixedpoint_observer = std::make_unique<RainfallFixedpointObserver>(
+                        fixedpoint_, *rainfall_, std::vector<std::string>{run_scope});
+                }
+
+                z3::check_result result = fixedpoint_.query(query);
+                if (fixedpoint_observer)
+                    fixedpoint_observer->rethrow_if_failed();
+                if (result == z3::unknown)
+                    reject(declaration.span,
+                           "proof-family invariant query was unknown: " + fixedpoint_.reason_unknown());
+                bool verified = result == z3::unsat;
+                z3::expr answer = fixedpoint_.get_answer();
+                if (rainfall_) {
+                    rainfall_->record(
+                        "transition", "solver.fixedpoint.result", {run_scope}, "z3.public-api",
+                        "Final public fixedpoint result and answer; retained callback lemmas are not claimed to cause this result",
+                        {RainfallRecorder::string_field("query", rainfall_->term(query)),
+                         RainfallRecorder::string_field("answer", rainfall_->term(answer)),
+                         RainfallRecorder::string_field("status", verified ? "unsat" : "sat"),
+                         RainfallRecorder::string_field("polarity", "counterexample-reachable"),
+                         RainfallRecorder::string_field("domain_outcome", verified ? "verified" : "refuted")});
+                    rainfall_->validate_terms();
+                    rainfall_->record("scope", "proof-check.run.close", {run_scope}, "fine.fixedpoint",
+                                      "Open proof-family invariant check completed",
+                                      {RainfallRecorder::string_field("status", verified ? "verified" : "refuted")});
+                }
+
+                output_ << (verified ? "verified-family-invariant: " : "refuted-family-invariant: ")
+                        << declaration.name << '\n';
+                output_ << "proof-family: " << source_membership.name << '\n';
+                output_ << (verified ? "counterexample: none\n"
+                                     : "counterexample: fixedpoint reachability only (answer retained by rainfall)\n");
                 return 0;
             }
 

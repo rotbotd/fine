@@ -1336,3 +1336,122 @@ Both passed, including the install-check fixture matrix. The pre-source-edge
 implementation tree realized as
 `/nix/store/b8m34gqvghyivq5f94g5xvmznfzjh2cv-fine-0.0.1`; the final committed
 artifact is recorded in the governing prompt after the clean build.
+
+## 2026-09-01 — open proof-family invariants and Spacer callbacks
+
+Closed the first useful open consumer of an indexed proof family without calling
+it source derivation induction.
+
+### Fixedpoint observer probe
+
+Before extending the language, compiled a temporary C++ probe directly against
+Fine's built `libz3.a`. It registered an integer `Step` relation, a nullary bad
+state, and all three callbacks from `Z3_fixedpoint_add_callback`. With default
+Spacer parameters the unsatisfiable invariant query emitted predecessor and
+unfold callbacks but no lemmas. Inspection of
+`spacer::context::new_lemma_eh` showed that lemma export is deliberately gated by
+`spacer.p3.share_lemmas` and `spacer.p3.share_invariants`. Enabling both produced
+exact relation-guarded lemma terms at levels 0 and 1, as well as the payload-free
+predecessor/unfold crossings.
+
+The temporary probes were `/tmp/fp-callback-probe.cpp` and
+`/tmp/fp-callback-probe2.cpp`; representative commands were:
+
+```
+g++ -std=c++20 -I src/api -I .build/src -I src \
+  /tmp/fp-callback-probe2.cpp .build/libz3.a -lpthread \
+  -o /tmp/fp-callback-probe2
+/tmp/fp-callback-probe2
+```
+
+A separate satisfiable probe used a binary bad relation and
+`query_relations`. Its public answer contained a concrete hyper-resolution proof
+ending in a tuple such as `query!0 2 1`, but the API did not return that tuple as
+a typed model assignment. This is why the source slice does not fake a Fine
+counterexample witness yet.
+
+### Language translation
+
+A parameterized check in a document containing a proof family now admits exactly
+one direct family atom in `assumes` and ordinary Fine Boolean expressions in
+`ensures`. For
+
+```fine
+check distinct_indices(before: Tm, after: Tm) {
+  assumes { Step(before, after); }
+  ensures { (before == after) == false; }
+}
+```
+
+Fine registers a fresh nullary relation and the universally closed rule
+
+```
+Step(before, after) && !(before != after) -> counterexample
+```
+
+using the elaborated native terms. Query `unsat` verifies the invariant over the
+least `Step` relation; `sat` refutes it. This is fixedpoint reachability rather
+than an ordinary SMT implication, so `Step` never degrades to an unconstrained
+Bool function. It is also not yet source proof elimination: there is no named
+proof parameter, constructor match, index refinement, or recursive induction
+hypothesis.
+
+`proof-family-invariant.fine` verifies that the base `atom -> mark` step and all
+contextual `wrap` steps have unequal indices. The negative fixture asks for
+index equality and is refuted. Until the public fixedpoint proof is structurally
+lifted, the latter prints `counterexample: fixedpoint reachability only` rather
+than inventing a typed tuple.
+
+### Rainfall callback boundary
+
+Added `RainfallFixedpointObserver`, registered only for `fine rain`. It sets the
+two Spacer export gates and records:
+
+- `z3.spacer.lemma-export`: exact same-manager lemma term and level. Spacer can
+  export a newly added or re-encountered lemma, so duplicates are allowed and no
+  event is claimed to cause the result.
+- `z3.spacer.predecessor`: one ordinal only; the callback has no rule, term,
+  relation, or success payload.
+- `z3.spacer.unfold`: one ordinal only, with the same strict payload boundary.
+
+C callbacks are `noexcept`; any recorder exception is retained as an
+`exception_ptr` and rethrown after the query rather than unwinding through C.
+Only compiler-generated family rules and the counterexample rule receive Fine
+source edges. Spacer lemmas remain independent internal terms. The positive
+invariant trace validates with 80 events, 22 source nodes, 15 strong terms, and
+11 source-term edges; it contains three lemma exports, predecessor activity, one
+unfold callback, and the final public answer. The false trace also validates.
+
+### Validation commands
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/proof-family-invariant.fine
+.build/fine run fine/fixtures/proof-family-invariant-false.fine
+.build/fine rain fine/fixtures/proof-family-invariant.fine \
+  > /tmp/fine-proof-invariant.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/proof-family-invariant.fine \
+  /tmp/fine-proof-invariant.rain
+.build/fine rain fine/fixtures/proof-family-invariant-false.fine \
+  > /tmp/fine-proof-invariant-false.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/proof-family-invariant-false.fine \
+  /tmp/fine-proof-invariant-false.rain
+```
+
+The flake install check now requires both semantic outcomes, validates the
+positive trace, and requires all three public Spacer callback operations to be
+present. The next source step remains explicit derivation elimination with
+constructor-specific refined indices; this invariant query does not check that
+TODO item by euphemism.
+
+Declarative validation before commit:
+
+```
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+Both passed, including the expanded install-check matrix. The pre-commit tree
+realized as `/nix/store/pvbh3nplaqi7kbk15n3jxqa13smq1aab-fine-0.0.1`.

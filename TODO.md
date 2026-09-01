@@ -130,6 +130,19 @@ body-only Horn variable as a universal field. This is membership only: source
 proof construction, arbitrary-fresh fields, constrained views, inversion, and
 derivation induction remain the next pieces.
 
+The first open consumer is also closed. A parameterized `check` may assume
+exactly one family atom and state ordinary Fine guarantees. Fine adds a fresh
+counterexample relation and the rule `family(indices) && !guarantees -> Bad`,
+then asks Spacer whether `Bad` is reachable. `proof-family-invariant.fine`
+proves that every contextual `Step` has unequal indices;
+`proof-family-invariant-false.fine` refutes equality. This is least-relation
+invariant checking, not source proof elimination: a satisfiable query retains
+Spacer's exact answer but does not yet lift a typed counterexample tuple.
+Rainfall observes the public Spacer lemma-export, predecessor, and unfold
+callbacks without assigning them source ownership or causal force. Explicit
+constructor branches, refined indices, recursive hypotheses, and source proof
+witnesses remain required before checking off derivation induction.
+
 ## Later language test: an elementary topos without ceremony
 
 An elementary topos must be definable once and usable for generic theorems

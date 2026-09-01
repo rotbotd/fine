@@ -73,6 +73,21 @@
           $out/bin/fine rain "$src/fine/fixtures/proof-family-step.fine" > "$proof_family_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/proof-family-step.fine" "$proof_family_rain"
+          invariant="$($out/bin/fine run "$src/fine/fixtures/proof-family-invariant.fine")"
+          echo "$invariant"
+          grep -F "verified-family-invariant: distinct_indices" <<<"$invariant"
+          grep -F "counterexample: none" <<<"$invariant"
+          false_invariant="$($out/bin/fine run "$src/fine/fixtures/proof-family-invariant-false.fine")"
+          echo "$false_invariant"
+          grep -F "refuted-family-invariant: equal_indices" <<<"$false_invariant"
+          grep -F "counterexample: fixedpoint reachability only" <<<"$false_invariant"
+          invariant_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-family-invariant.fine" > "$invariant_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-family-invariant.fine" "$invariant_rain"
+          grep -F '"operation":"z3.spacer.lemma-export"' "$invariant_rain"
+          grep -F '"operation":"z3.spacer.predecessor"' "$invariant_rain"
+          grep -F '"operation":"z3.spacer.unfold"' "$invariant_rain"
           rejected_universal="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-proof-family-universal.fine" \
             >"$rejected_universal" 2>&1; then

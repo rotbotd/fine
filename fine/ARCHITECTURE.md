@@ -81,8 +81,21 @@ must occur in the result indices; this deliberately excludes premise-only
 variables. A parameterless, assumption-free `check` containing exactly one
 ground family atom is a public least-relation membership query. It reports
 `derived` or `not-derived`; it is not routed through the ordinary counterexample
-solver and produces no runtime proof value. Mixed formulas, open membership
-queries, proof elimination, and derivation induction are not admitted yet.
+solver and produces no runtime proof value. Family atoms nested inside ordinary
+formulas, open membership queries, proof elimination, and derivation induction
+are not admitted yet.
+
+A second, still proof-erased consumer admits a parameterized `check` with
+exactly one assumed family atom and ordinary Fine guarantees. The compiler
+registers a fresh nullary counterexample relation and adds the universally
+closed rule `family(indices) && !guarantees -> counterexample`; reachability is
+refutation and unreachability verifies the invariant over the least relation.
+This is not an ordinary-SMT implication, and it does not turn the family into an
+uninterpreted predicate. It also is not source derivation induction: there are
+no constructor branches, refined indices, recursive proof hypotheses, or lifted
+proof witnesses. A satisfiable answer is retained exactly by Rainfall but is
+reported only as fixedpoint reachability until its concrete index tuple can be
+lifted honestly.
 
 A universally quantified constructor field stays explicit in the proof-family
 IR. In particular, putting the bound name only in a Horn rule body turns
@@ -362,6 +375,16 @@ The recognized terminal runs include ordinary checks, proof-family membership
 checks, synthesis, and bisimulation. A proof-family trace records compiler-owned
 relation/rule declarations and the public fixedpoint query/result, while making
 no claim about Spacer's internal rule search.
+
+For Rainfall runs, Fine additionally registers Z3's public fixedpoint callbacks
+and enables Spacer's lemma/invariant export gates. `z3.spacer.lemma-export`
+retains the exact same-manager lemma term and level; the callback can repeat a
+lemma encountered again and never establishes that the lemma caused the final
+answer. `z3.spacer.predecessor` and `z3.spacer.unfold` are payload-free boundary
+crossings with ordinals only. They do not identify a source constructor, matched
+rule, relation, obligation, success, or failure. All three operations remain
+independent internal provenance; only compiler-generated family and
+counterexample rules receive source correspondence edges.
 
 `fine-rain-project` is that deliberately weaker projection layer. It applies
 one ordered transaction of non-overlapping UTF-8 insertions/replacements at

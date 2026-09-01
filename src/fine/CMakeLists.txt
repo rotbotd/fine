@@ -5,6 +5,7 @@ configure_file(demo_source.h.in demo_source.h @ONLY)
 
 add_executable(fine-bin
   clause_observer.cpp
+  fixedpoint_observer.cpp
   internal_rewrite.cpp
   main.cpp
   parser.cpp
