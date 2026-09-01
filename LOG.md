@@ -315,3 +315,65 @@ The proposed first vertical slice is a document/snapshot object in Rainfall,
 parse-local source objects, explicit source-to-term evidence for the existing
 `check` path, and a replay validator with hostile cross-revision and
 cross-manager tests. No implementation claim was made in this study commit.
+
+## 2026-09-01 — exact source snapshots and replay validation (`6338312d4`)
+
+Implemented the first vertical slice from `docs/reference-transfer.md`. Every
+`fine rain` compilation now opens with an opaque document object and an exact
+revision-zero snapshot carrying the input byte length and SHA-256 digest. The
+parser assigns never-reused-within-this-parse IDs to declarations and
+expressions. Rainfall declares those source nodes with full byte/line/column
+spans, then records compiler-owned `source.term.evidence` edges while
+elaborating the original `check` assumptions and guarantees. Names and literals
+are labeled `exact`; compound syntax and constructor lowering are labeled
+`desugared`. Generated witness reparses are deliberately outside source-edge
+capture. All edges name the exact snapshot, a strong manager-scoped term
+handle, and the enclosing check run.
+
+Added `fine-rain-validate`, an installed replay validator rather than a viewer
+that silently trusts JSON. It checks the schema envelope, contiguous sequence
+and event IDs, unique document/snapshot/source/term identities, the supplied
+source's exact digest and length, span bounds, source/edge snapshot agreement,
+same-run/recorder/manager term identities, known edge endpoints, allowed
+correspondence labels, and terminal run closure. It rejects source ownership
+for post-preprocessing `internal_z3` terms. A valid counterexample trace has 46
+events, 12 source nodes, 11 strong terms, and 11 source-to-term edges.
+
+The install check mutates the fixture and trace in nine hostile ways: a
+same-length source edit, an inserted byte that moves every later span, an edge
+to an old snapshot, an unknown term, a reused live handle, a cross-manager term
+identity, an `internal_z3` source edge, and an event appended after the terminal
+run close. It also compiles the same path twice and requires distinct opaque
+document IDs. All are rejected while the unmodified trace validates.
+
+Two failed isolated builds were retained because they exposed harness and
+identity assumptions. The first invoked the installed Python script through
+`/usr/bin/env` during `installCheckPhase`, before Nix fixup had rewritten its
+shebang; the checks now call the declared Python interpreter explicitly. The
+second document-ID test failed because sandboxed clocks and `random_device`
+were reproducible across processes; process identity was added to the opaque
+nonce. A third build exposed a bad hostile-test fixture assumption—the test
+tried to replace `10`, which was not present—and now changes `-1` to `-2` at
+equal byte length. The final isolated build and flake evaluation pass.
+
+The pre-existing Fine runtime sources were mechanically normalized with the
+repository's checked-in clang-format configuration in the separate commit
+`29d6ed626`; the semantic implementation commit is therefore reviewable as
+826 insertions and 44 deletions rather than being mixed with formatting churn.
+
+Validation commands were:
+
+```
+cmake --build .build -j4
+./.build/fine rain fine/fixtures/check-counterexample.fine
+python fine/rainfall_validate.py \
+  fine/fixtures/check-counterexample.fine /tmp/check.rain
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The clean artifact is
+`/nix/store/va1yc01rnpykaxgr7srpjfbfn4irdsva-fine-0.0.1`. The remaining edge is
+not cross-revision truth transfer: it is a viewer transport that may preserve a
+visibly stale decoration while a new snapshot compiles, plus broader truthful
+solver-search coverage beyond the three current observer boundaries.
