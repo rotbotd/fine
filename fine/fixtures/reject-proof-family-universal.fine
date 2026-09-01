@@ -1,0 +1,20 @@
+enum Name {
+  a,
+  b,
+}
+
+proof family Cofinite(body: Name) {
+  constructor under(name: Name, body: Name) {
+    takes {
+      Cofinite(name);
+    }
+    gives Cofinite(body);
+  }
+}
+
+check impossible() {
+  assumes {}
+  ensures {
+    Cofinite(a);
+  }
+}

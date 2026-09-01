@@ -89,7 +89,7 @@ Add one ATS-style ghost indexed proof family without adding a universal
 carriers.
 
 - [ ] Keep object `Tm`, `Ty`, `Env`, and `Name` as separate native Z3 sorts.
-- [ ] Parse and elaborate a strictly-positive indexed `proof` family whose
+- [x] Parse and elaborate a strictly-positive indexed `proof` family whose
       constructor-specific result indices are native Fine terms. The first
       accepted constructors have only base and first-order recursive premises;
       reject a universal premise rather than miscompile it.
@@ -118,6 +118,17 @@ Exit test: the abstraction-congruence constructor carries its cofinite family
 of recursive `Step` premises through elaboration, induction, solver checking,
 exact Fine lift, and Rainfall projection. If that correspondence cannot close,
 do not broaden the feature to runtime GADTs or a general static type universe.
+
+The first-order sub-slice is closed by `proof-family-step.fine`: `proof family`
+constructors become rules of a registered Z3 least relation over the native
+`Tm` datatype. A parameterless, assumption-free `check` can ask one ground
+membership question. The contextual step is derived, `Step(atom, atom)` is not,
+and Rainfall retains the relation, each constructor rule, exact query, public
+fixedpoint answer, and erasure boundary. `reject-proof-family-universal.fine`
+rejects a constructor parameter absent from the result rather than treating a
+body-only Horn variable as a universal field. This is membership only: source
+proof construction, arbitrary-fresh fields, constrained views, inversion, and
+derivation induction remain the next pieces.
 
 ## Later language test: an elementary topos without ceremony
 

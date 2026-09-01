@@ -61,6 +61,25 @@
           echo "$verified"
           grep -F "verified: addition_preserves_left" <<<"$verified"
           grep -F "counterexample: none" <<<"$verified"
+          proof_family="$($out/bin/fine run "$src/fine/fixtures/proof-family-step.fine")"
+          echo "$proof_family"
+          grep -F "derived: under_once" <<<"$proof_family"
+          grep -F "proof-family: Step" <<<"$proof_family"
+          grep -F "proof-witness: erased" <<<"$proof_family"
+          proof_junk="$($out/bin/fine run "$src/fine/fixtures/proof-family-junk.fine")"
+          echo "$proof_junk"
+          grep -F "not-derived: constructor_junk" <<<"$proof_junk"
+          proof_family_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-family-step.fine" > "$proof_family_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-family-step.fine" "$proof_family_rain"
+          rejected_universal="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-proof-family-universal.fine" \
+            >"$rejected_universal" 2>&1; then
+            echo "accepted a premise-only proof constructor parameter" >&2
+            exit 1
+          fi
+          grep -F 'would be one-witness search, not a universal proof field' "$rejected_universal"
           induction="$($out/bin/fine run "$src/fine/fixtures/induction-length.fine")"
           echo "$induction"
           grep -F "verified: length_nonnegative" <<<"$induction"

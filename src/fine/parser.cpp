@@ -15,6 +15,8 @@ namespace fine::syntax {
             let_kw,
             model_kw,
             proof_kw,
+            family_kw,
+            constructor_kw,
             function_kw,
             synth_kw,
             check_kw,
@@ -68,6 +70,8 @@ namespace fine::syntax {
             case TokenKind::let_kw: return "`let`";
             case TokenKind::model_kw: return "`model`";
             case TokenKind::proof_kw: return "`proof`";
+            case TokenKind::family_kw: return "`family`";
+            case TokenKind::constructor_kw: return "`constructor`";
             case TokenKind::function_kw: return "`function`";
             case TokenKind::synth_kw: return "`synth`";
             case TokenKind::check_kw: return "`check`";
@@ -218,6 +222,10 @@ namespace fine::syntax {
                     return TokenKind::model_kw;
                 if (text == "proof")
                     return TokenKind::proof_kw;
+                if (text == "family")
+                    return TokenKind::family_kw;
+                if (text == "constructor")
+                    return TokenKind::constructor_kw;
                 if (text == "function")
                     return TokenKind::function_kw;
                 if (text == "synth")
@@ -266,7 +274,9 @@ namespace fine::syntax {
                     case TokenKind::enum_kw: result.declarations.emplace_back(enum_decl()); break;
                     case TokenKind::let_kw: result.declarations.emplace_back(let_decl()); break;
                     case TokenKind::model_kw: result.declarations.emplace_back(model_decl()); break;
-                    case TokenKind::proof_kw: result.declarations.emplace_back(proof_decl()); break;
+                    case TokenKind::proof_kw:
+                        result.declarations.emplace_back(proof_or_family_decl());
+                        break;
                     case TokenKind::function_kw: result.declarations.emplace_back(function_decl()); break;
                     case TokenKind::synth_kw: result.declarations.emplace_back(synth_decl()); break;
                     case TokenKind::check_kw: result.declarations.emplace_back(check_decl()); break;
@@ -393,8 +403,10 @@ namespace fine::syntax {
                         std::move(value)};
             }
 
-            ProofDecl proof_decl() {
+            Declaration proof_or_family_decl() {
                 Token first = take(TokenKind::proof_kw);
+                if (accept(TokenKind::family_kw))
+                    return proof_family_decl(first);
                 Token name = take(TokenKind::identifier, "after `proof`");
                 take(TokenKind::left_brace, "after the proof name");
                 take(TokenKind::takes_kw, "as the first proof clause");
@@ -406,7 +418,36 @@ namespace fine::syntax {
                 take(TokenKind::right_paren, "after the result expression");
                 take(TokenKind::semicolon, "after `gives(...)`");
                 Token close = take(TokenKind::right_brace, "to close the proof");
-                return {joined(first.span, close.span), std::string(name.text), std::move(takes), std::move(gives)};
+                return ProofDecl{joined(first.span, close.span), std::string(name.text), std::move(takes),
+                                 std::move(gives)};
+            }
+
+            ProofFamilyDecl proof_family_decl(Token first) {
+                Token name = take(TokenKind::identifier, "after `proof family`");
+                std::vector<Parameter> indices = parameters();
+                if (indices.empty())
+                    fail("a proof family needs at least one index");
+                take(TokenKind::left_brace, "after the proof-family indices");
+                std::vector<ProofConstructor> constructors;
+                while (current_.kind != TokenKind::right_brace) {
+                    Token constructor = take(TokenKind::constructor_kw, "in a proof family");
+                    Token constructor_name = take(TokenKind::identifier, "after `constructor`");
+                    std::vector<Parameter> parameters = this->parameters();
+                    take(TokenKind::left_brace, "after the constructor parameters");
+                    std::vector<Expr> premises = condition_block(TokenKind::takes_kw, "as the first constructor clause", true);
+                    take(TokenKind::gives_kw, "after `takes`");
+                    Expr result = expr();
+                    take(TokenKind::semicolon, "after the constructor result");
+                    Token close_constructor = take(TokenKind::right_brace, "to close the constructor");
+                    constructors.push_back({joined(constructor.span, close_constructor.span),
+                                            std::string(constructor_name.text), std::move(parameters),
+                                            std::move(premises), std::move(result)});
+                }
+                if (constructors.empty())
+                    fail("a proof family needs at least one constructor");
+                Token close = take(TokenKind::right_brace, "to close the proof family");
+                return {joined(first.span, close.span), std::string(name.text), std::move(indices),
+                        std::move(constructors)};
             }
 
             FunctionDecl function_decl() {

@@ -295,7 +295,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                          "accepted-instance-became-admitted-clause",
                          f"event {sequence}: inst clause has an unknown relation")
 
-        if operation in {"check.run.close", "synth.run.close", "bisim.run.close"}:
+        if operation in {"check.run.close", "synth.run.close", "bisim.run.close", "proof-check.run.close"}:
             terminal_sequence = sequence
 
     _require(len(documents) == 1, "replay must declare exactly one document")

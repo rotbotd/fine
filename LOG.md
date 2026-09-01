@@ -1227,3 +1227,112 @@ Heyting-algebra construction is retained as the quotient/setoid pressure test;
 it cannot identify raw mono representatives using host-language equality. This
 is a future language target after the indexed locally nameless `Step` slice, not
 a claim about the current parser or runtime.
+
+## 2026-09-01 — first executable indexed proof family
+
+Closed the first-order portion of the indexed `Step` milestone rather than
+jumping directly from the SMT boundary probe to cofinite locally nameless
+reduction.
+
+### Surface and lowering
+
+Added `ProofFamilyDecl` and `ProofConstructor` syntax. The accepted surface is:
+
+```fine
+proof family Step(before: Tm, after: Tm) {
+  constructor root() {
+    takes {}
+    gives Step(atom, mark);
+  }
+  constructor under(before: Tm, after: Tm) {
+    takes { Step(before, after); }
+    gives Step(wrap(before), wrap(after));
+  }
+}
+```
+
+A family resolves every index to an existing native Fine/Z3 value sort, creates
+one Bool-valued Z3 relation, and registers it with `z3::fixedpoint`. Each
+constructor parameter is a native sorted constant; its direct proof-family
+premises and family result elaborate through the ordinary typed expression
+machinery, and the compiler adds the universally closed implication as one named
+fixedpoint rule. There is no proof-witness datatype, universal `Term` carrier,
+raw Horn surface, or ordinary-SMT introduction axiom.
+
+The first executable consumer is intentionally narrower than a normal Fine
+check: a parameterless, assumption-free `check` with exactly one ground ensured
+family atom asks fixedpoint membership. A derivable atom prints `derived`; an
+atom outside the constructor closure prints `not-derived`. Open queries, mixed
+ordinary formulas, proof elimination, and derivation induction are rejected or
+remain unimplemented rather than being given ordinary first-order validity
+semantics.
+
+### Quantifier-polarity guard
+
+Every proof-constructor parameter must occur syntactically in the constructor
+result indices. `reject-proof-family-universal.fine` puts `name` only in the
+recursive premise and is rejected with:
+
+```
+parameter `name` does not occur in the constructor result; a premise-only
+parameter would be one-witness search, not a universal proof field
+```
+
+This guard is deliberately stronger than the eventual indexed-family language.
+It prevents the exact body-only Horn lowering shown unsound by
+`fine/spikes/indexed-proof/cofinite-horn-is-existential.smt2`. The later
+arbitrary-fresh/equivariance elaboration must replace the guard for an explicit
+universal field; relaxing it without that evidence is not permitted.
+
+### Rainfall boundary
+
+Rainfall now declares the erased family relation and every admitted constructor
+rule, including the exact generated rule/conclusion terms and premise counts.
+The membership run retains the exact source query, the public fixedpoint result
+and answer, and closes with `proof-check.run.close`. The family declaration also
+has compiler-owned generated source edges to its exact rules, matching the
+existing bisimulation-clause policy. The replay validator accepts the new close
+operation as a terminal run. Coverage explicitly excludes Spacer's internal
+rule-search steps. The positive trace validates with 52 events, 19 source nodes,
+9 strong terms, and 7 source-term edges.
+
+### Fixtures and validation
+
+- `fine/fixtures/proof-family-step.fine` derives one contextual application.
+- `fine/fixtures/proof-family-junk.fine` establishes that `Step(atom, atom)` is
+  not in the least relation.
+- `fine/fixtures/reject-proof-family-universal.fine` exercises the polarity
+  rejection.
+- The install check runs both membership outcomes, validates the positive
+  Rainfall trace, and requires the universal-field fixture to fail.
+
+Local vertical checks during implementation:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/proof-family-step.fine
+.build/fine run fine/fixtures/proof-family-junk.fine
+.build/fine run fine/fixtures/reject-proof-family-universal.fine
+.build/fine rain fine/fixtures/proof-family-step.fine > /tmp/fine-proof-family.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/proof-family-step.fine /tmp/fine-proof-family.rain
+```
+
+The first Rainfall validation attempt used the wrong script path
+`python/fine_rain_validate.py`; the real installed-source path is
+`fine/rainfall_validate.py`. After that correction the replay initially rejected
+the new trace because `proof-check.run.close` was not in its explicit terminal
+operation set. Extending that closed set fixed the schema boundary; no generic
+suffix matching was introduced.
+
+Final declarative validation after closing the execution guard:
+
+```
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+Both passed, including the install-check fixture matrix. The pre-source-edge
+implementation tree realized as
+`/nix/store/b8m34gqvghyivq5f94g5xvmznfzjh2cv-fine-0.0.1`; the final committed
+artifact is recorded in the governing prompt after the clean build.

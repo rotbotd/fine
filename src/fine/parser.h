@@ -130,6 +130,25 @@ namespace fine::syntax {
         Type type;
     };
 
+    struct ProofConstructor {
+        SourceSpan span;
+        std::string name;
+        std::vector<Parameter> parameters;
+        std::vector<Expr> premises;
+        Expr result;
+    };
+
+    // A proof family is an indexed proposition over ordinary Fine values. Its
+    // constructors become rules of a least Z3 relation; there is deliberately
+    // no runtime datatype of proof witnesses in this first erased slice.
+    struct ProofFamilyDecl {
+        SourceSpan span;
+        std::string name;
+        std::vector<Parameter> indices;
+        std::vector<ProofConstructor> constructors;
+        std::size_t node_id = 0;
+    };
+
     struct MatchBinding {
         SourceSpan span;
         std::string name;
@@ -193,8 +212,8 @@ namespace fine::syntax {
         std::size_t node_id = 0;
     };
 
-    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, FunctionDecl, SynthDecl, CheckDecl,
-                                     CounterexampleDecl>;
+    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, ProofFamilyDecl, FunctionDecl,
+                                     SynthDecl, CheckDecl, CounterexampleDecl>;
 
     struct Document {
         SourceSpan span;

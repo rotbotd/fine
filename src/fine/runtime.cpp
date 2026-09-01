@@ -74,6 +74,14 @@ namespace fine {
             explicit FunctionInfo(z3::context &context) : declaration(context) {}
         };
 
+        struct ProofFamilyInfo {
+            std::string name;
+            std::vector<TypePtr> index_types;
+            z3::func_decl relation;
+
+            explicit ProofFamilyInfo(z3::context &context) : relation(context) {}
+        };
+
         struct Binding {
             TypePtr type;
             z3::expr value;
@@ -116,6 +124,7 @@ namespace fine {
             explicit Runtime(std::ostream &output, std::ostream *rainfall_output, SourceSnapshot const *snapshot,
                              std::string rainfall_run)
                 : output_(output),
+                  fixedpoint_(context_),
                   rainfall_(rainfall_output ? std::make_unique<RainfallRecorder>(context_, *rainfall_output,
                                                                                  std::move(rainfall_run), snapshot)
                                             : nullptr),
@@ -130,6 +139,7 @@ namespace fine {
         private:
             z3::context context_;
             std::ostream &output_;
+            z3::fixedpoint fixedpoint_;
             std::unique_ptr<RainfallRecorder> rainfall_;
             TypePtr bool_type_;
             TypePtr int_type_;
@@ -139,6 +149,7 @@ namespace fine {
             std::map<std::string, std::unique_ptr<DatatypeInfo>> datatypes_;
             std::map<std::string, std::pair<DatatypeInfo *, unsigned>> constructors_;
             std::map<std::string, std::unique_ptr<FunctionInfo>> functions_;
+            std::map<std::string, std::unique_ptr<ProofFamilyInfo>> proof_families_;
             std::map<std::string, Binding> bindings_;
             std::map<std::string, TypePtr> compound_types_;
             std::set<std::string> value_names_;
@@ -211,6 +222,8 @@ namespace fine {
                                 kind = "decl.model";
                             else if constexpr (std::is_same_v<T, syntax::ProofDecl>)
                                 kind = "decl.proof";
+                            else if constexpr (std::is_same_v<T, syntax::ProofFamilyDecl>)
+                                kind = "decl.proof-family";
                             else if constexpr (std::is_same_v<T, syntax::FunctionDecl>)
                                 kind = "decl.function";
                             else if constexpr (std::is_same_v<T, syntax::SynthDecl>)
@@ -232,6 +245,13 @@ namespace fine {
                                 for (syntax::NamedArgument const &argument : item.takes)
                                     declare_expression_sources(argument.value);
                                 declare_expression_sources(item.gives);
+                            }
+                            else if constexpr (std::is_same_v<T, syntax::ProofFamilyDecl>) {
+                                for (syntax::ProofConstructor const &constructor : item.constructors) {
+                                    for (syntax::Expr const &premise : constructor.premises)
+                                        declare_expression_sources(premise);
+                                    declare_expression_sources(constructor.result);
+                                }
                             }
                             else if constexpr (std::is_same_v<T, syntax::FunctionDecl>) {
                                 declare_expression_sources(item.scrutinee);
@@ -743,6 +763,26 @@ namespace fine {
                 case syntax::Expr::Kind::call: {
                     auto found = constructors_.find(expression.name);
                     if (found == constructors_.end()) {
+                        auto proof_family = proof_families_.find(expression.name);
+                        if (proof_family != proof_families_.end()) {
+                            ProofFamilyInfo const &item = *proof_family->second;
+                            if (expression.elements.size() != item.index_types.size())
+                                reject(expression.span, "proof family `" + expression.name + "` expects " +
+                                                            std::to_string(item.index_types.size()) + " indices");
+                            std::vector<z3::expr> indices;
+                            indices.reserve(expression.elements.size());
+                            for (std::size_t i = 0; i < expression.elements.size(); ++i) {
+                                TypedExpression index = elaborate_expression(expression.elements[i], environment);
+                                if (!same(index.type, item.index_types[i]))
+                                    reject(expression.elements[i].span,
+                                           "index " + std::to_string(i + 1) + " of `" + item.name +
+                                               "` must have type `" + item.index_types[i]->display + "`");
+                                indices.push_back(index.expression);
+                            }
+                            return completed_expression(
+                                expression, bool_type_,
+                                item.relation(static_cast<unsigned>(indices.size()), indices.data()));
+                        }
                         auto function = functions_.find(expression.name);
                         if (function == functions_.end())
                             reject(expression.span, "unknown constructor or function `" + expression.name + "`");
@@ -837,6 +877,129 @@ namespace fine {
                     reject(expression.span, "a hole is admitted only as an entire synthesis match arm");
                 }
                 throw std::runtime_error("internal Fine expression kind");
+            }
+
+            void declare_proof_family(syntax::ProofFamilyDecl const &declaration) {
+                reserve_value_name(declaration.name, declaration.span);
+                std::vector<TypePtr> index_types;
+                std::vector<z3::sort> index_sorts;
+                std::set<std::string> index_names;
+                for (syntax::Parameter const &index : declaration.indices) {
+                    if (!index_names.insert(index.name).second)
+                        reject(index.span, "duplicate proof-family index `" + index.name + "`");
+                    TypePtr type = resolve_type(index.type);
+                    if (type->kind == RuntimeType::Kind::table)
+                        reject(index.type.span, "proof-family indices must be native Fine values, not Table");
+                    index_types.push_back(type);
+                    index_sorts.push_back(type->sort);
+                }
+
+                auto info = std::make_unique<ProofFamilyInfo>(context_);
+                info->name = declaration.name;
+                info->index_types = index_types;
+                info->relation = context_.function(declaration.name.c_str(),
+                                                   static_cast<unsigned>(index_sorts.size()), index_sorts.data(),
+                                                   context_.bool_sort());
+                fixedpoint_.register_relation(info->relation);
+                ProofFamilyInfo *stable = info.get();
+                proof_families_.emplace(declaration.name, std::move(info));
+
+                std::set<std::string> constructor_names;
+                std::string family_scope = "proof-family:" + declaration.name;
+                if (rainfall_)
+                    rainfall_->record(
+                        "object", "fine.proof-family.relation", {family_scope}, "fine.elaborator",
+                        "Erased indexed proposition represented by a native-sort least relation, not a proof-witness sort",
+                        {RainfallRecorder::string_field("family", declaration.name),
+                         RainfallRecorder::string_field("relation", stable->relation.name().str()),
+                         RainfallRecorder::number_field("indices", stable->index_types.size()),
+                         RainfallRecorder::boolean_field("least_relation", true),
+                         RainfallRecorder::boolean_field("proof_witnesses_erased", true)});
+
+                for (syntax::ProofConstructor const &constructor : declaration.constructors) {
+                    if (!constructor_names.insert(constructor.name).second)
+                        reject(constructor.span, "duplicate proof constructor `" + constructor.name + "`");
+
+                    ExpressionEnvironment environment;
+                    z3::expr_vector formal_parameters(context_);
+                    std::set<std::string> parameter_names;
+                    for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
+                        syntax::Parameter const &parameter = constructor.parameters[i];
+                        if (!parameter_names.insert(parameter.name).second)
+                            reject(parameter.span, "duplicate proof-constructor parameter `" + parameter.name + "`");
+                        TypePtr type = resolve_type(parameter.type);
+                        if (type->kind == RuntimeType::Kind::table)
+                            reject(parameter.type.span,
+                                   "proof-constructor parameters must be native Fine values, not Table");
+                        std::string internal = "Fine.proof." + declaration.name + "." + constructor.name +
+                                               ".arg" + std::to_string(i);
+                        z3::expr term = context_.constant(internal.c_str(), type->sort);
+                        environment.emplace(parameter.name, TypedExpression{type, term});
+                        formal_parameters.push_back(term);
+                    }
+
+                    auto atom = [&](syntax::Expr const &expression, std::string_view role) {
+                        if (expression.kind != syntax::Expr::Kind::call ||
+                            !proof_families_.contains(expression.name))
+                            reject(expression.span, std::string(role) +
+                                                        " must be a direct call to a declared proof family");
+                        TypedExpression elaborated = elaborate_expression(expression, environment);
+                        if (!same(elaborated.type, bool_type_))
+                            reject(expression.span, std::string(role) + " must be an indexed proposition");
+                        return elaborated.expression;
+                    };
+
+                    z3::expr conclusion = atom(constructor.result, "proof-constructor result");
+                    if (constructor.result.name != declaration.name)
+                        reject(constructor.result.span, "constructor `" + constructor.name + "` must produce `" +
+                                                            declaration.name + "(...)`");
+
+                    std::set<std::string> names_in_conclusion;
+                    std::function<void(syntax::Expr const &)> collect_names = [&](syntax::Expr const &expression) {
+                        if (expression.kind == syntax::Expr::Kind::name)
+                            names_in_conclusion.insert(expression.name);
+                        for (syntax::Expr const &child : expression.elements)
+                            collect_names(child);
+                    };
+                    collect_names(constructor.result);
+                    for (syntax::Parameter const &parameter : constructor.parameters) {
+                        if (!names_in_conclusion.contains(parameter.name))
+                            reject(parameter.span, "parameter `" + parameter.name +
+                                                       "` does not occur in the constructor result; a premise-only "
+                                                       "parameter would be one-witness search, not a universal proof field");
+                    }
+
+                    z3::expr premises = context_.bool_val(true);
+                    std::vector<z3::expr> premise_terms;
+                    std::size_t recursive_premises = 0;
+                    for (syntax::Expr const &premise : constructor.premises) {
+                        z3::expr elaborated = atom(premise, "proof-constructor premise");
+                        premises = premises && elaborated;
+                        premise_terms.push_back(elaborated);
+                        if (premise.name == declaration.name)
+                            ++recursive_premises;
+                    }
+                    z3::expr rule = constructor.premises.empty() ? conclusion : z3::implies(premises, conclusion);
+                    if (!formal_parameters.empty())
+                        rule = z3::forall(formal_parameters, rule);
+                    std::string rule_name = declaration.name + "." + constructor.name;
+                    fixedpoint_.add_rule(rule, context_.str_symbol(rule_name.c_str()));
+
+                    if (rainfall_) {
+                        rainfall_->source_term(declaration.node_id, declaration.span, "decl.proof-family", rule,
+                                               "generated", {family_scope});
+                        rainfall_->record(
+                            "derive", "fine.proof-constructor.rule", {family_scope}, "fine.elaborator",
+                            "Strictly-positive first-order constructor compiled to one least-relation Horn rule",
+                            {RainfallRecorder::string_field("family", declaration.name),
+                             RainfallRecorder::string_field("constructor", constructor.name),
+                             RainfallRecorder::string_field("rule", rainfall_->term(rule)),
+                             RainfallRecorder::string_field("conclusion", rainfall_->term(conclusion)),
+                             RainfallRecorder::number_field("premises", premise_terms.size()),
+                             RainfallRecorder::number_field("recursive_premises", recursive_premises),
+                             RainfallRecorder::boolean_field("proof_witness_erased", true)});
+                    }
+                }
             }
 
             syntax::Expr lift_expression(z3::expr const &expression,
@@ -1429,7 +1592,68 @@ namespace fine {
                 return 0;
             }
 
+            int execute_proof_family_check(syntax::CheckDecl const &declaration) {
+                reserve_value_name(declaration.name, declaration.span);
+                if (!declaration.parameters.empty())
+                    reject(declaration.span, "a least-relation membership check must be ground (no parameters)");
+                if (declaration.induction_parameter)
+                    reject(*declaration.induction_span,
+                           "proof-family membership does not yet implement derivation induction");
+                if (!declaration.assumes.empty())
+                    reject(declaration.span, "a least-relation membership check cannot yet mix ordinary assumptions");
+                if (declaration.ensures.size() != 1)
+                    reject(declaration.span, "a least-relation membership check needs exactly one ensured atom");
+                syntax::Expr const &source_query = declaration.ensures.front();
+                if (source_query.kind != syntax::Expr::Kind::call ||
+                    !proof_families_.contains(source_query.name))
+                    reject(source_query.span, "the ensured condition must be a direct proof-family call");
+
+                std::string run_scope = "proof-check:" + declaration.name;
+                capture_source_edges_ = true;
+                source_edge_within_ = {run_scope};
+                ExpressionEnvironment environment;
+                TypedExpression elaborated = elaborate_expression(source_query, environment);
+                capture_source_edges_ = false;
+                source_edge_within_.clear();
+                z3::expr query = elaborated.expression;
+
+                if (rainfall_)
+                    rainfall_->record(
+                        "scope", "proof-check.run.open", {run_scope}, "fine.fixedpoint",
+                        "One public least-relation membership query; records admitted constructor rules and the public result, not Spacer internals",
+                        {RainfallRecorder::string_field("declaration", declaration.name),
+                         RainfallRecorder::string_field("family", source_query.name),
+                         RainfallRecorder::string_field("query", rainfall_->term(query)),
+                         RainfallRecorder::boolean_field("ground", true)});
+
+                z3::check_result result = fixedpoint_.query(query);
+                if (result == z3::unknown)
+                    reject(source_query.span,
+                           "least-relation membership was unknown: " + fixedpoint_.reason_unknown());
+                bool derived = result == z3::sat;
+                if (rainfall_) {
+                    z3::expr answer = fixedpoint_.get_answer();
+                    rainfall_->record(
+                        "transition", "solver.fixedpoint.result", {run_scope}, "z3.public-api",
+                        "Final public fixedpoint result only; no claim about internal rule-search steps",
+                        {RainfallRecorder::string_field("query", rainfall_->term(query)),
+                         RainfallRecorder::string_field("answer", rainfall_->term(answer)),
+                         RainfallRecorder::string_field("status", derived ? "sat" : "unsat"),
+                         RainfallRecorder::string_field("domain_outcome", derived ? "derived" : "not-derived")});
+                    rainfall_->validate_terms();
+                    rainfall_->record("scope", "proof-check.run.close", {run_scope}, "fine.fixedpoint",
+                                      "Ground least-relation membership completed",
+                                      {RainfallRecorder::string_field("status", derived ? "derived" : "not-derived")});
+                }
+                output_ << (derived ? "derived: " : "not-derived: ") << declaration.name << '\n';
+                output_ << "proof-family: " << source_query.name << '\n';
+                output_ << "proof-witness: erased\n";
+                return 0;
+            }
+
             int execute_check(syntax::CheckDecl const &declaration) {
+                if (!proof_families_.empty())
+                    return execute_proof_family_check(declaration);
                 reserve_value_name(declaration.name, declaration.span);
                 if (declaration.parameters.empty())
                     reject(declaration.span, "a check needs at least one parameter");
@@ -2191,6 +2415,9 @@ namespace fine {
                         reject(item->span, "this source slice admits one executable declaration");
                     proof = item;
                 }
+                else if (auto const *item = std::get_if<syntax::ProofFamilyDecl>(&declaration)) {
+                    declare_proof_family(*item);
+                }
                 else if (auto const *item = std::get_if<syntax::SynthDecl>(&declaration)) {
                     if (proof || synth || check)
                         reject(item->span, "this source slice admits one executable declaration");
@@ -2205,6 +2432,9 @@ namespace fine {
                     reject(item->span, "a `counterexample` declaration is a returned witness, not an executable check");
                 }
             }
+            if (!proof_families_.empty() && !check)
+                reject(document.span,
+                       "proof families currently require one ground least-relation membership `check`");
             if (synth)
                 return execute_synthesis(*synth);
             if (check)

@@ -73,6 +73,17 @@ because the least relation excludes index pairs produced by no constructor.
 Constructor introduction implications asserted to the ordinary SMT solver do
 not have that property and are not an admissible replacement.
 
+The implemented first-order surface is `proof family F(indices) { constructor
+C(parameters) { takes { atoms; } gives F(result_indices); } }`. Each family is
+registered as a Z3 fixedpoint relation over the native index sorts and each
+constructor becomes one universally closed Horn rule. Constructor parameters
+must occur in the result indices; this deliberately excludes premise-only
+variables. A parameterless, assumption-free `check` containing exactly one
+ground family atom is a public least-relation membership query. It reports
+`derived` or `not-derived`; it is not routed through the ordinary counterexample
+solver and produces no runtime proof value. Mixed formulas, open membership
+queries, proof elimination, and derivation induction are not admitted yet.
+
 A universally quantified constructor field stays explicit in the proof-family
 IR. In particular, putting the bound name only in a Horn rule body turns
 `forall fresh names` into a search for one working name. Fine must not perform
@@ -347,6 +358,10 @@ every source edge, and a terminal run close. It rejects cross-snapshot edges,
 unknown or reused handles, manager substitution, source-bearing `internal_z3`
 edges, and events arriving after the run closed. This validator does not transport
 evidence across edits; a viewer may move a stale decoration separately.
+The recognized terminal runs include ordinary checks, proof-family membership
+checks, synthesis, and bisimulation. A proof-family trace records compiler-owned
+relation/rule declarations and the public fixedpoint query/result, while making
+no claim about Spacer's internal rule search.
 
 `fine-rain-project` is that deliberately weaker projection layer. It applies
 one ordered transaction of non-overlapping UTF-8 insertions/replacements at

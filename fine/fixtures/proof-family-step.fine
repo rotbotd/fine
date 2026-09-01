@@ -1,0 +1,26 @@
+enum Tm {
+  atom,
+  mark,
+  wrap(body: Tm),
+}
+
+proof family Step(before: Tm, after: Tm) {
+  constructor root() {
+    takes {}
+    gives Step(atom, mark);
+  }
+
+  constructor under(before: Tm, after: Tm) {
+    takes {
+      Step(before, after);
+    }
+    gives Step(wrap(before), wrap(after));
+  }
+}
+
+check under_once() {
+  assumes {}
+  ensures {
+    Step(wrap(atom), wrap(mark));
+  }
+}
