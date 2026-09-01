@@ -75,10 +75,19 @@ namespace fine {
             explicit FunctionInfo(z3::context &context) : declaration(context) {}
         };
 
+        struct ProofConstructorInfo {
+            std::string name;
+            std::vector<z3::expr> parameters;
+            std::vector<z3::expr> result_indices;
+            std::vector<std::vector<z3::expr>> recursive_premise_indices;
+            std::size_t premise_count = 0;
+        };
+
         struct ProofFamilyInfo {
             std::string name;
             std::vector<TypePtr> index_types;
             z3::func_decl relation;
+            std::vector<ProofConstructorInfo> constructors;
 
             explicit ProofFamilyInfo(z3::context &context) : relation(context) {}
         };
@@ -268,6 +277,8 @@ namespace fine {
                                     declare_expression_sources(condition);
                             }
                             else if constexpr (std::is_same_v<T, syntax::CheckDecl>) {
+                                if (item.proof_induction)
+                                    declare_expression_sources(*item.proof_induction);
                                 for (syntax::Expr const &condition : item.assumes)
                                     declare_expression_sources(condition);
                                 for (syntax::Expr const &condition : item.ensures)
@@ -923,6 +934,8 @@ namespace fine {
 
                     ExpressionEnvironment environment;
                     z3::expr_vector formal_parameters(context_);
+                    ProofConstructorInfo retained_constructor;
+                    retained_constructor.name = constructor.name;
                     std::set<std::string> parameter_names;
                     for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
                         syntax::Parameter const &parameter = constructor.parameters[i];
@@ -937,6 +950,7 @@ namespace fine {
                         z3::expr term = context_.constant(internal.c_str(), type->sort);
                         environment.emplace(parameter.name, TypedExpression{type, term});
                         formal_parameters.push_back(term);
+                        retained_constructor.parameters.push_back(term);
                     }
 
                     auto atom = [&](syntax::Expr const &expression, std::string_view role) {
@@ -954,6 +968,9 @@ namespace fine {
                     if (constructor.result.name != declaration.name)
                         reject(constructor.result.span, "constructor `" + constructor.name + "` must produce `" +
                                                             declaration.name + "(...)`");
+                    for (syntax::Expr const &index : constructor.result.elements)
+                        retained_constructor.result_indices.push_back(
+                            elaborate_expression(index, environment).expression);
 
                     std::set<std::string> names_in_conclusion;
                     std::function<void(syntax::Expr const &)> collect_names = [&](syntax::Expr const &expression) {
@@ -973,18 +990,25 @@ namespace fine {
                     z3::expr premises = context_.bool_val(true);
                     std::vector<z3::expr> premise_terms;
                     std::size_t recursive_premises = 0;
+                    retained_constructor.premise_count = constructor.premises.size();
                     for (syntax::Expr const &premise : constructor.premises) {
                         z3::expr elaborated = atom(premise, "proof-constructor premise");
                         premises = premises && elaborated;
                         premise_terms.push_back(elaborated);
-                        if (premise.name == declaration.name)
+                        if (premise.name == declaration.name) {
                             ++recursive_premises;
+                            std::vector<z3::expr> indices;
+                            for (syntax::Expr const &index : premise.elements)
+                                indices.push_back(elaborate_expression(index, environment).expression);
+                            retained_constructor.recursive_premise_indices.push_back(std::move(indices));
+                        }
                     }
                     z3::expr rule = constructor.premises.empty() ? conclusion : z3::implies(premises, conclusion);
                     if (!formal_parameters.empty())
                         rule = z3::forall(formal_parameters, rule);
                     std::string rule_name = declaration.name + "." + constructor.name;
                     fixedpoint_.add_rule(rule, context_.str_symbol(rule_name.c_str()));
+                    stable->constructors.push_back(std::move(retained_constructor));
 
                     if (rainfall_) {
                         rainfall_->source_term(declaration.node_id, declaration.span, "decl.proof-family", rule,
@@ -1598,6 +1622,8 @@ namespace fine {
                 if (declaration.induction_parameter)
                     reject(*declaration.induction_span,
                            "proof-family membership does not yet implement derivation induction");
+                if (declaration.proof_induction)
+                    return execute_proof_family_induction(declaration);
                 if (!declaration.parameters.empty())
                     return execute_proof_family_invariant(declaration);
                 if (!declaration.assumes.empty())
@@ -1660,6 +1686,186 @@ namespace fine {
                 output_ << (derived ? "derived: " : "not-derived: ") << declaration.name << '\n';
                 output_ << "proof-family: " << source_query.name << '\n';
                 output_ << "proof-witness: erased\n";
+                return 0;
+            }
+
+            int execute_proof_family_induction(syntax::CheckDecl const &declaration) {
+                syntax::Expr const &target = *declaration.proof_induction;
+                if (!proof_families_.contains(target.name))
+                    reject(target.span, "`inducts` target must call a declared proof family");
+                if (declaration.assumes.size() != 1)
+                    reject(declaration.span,
+                           "proof-family induction needs exactly its target atom in `assumes`");
+                syntax::Expr const &assumed = declaration.assumes.front();
+                if (assumed.kind != syntax::Expr::Kind::call || assumed.name != target.name)
+                    reject(assumed.span,
+                           "proof-family induction assumption must be the same family as `inducts`");
+
+                ProofFamilyInfo const &family = *proof_families_.at(target.name);
+                if (declaration.parameters.size() != family.index_types.size() ||
+                    target.elements.size() != declaration.parameters.size())
+                    reject(target.span,
+                           "the first proof-induction slice needs exactly one check parameter per family index");
+
+                ExpressionEnvironment environment;
+                z3::expr_vector check_terms(context_);
+                std::set<std::string> parameter_names;
+                for (std::size_t i = 0; i < declaration.parameters.size(); ++i) {
+                    syntax::Parameter const &parameter = declaration.parameters[i];
+                    if (!parameter_names.insert(parameter.name).second)
+                        reject(parameter.span, "duplicate check parameter `" + parameter.name + "`");
+                    TypePtr type = resolve_type(parameter.type);
+                    if (!same(type, family.index_types[i]))
+                        reject(parameter.type.span, "proof-induction parameter " + std::to_string(i + 1) +
+                                                        " must have type `" + family.index_types[i]->display + "`");
+                    if (target.elements[i].kind != syntax::Expr::Kind::name ||
+                        target.elements[i].name != parameter.name)
+                        reject(target.elements[i].span,
+                               "proof-induction indices must be the check parameters in declaration order");
+                    std::string internal = "Fine.proof-induction." + declaration.name + ".arg" +
+                                           std::to_string(i);
+                    z3::expr term = context_.constant(internal.c_str(), type->sort);
+                    environment.emplace(parameter.name, TypedExpression{type, term});
+                    check_terms.push_back(term);
+                }
+
+                std::function<void(syntax::Expr const &)> reject_family_in_guarantee =
+                    [&](syntax::Expr const &expression) {
+                        if (expression.kind == syntax::Expr::Kind::call &&
+                            proof_families_.contains(expression.name))
+                            reject(expression.span,
+                                   "proof-family atoms are not yet admitted inside induction guarantees");
+                        for (syntax::Expr const &child : expression.elements)
+                            reject_family_in_guarantee(child);
+                    };
+                for (syntax::Expr const &condition : declaration.ensures)
+                    reject_family_in_guarantee(condition);
+
+                std::string run_scope = "proof-induction:" + declaration.name;
+                capture_source_edges_ = true;
+                source_edge_within_ = {run_scope};
+                TypedExpression target_term = elaborate_expression(target, environment);
+                TypedExpression assumed_term = elaborate_expression(assumed, environment);
+                if (!Z3_is_eq_ast(context_, target_term.expression, assumed_term.expression))
+                    reject(assumed.span, "`inducts` target and assumed family atom must elaborate identically");
+                z3::expr guarantees = context_.bool_val(true);
+                for (syntax::Expr const &condition : declaration.ensures) {
+                    TypedExpression elaborated = elaborate_expression(condition, environment);
+                    if (!same(elaborated.type, bool_type_))
+                        reject(condition.span, "proof-induction guarantee must have type Bool");
+                    guarantees = guarantees && elaborated.expression;
+                }
+                capture_source_edges_ = false;
+                source_edge_within_.clear();
+
+                if (rainfall_)
+                    rainfall_->record(
+                        "scope", "proof-induction.run.open", {run_scope}, "fine.induction",
+                        "Fine-owned structural induction over proof-family constructors; each recursive family premise becomes one exact induction hypothesis and each branch is checked by a separate public SMT query",
+                        {RainfallRecorder::string_field("declaration", declaration.name),
+                         RainfallRecorder::string_field("family", family.name),
+                         RainfallRecorder::number_field("constructors", family.constructors.size()),
+                         RainfallRecorder::string_field("target", rainfall_->term(target_term.expression)),
+                         RainfallRecorder::string_field("guarantees", rainfall_->term(guarantees))});
+
+                auto instantiate = [&](z3::expr const &expression,
+                                       std::vector<z3::expr> const &indices) {
+                    if (indices.size() != check_terms.size())
+                        throw std::runtime_error("internal proof-family index arity mismatch");
+                    z3::expr_vector replacements(context_);
+                    for (z3::expr const &index : indices)
+                        replacements.push_back(index);
+                    z3::expr result = expression;
+                    return result.substitute(check_terms, replacements);
+                };
+
+                std::string failed_branch;
+                for (ProofConstructorInfo const &constructor : family.constructors) {
+                    if (constructor.premise_count != constructor.recursive_premise_indices.size())
+                        reject(target.span,
+                               "proof induction currently requires every constructor premise to recurse on `" +
+                                   family.name + "`");
+                    std::string branch_scope = "branch:" + constructor.name;
+                    z3::expr constructor_result = family.relation(
+                        static_cast<unsigned>(constructor.result_indices.size()),
+                        constructor.result_indices.data());
+                    z3::expr branch_goal = instantiate(guarantees, constructor.result_indices);
+                    z3::expr hypotheses = context_.bool_val(true);
+                    std::vector<z3::expr> hypothesis_terms;
+                    for (std::size_t i = 0; i < constructor.recursive_premise_indices.size(); ++i) {
+                        std::vector<z3::expr> const &indices = constructor.recursive_premise_indices[i];
+                        z3::expr hypothesis = instantiate(guarantees, indices);
+                        hypotheses = hypotheses && hypothesis;
+                        hypothesis_terms.push_back(hypothesis);
+                        if (rainfall_) {
+                            z3::expr premise = family.relation(static_cast<unsigned>(indices.size()), indices.data());
+                            rainfall_->record(
+                                "derive", "proof-induction.hypothesis", {run_scope, branch_scope},
+                                "fine.induction",
+                                "Compiler-owned recursive constructor premise paired with the guarantee instantiated at its exact indices",
+                                {RainfallRecorder::string_field("constructor", constructor.name),
+                                 RainfallRecorder::number_field("premise_ordinal", i),
+                                 RainfallRecorder::string_field("recursive_premise", rainfall_->term(premise)),
+                                 RainfallRecorder::string_field("induction_hypothesis", rainfall_->term(hypothesis))});
+                        }
+                    }
+                    z3::expr branch_query = hypotheses && !branch_goal;
+                    if (rainfall_) {
+                        rainfall_->source_term(declaration.node_id, declaration.span, "decl.check", branch_query,
+                                               "generated", {run_scope, branch_scope});
+                        rainfall_->record(
+                            "scope", "proof-induction.branch.open", {run_scope, branch_scope}, "fine.induction",
+                            "One constructor branch with compiler-owned result indices and recursive hypotheses",
+                            {RainfallRecorder::string_field("constructor", constructor.name),
+                             RainfallRecorder::number_field("constructor_parameters", constructor.parameters.size()),
+                             RainfallRecorder::string_field("constructor_result", rainfall_->term(constructor_result)),
+                             RainfallRecorder::string_field("goal", rainfall_->term(branch_goal)),
+                             RainfallRecorder::string_field("counterexample_query", rainfall_->term(branch_query)),
+                             RainfallRecorder::number_field("recursive_hypotheses", hypothesis_terms.size())});
+                    }
+
+                    z3::solver solver(context_);
+                    solver.add(branch_query);
+                    z3::check_result result = solver.check();
+                    if (result == z3::unknown)
+                        reject(target.span, "proof-induction branch `" + constructor.name +
+                                                "` was unknown: " + solver.reason_unknown());
+                    bool branch_verified = result == z3::unsat;
+                    if (rainfall_) {
+                        rainfall_->record(
+                            "transition", "proof-induction.branch.result", {run_scope, branch_scope},
+                            "z3.public-api",
+                            "Final public SMT result for one compiler-generated constructor branch",
+                            {RainfallRecorder::string_field("constructor", constructor.name),
+                             RainfallRecorder::string_field("status", branch_verified ? "unsat" : "sat"),
+                             RainfallRecorder::string_field("domain_outcome", branch_verified ? "verified" : "refuted")});
+                        rainfall_->record("scope", "proof-induction.branch.close", {run_scope, branch_scope},
+                                          "fine.induction", "Constructor induction branch completed",
+                                          {RainfallRecorder::string_field("status", branch_verified ? "verified" : "refuted")});
+                    }
+                    if (!branch_verified) {
+                        failed_branch = constructor.name;
+                        break;
+                    }
+                }
+
+                bool verified = failed_branch.empty();
+                if (rainfall_) {
+                    rainfall_->validate_terms();
+                    rainfall_->record(
+                        "scope", "proof-induction.run.close", {run_scope}, "fine.induction",
+                        "Compiler-generated proof-family induction completed",
+                        {RainfallRecorder::string_field("status", verified ? "verified" : "refuted"),
+                         RainfallRecorder::string_field("failed_constructor", failed_branch)});
+                }
+                output_ << (verified ? "verified-proof-induction: " : "refuted-proof-induction: ")
+                        << declaration.name << '\n';
+                output_ << "proof-family: " << family.name << '\n';
+                if (verified)
+                    output_ << "constructor-branches: " << family.constructors.size() << " verified\n";
+                else
+                    output_ << "failed-constructor: " << failed_branch << '\n';
+                output_ << "proof-witness: erased after compiler-owned branch construction\n";
                 return 0;
             }
 
@@ -1790,6 +1996,9 @@ namespace fine {
             int execute_check(syntax::CheckDecl const &declaration) {
                 if (!proof_families_.empty())
                     return execute_proof_family_check(declaration);
+                if (declaration.proof_induction)
+                    reject(declaration.proof_induction->span,
+                           "proof-family induction target has no declared proof family");
                 reserve_value_name(declaration.name, declaration.span);
                 if (declaration.parameters.empty())
                     reject(declaration.span, "a check needs at least one parameter");

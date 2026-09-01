@@ -192,6 +192,7 @@ namespace fine::syntax {
         std::vector<Parameter> parameters;
         std::optional<std::string> induction_parameter;
         std::optional<SourceSpan> induction_span;
+        std::optional<Expr> proof_induction;
         std::vector<Expr> assumes;
         std::vector<Expr> ensures;
         std::size_t node_id = 0;

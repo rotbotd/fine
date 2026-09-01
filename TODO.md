@@ -105,7 +105,7 @@ carriers.
       callee receives it as erased evidence and Rainfall records its source.
       Do not add wrapper sorts, textual-premise matching, or general refinement
       subtyping.
-- [ ] Generate indexed pattern refinement and induction on a proof derivation,
+- [x] Generate indexed pattern refinement and induction on a proof derivation,
       rather than structural induction on the indexed `Tm` value.
 - [ ] Preserve the selected rule, opened bodies, arbitrary fresh name,
       recursive premise, and induction hypothesis as exact Rainfall evidence
@@ -126,9 +126,10 @@ membership question. The contextual step is derived, `Step(atom, atom)` is not,
 and Rainfall retains the relation, each constructor rule, exact query, public
 fixedpoint answer, and erasure boundary. `reject-proof-family-universal.fine`
 rejects a constructor parameter absent from the result rather than treating a
-body-only Horn variable as a universal field. This is membership only: source
-proof construction, arbitrary-fresh fields, constrained views, inversion, and
-derivation induction remain the next pieces.
+body-only Horn variable as a universal field. This query form remains membership
+only; derivation induction now has its own explicit `inducts(F(indices))` form.
+Source proof construction, arbitrary-fresh fields, constrained views, and
+general inversion remain later pieces.
 
 The first open consumer is also closed. A parameterized `check` may assume
 exactly one family atom and state ordinary Fine guarantees. Fine adds a fresh
@@ -151,6 +152,18 @@ marginal relation invariant `Step(x,y) -> x != y` plus query lemmas. This is an
 intentional null result. Learned relation summaries cannot substitute for the
 compiler-owned constructor branch and its two recursive evidence edges when
 derivation induction is added.
+
+The first-order derivation-induction sub-slice is closed by
+`proof-family-induction.fine`. `inducts(Step(before, after))` requires the exact
+same atom as the sole `assumes` clause. Fine makes one compiler-owned branch per
+retained constructor, substitutes that constructor's result indices into the
+guarantee, and supplies one guarantee-shaped induction hypothesis at each
+recursive premise's exact indices. The two-premise fixture retains two distinct
+premise/hypothesis pairs in its `pairwise` branch and verifies all three
+constructors; the false control identifies `root` as the failing branch. This is
+real induction over Fine's constructor table, not a reconstruction from Spacer
+lemmas. It still has no explicit source match body, proof-term value,
+existential constructor field, cofinite branch, or lifted branch counterexample.
 
 ## Later language test: an elementary topos without ceremony
 

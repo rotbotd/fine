@@ -83,7 +83,7 @@ ground family atom is a public least-relation membership query. It reports
 `derived` or `not-derived`; it is not routed through the ordinary counterexample
 solver and produces no runtime proof value. Family atoms nested inside ordinary
 formulas, open membership queries, proof elimination, and derivation induction
-are not admitted yet.
+outside the explicit `inducts` form are not admitted yet.
 
 A second, still proof-erased consumer admits a parameterized `check` with
 exactly one assumed family atom and ordinary Fine guarantees. The compiler
@@ -96,6 +96,22 @@ no constructor branches, refined indices, recursive proof hypotheses, or lifted
 proof witnesses. A satisfiable answer is retained exactly by Rainfall but is
 reported only as fixedpoint reachability until its concrete index tuple can be
 lifted honestly.
+
+Explicit first-order derivation induction uses
+`inducts(F(index_parameters))`. The target must be identical to the sole family
+atom in `assumes`, with one check parameter per family index in declaration
+order. Fine enumerates the retained constructors. For each branch it substitutes
+the exact result indices into the guarantee, makes one guarantee-shaped induction
+hypothesis at every recursive premise's indices, and asks ordinary SMT whether
+the conjunction of those hypotheses with the negated branch goal is satisfiable.
+Every constructor branch must be unsatisfiable; constructors with premises from
+another family are rejected by this first slice.
+
+The proof witness erases after branch construction rather than becoming a
+runtime GADT. Rainfall retains the constructor result, result-specialized query,
+and each exact recursive-premise/induction-hypothesis pair as compiler-owned
+evidence. This does not yet provide an explicit source match body, existential
+constructor fields, a cofinite branch, or a typed branch counterexample.
 
 A universally quantified constructor field stays explicit in the proof-family
 IR. In particular, putting the bound name only in a Horn rule body turns
@@ -372,8 +388,8 @@ unknown or reused handles, manager substitution, source-bearing `internal_z3`
 edges, and events arriving after the run closed. This validator does not transport
 evidence across edits; a viewer may move a stale decoration separately.
 The recognized terminal runs include ordinary checks, proof-family membership
-checks, synthesis, and bisimulation. A proof-family trace records compiler-owned
-relation/rule declarations and the public fixedpoint query/result, while making
+and induction checks, synthesis, and bisimulation. A proof-family trace records
+compiler-owned relation/rule declarations and the public fixedpoint query/result, while making
 no claim about Spacer's internal rule search.
 
 For Rainfall runs, Fine additionally registers Z3's public fixedpoint callbacks

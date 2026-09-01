@@ -583,21 +583,28 @@ namespace fine::syntax {
                 take(TokenKind::left_brace, "before the check specification");
                 std::optional<std::string> induction_parameter;
                 std::optional<SourceSpan> induction_span;
+                std::optional<Expr> proof_induction;
                 if (current_.kind == TokenKind::inducts_kw) {
                     Token first_inducts = take(TokenKind::inducts_kw);
                     take(TokenKind::left_paren, "after `inducts`");
-                    Token parameter = take(TokenKind::identifier, "as the induction parameter");
+                    Expr target = expr();
                     Token close_inducts = take(TokenKind::right_paren, "after the induction parameter");
                     take(TokenKind::semicolon, "after `inducts(...)`");
-                    induction_parameter = std::string(parameter.text);
                     induction_span = joined(first_inducts.span, close_inducts.span);
+                    if (target.kind == Expr::Kind::name)
+                        induction_parameter = target.name;
+                    else if (target.kind == Expr::Kind::call)
+                        proof_induction = std::move(target);
+                    else
+                        throw ParseError(*induction_span,
+                                         "`inducts` needs a parameter name or direct proof-family call");
                 }
                 std::vector<Expr> assumes = condition_block(TokenKind::assumes_kw, "as the first check clause", true);
                 std::vector<Expr> ensures = condition_block(TokenKind::ensures_kw, "after `assumes`", false);
                 Token close = take(TokenKind::right_brace, "to close the check declaration");
                 return {joined(first.span, close.span), std::string(name.text), std::move(inputs),
-                        std::move(induction_parameter), std::move(induction_span), std::move(assumes),
-                        std::move(ensures)};
+                        std::move(induction_parameter), std::move(induction_span), std::move(proof_induction),
+                        std::move(assumes), std::move(ensures)};
             }
 
             CounterexampleDecl counterexample_decl() {

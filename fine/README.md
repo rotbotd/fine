@@ -104,6 +104,18 @@ records the E-matching-only query's admitted clauses and any accepted instances;
 query scope never substitutes for a causal link. The translation, papers, and
 remaining STLC boundary are in `research/induction-translation.md`.
 
+Proof-family induction is a separate first-order path. Given an erased least
+relation such as `Step(before, after)`, a check writes
+`inducts(Step(before, after));` and repeats that exact atom in `assumes`. Fine
+enumerates its retained proof constructors, substitutes each constructor's
+result indices into the guarantee, and supplies one induction hypothesis at the
+exact indices of every recursive premise. Each resulting branch is a separate
+ordinary SMT refutation query. Rainfall keeps the constructor result and every
+premise/hypothesis pair before the proof witness erases; it does not reconstruct
+branches from Spacer's projected learned lemmas. This slice excludes explicit
+proof matches, existential or cofinite constructor fields, and typed branch
+counterexamples.
+
 The first interruptible synthesis fixture fixes an exhaustive datatype match
 while leaving one whole arm as `?payload`. Rainfall gives that source node a
 snapshot-scoped typed grammar, records the independently verified lifted arm,

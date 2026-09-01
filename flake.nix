@@ -105,6 +105,34 @@
           assert rule["data"]["recursive_premises"] == 2
           assert any(event["operation"] == "z3.spacer.lemma-export" for event in events)
           PY
+          proof_induction="$($out/bin/fine run "$src/fine/fixtures/proof-family-induction.fine")"
+          echo "$proof_induction"
+          grep -F "verified-proof-induction: distinct_indices" <<<"$proof_induction"
+          grep -F "constructor-branches: 2 verified" <<<"$proof_induction"
+          false_proof_induction="$($out/bin/fine run "$src/fine/fixtures/proof-family-induction-false.fine")"
+          echo "$false_proof_induction"
+          grep -F "refuted-proof-induction: equal_indices" <<<"$false_proof_induction"
+          grep -F "failed-constructor: root" <<<"$false_proof_induction"
+          proof_induction_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-family-induction-two-premises.fine" \
+            > "$proof_induction_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-family-induction-two-premises.fine" "$proof_induction_rain"
+          ${pkgs.python3}/bin/python - "$proof_induction_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          results = [event for event in events
+                     if event["operation"] == "proof-induction.branch.result"]
+          assert [event["data"]["constructor"] for event in results] == [
+              "swap_left", "swap_right", "pairwise"]
+          assert all(event["data"]["status"] == "unsat" for event in results)
+          hypotheses = [event for event in events
+                        if event["operation"] == "proof-induction.hypothesis"
+                        and event["data"]["constructor"] == "pairwise"]
+          assert [event["data"]["premise_ordinal"] for event in hypotheses] == [0, 1]
+          assert len({event["data"]["recursive_premise"] for event in hypotheses}) == 2
+          assert len({event["data"]["induction_hypothesis"] for event in hypotheses}) == 2
+          PY
           rejected_universal="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-proof-family-universal.fine" \
             >"$rejected_universal" 2>&1; then
