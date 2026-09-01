@@ -1,0 +1,34 @@
+enum Tm {
+  left,
+  right,
+  pair(first: Tm, second: Tm),
+}
+
+proof family Step(before: Tm, after: Tm) {
+  constructor swap_left() {
+    takes {}
+    gives Step(left, right);
+  }
+
+  constructor swap_right() {
+    takes {}
+    gives Step(right, left);
+  }
+
+  constructor pairwise(before_first: Tm, after_first: Tm, before_second: Tm, after_second: Tm) {
+    takes {
+      Step(before_first, after_first);
+      Step(before_second, after_second);
+    }
+    gives Step(pair(before_first, before_second), pair(after_first, after_second));
+  }
+}
+
+check distinct_indices(before: Tm, after: Tm) {
+  assumes {
+    Step(before, after);
+  }
+  ensures {
+    (before == after) == false;
+  }
+}

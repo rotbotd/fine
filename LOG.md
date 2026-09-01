@@ -1455,3 +1455,76 @@ nix build --no-link --print-out-paths
 
 Both passed, including the expanded install-check matrix. The pre-commit tree
 realized as `/nix/store/pvbh3nplaqi7kbk15n3jxqa13smq1aab-fine-0.0.1`.
+
+## 2026-09-01 — two-recursive-premise Spacer pressure test
+
+Followed the open invariant slice with one controlled increase in proof-family
+shape: a `pairwise` constructor whose body contains two positive recursive
+`Step` premises. The fixture uses native recursive `Tm` values:
+
+```fine
+constructor pairwise(before_first: Tm, after_first: Tm,
+                     before_second: Tm, after_second: Tm) {
+  takes {
+    Step(before_first, after_first);
+    Step(before_second, after_second);
+  }
+  gives Step(pair(before_first, before_second),
+             pair(after_first, after_second));
+}
+```
+
+The same open invariant says all related indices are unequal. The two base rules
+swap `left` and `right`; the pairwise rule recursively relates both components.
+The plain run verifies, and Rainfall validates with 92 events, 30 source nodes,
+16 strong terms, and 12 source-term edges. Its compiler-owned
+`fine.proof-constructor.rule` event for `pairwise` retains `premises: 2` and
+`recursive_premises: 2` with the exact conjunctive Horn term.
+
+The public Spacer lemma export does **not** retain the joined support. The three
+observed exports were query falsity at level 0, the marginal invariant
+
+```
+Step(Step_0_n, Step_1_n) -> Step_0_n != Step_1_n
+```
+
+at level 0, and query falsity again at level 1. There was no lemma containing
+both recursive body atoms or their four source parameters. This is semantically
+adequate for the requested invariant but insufficient for reconstructing a
+branch-sensitive induction explanation. It confirms the coverage boundary:
+compiler-owned constructor rules know the conjunction; the public learned-lemma
+callback reports a projected per-relation invariant after Spacer has already
+forgotten that rule support.
+
+Retain this null. Fine must not infer source constructor selection from exported
+lemma shape or variable order. Explicit derivation elimination will need
+compiler-owned branch and recursive-evidence identities before the query, then
+may attach Spacer activity to those scopes only where an actual observer edge
+exists.
+
+Exploratory commands and artifacts:
+
+```
+.build/fine run /tmp/proof-family-two-premises.fine
+.build/fine rain /tmp/proof-family-two-premises.fine \
+  > /tmp/proof-family-two-premises.rain
+python3 fine/rainfall_validate.py \
+  /tmp/proof-family-two-premises.fine \
+  /tmp/proof-family-two-premises.rain
+```
+
+Promoted source fixture: `fine/fixtures/proof-family-two-premises.fine`. The
+flake install check verifies the semantic result, validates the trace, requires
+the exact `pairwise` event to report two total and two recursive premises, and
+requires at least one public Spacer lemma export without freezing its internal
+printed variable names.
+
+Declarative validation passed:
+
+```
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The pre-commit tree realized as
+`/nix/store/gy5fjb2pwzm6fm7ppm70mgc1phgr49zk-fine-0.0.1`.

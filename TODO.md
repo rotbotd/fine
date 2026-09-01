@@ -143,6 +143,15 @@ callbacks without assigning them source ownership or causal force. Explicit
 constructor branches, refined indices, recursive hypotheses, and source proof
 witnesses remain required before checking off derivation induction.
 
+`proof-family-two-premises.fine` pressure-tests one constructor whose body
+requires two recursive `Step` atoms. Fine and Spacer verify the invariant, and
+Rainfall retains the exact joined Horn rule with premise counts `2/2`. The
+public lemma callback does not retain that join: Spacer currently exports the
+marginal relation invariant `Step(x,y) -> x != y` plus query lemmas. This is an
+intentional null result. Learned relation summaries cannot substitute for the
+compiler-owned constructor branch and its two recursive evidence edges when
+derivation induction is added.
+
 ## Later language test: an elementary topos without ceremony
 
 An elementary topos must be definable once and usable for generic theorems

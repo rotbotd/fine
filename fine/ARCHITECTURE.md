@@ -386,6 +386,16 @@ rule, relation, obligation, success, or failure. All three operations remain
 independent internal provenance; only compiler-generated family and
 counterexample rules receive source correspondence edges.
 
+The two-recursive-premise fixture fixes one additional coverage boundary. The
+compiler trace retains the conjunction in the exact constructor rule and counts
+both recursive premises. Spacer's exported learned lemma is instead a marginal
+invariant guarded by one `Step` application; the public callback does not carry
+the pair of rule supports from which it was learned. Fine must therefore build
+branch-sensitive derivation evidence from its own constructor translation. It
+must not reconstruct a source proof branch by reading conjunction or variable
+order back out of learned lemmas, especially after Spacer projection and
+variable elimination.
+
 `fine-rain-project` is that deliberately weaker projection layer. It applies
 one ordered transaction of non-overlapping UTF-8 insertions/replacements at
 byte offsets to the validated source and maps half-open source ranges into the

@@ -88,6 +88,23 @@
           grep -F '"operation":"z3.spacer.lemma-export"' "$invariant_rain"
           grep -F '"operation":"z3.spacer.predecessor"' "$invariant_rain"
           grep -F '"operation":"z3.spacer.unfold"' "$invariant_rain"
+          two_premises="$($out/bin/fine run "$src/fine/fixtures/proof-family-two-premises.fine")"
+          echo "$two_premises"
+          grep -F "verified-family-invariant: distinct_indices" <<<"$two_premises"
+          two_premises_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-family-two-premises.fine" > "$two_premises_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-family-two-premises.fine" "$two_premises_rain"
+          ${pkgs.python3}/bin/python - "$two_premises_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          rule = next(event for event in events
+                      if event["operation"] == "fine.proof-constructor.rule"
+                      and event["data"]["constructor"] == "pairwise")
+          assert rule["data"]["premises"] == 2
+          assert rule["data"]["recursive_premises"] == 2
+          assert any(event["operation"] == "z3.spacer.lemma-export" for event in events)
+          PY
           rejected_universal="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-proof-family-universal.fine" \
             >"$rejected_universal" 2>&1; then
