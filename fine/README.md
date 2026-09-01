@@ -41,6 +41,8 @@ python fine/rainfall_generation_cli.py admit request.json edited.fine \
 python fine/rainfall_host_cli.py init .fine-live edited.fine \
   --document document:editor > launch.json
 python fine/rainfall_host_cli.py run .fine-live --fine ./build/fine/fine
+python fine/rainfall_live_cli.py .fine-browser \
+  fine/fixtures/two-state-bisim.fine --fine ./build/fine/fine
 ```
 
 `demo-bisim` embeds that exact checked-in Fine fixture; it is not a second
@@ -114,3 +116,12 @@ and atomically replaces the state. `run` executes Fine without holding that
 lock, so edits remain responsive, then reopens the latest state for admission.
 This deliberately permits a real late completion and proves that it is
 discarded. The host is a filesystem protocol and test harness, not an editor UI.
+
+`fine-rain-live` is the first deliberately small editor integration. It serves a
+local browser textarea and an evidence pane from `127.0.0.1`, turns each changed
+middle into one UTF-8 byte transaction, and starts a generation without blocking
+the next edit. While Fine is running, the pane keeps the previous annotations
+visibly `transported` or `unplaced`; only the host's ordinary admission path can
+make them `current` again. Run the installed form with
+`nix run .#live -- .fine-browser fine/fixtures/two-state-bisim.fine`. The browser is a protocol
+client, not a second owner of revision or generation identity.

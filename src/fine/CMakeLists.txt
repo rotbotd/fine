@@ -57,3 +57,10 @@ install(PROGRAMS "${PROJECT_SOURCE_DIR}/fine/rainfall_host_cli.py"
 install(FILES "${PROJECT_SOURCE_DIR}/fine/rainfall_host.py"
   DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
+install(PROGRAMS "${PROJECT_SOURCE_DIR}/fine/rainfall_live_cli.py"
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  RENAME fine-rain-live
+)
+install(FILES "${PROJECT_SOURCE_DIR}/fine/rainfall_live.py"
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)

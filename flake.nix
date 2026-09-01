@@ -709,6 +709,93 @@
           assert state["generations"][current]["status"] == "failed"
           assert state["annotations"] == []
           PY
+          live_host="$(mktemp -d)"
+          live_work="$(mktemp -d)"
+          cat > "$live_work/slow-fine" <<EOF
+          #!${pkgs.runtimeShell}
+          ${pkgs.coreutils}/bin/sleep 0.4
+          exec "$out/bin/fine" "\$@"
+          EOF
+          chmod +x "$live_work/slow-fine"
+          ${pkgs.python3}/bin/python - "$out/bin" "$live_host" \
+            "$src/fine/fixtures/two-state-bisim.fine" "$live_work/slow-fine" <<'PY'
+          import json, pathlib, sys, threading, time, urllib.error, urllib.request
+          sys.path.insert(0, sys.argv[1])
+          from rainfall_live import (LiveServer, initialize_session, make_handler,
+                                     minimal_edit)
+
+          host, source, fine = map(pathlib.Path, sys.argv[2:])
+          edit = minimal_edit("a😀c", "a😺c")[0]
+          assert edit == {"from": 1, "to": 5, "insert": "😺"}
+          session = initialize_session(host, source, fine, "document:browser-test", False)
+          server = LiveServer(("127.0.0.1", 0), make_handler(session))
+          thread = threading.Thread(target=server.serve_forever, daemon=True)
+          thread.start()
+          base = f"http://127.0.0.1:{server.server_address[1]}"
+
+          def get(path):
+              with urllib.request.urlopen(base + path) as response:
+                  return response.status, response.read()
+
+          def post(text):
+              body = json.dumps({"source": text}).encode()
+              request = urllib.request.Request(
+                  base + "/api/source", data=body, method="POST",
+                  headers={"Content-Type": "application/json"})
+              with urllib.request.urlopen(request) as response:
+                  return response.status, json.loads(response.read())
+
+          def wait_for(predicate, timeout=8):
+              deadline = time.monotonic() + timeout
+              while time.monotonic() < deadline:
+                  state = json.loads(get("/api/state")[1])
+                  if predicate(state):
+                      return state
+                  time.sleep(0.04)
+              raise AssertionError("live editor state did not converge")
+
+          try:
+              status, page = get("/")
+              assert status == 200 and b"fine rainfall" in page
+              hostile = urllib.request.Request(
+                  base + "/api/source", data=b'{"source":"bad"}', method="POST",
+                  headers={"Content-Type": "application/json", "Origin": "https://evil.invalid"})
+              try:
+                  urllib.request.urlopen(hostile)
+                  raise AssertionError("accepted a cross-origin browser edit")
+              except urllib.error.HTTPError as error:
+                  assert error.code == 403
+              wrong_type = urllib.request.Request(
+                  base + "/api/source", data=b'{"source":"bad"}', method="POST",
+                  headers={"Content-Type": "text/plain"})
+              try:
+                  urllib.request.urlopen(wrong_type)
+                  raise AssertionError("accepted a non-JSON editor request")
+              except urllib.error.HTTPError as error:
+                  assert error.code == 415
+              state0 = wait_for(lambda s: s["generations"][s["current_generation"]]["status"]
+                                          == "admitted")
+              assert {a["status"] for a in state0["annotations"]} == {"current"}
+              original = state0["display_source"]
+              status, action1 = post("// first edit λ\n" + original)
+              assert status == 202 and action1["display_snapshot"]["revision"] == 1
+              stale1 = json.loads(get("/api/state")[1])
+              assert stale1["generations"][stale1["current_generation"]]["status"] == "requested"
+              assert {a["status"] for a in stale1["annotations"]} == {"transported"}
+              status, action2 = post("// second edit\n// first edit λ\n" + original)
+              assert status == 202 and action2["display_snapshot"]["revision"] == 2
+              final = wait_for(lambda s: s["display_snapshot"]["revision"] == 2 and
+                                         s["generations"][s["current_generation"]]["status"]
+                                         == "admitted")
+              assert final["display_source"].startswith("// second edit\n// first edit λ\n")
+              assert {a["status"] for a in final["annotations"]} == {"current"}
+              assert final["generations"][action1["generation"]]["status"] == "discarded"
+              assert final["generations"][action2["generation"]]["status"] == "admitted"
+          finally:
+              server.shutdown()
+              server.server_close()
+              thread.join(timeout=2)
+          PY
           datatype_rain="$($out/bin/fine rain "$src/fine/fixtures/check-datatype-counterexample.fine")"
           RAIN="$datatype_rain" ${pkgs.python3}/bin/python - <<'PY'
           import json, os
@@ -734,6 +821,11 @@
           PY
           runHook postInstallCheck
         '';
+      };
+      apps.${system}.live = {
+        type = "app";
+        program = "${self.packages.${system}.default}/bin/fine-rain-live";
+        meta.description = "Local browser editor for live Fine Rainfall evidence";
       };
     };
 }

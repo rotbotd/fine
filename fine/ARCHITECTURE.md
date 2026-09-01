@@ -238,8 +238,18 @@ replaces the annotation set whole. A late completion is retained as historical
 trace plus a discarded record but does not touch displayed annotations. Solver
 failure is recorded and leaves transported markers in place. This harness uses
 POSIX `flock`, ordinary subprocess execution, and atomic local-filesystem rename;
-it is not the future editor process, cross-machine collaboration protocol, or a
-claim that cancellation succeeded.
+it is not itself an editor, cross-machine collaboration protocol, or a claim
+that cancellation succeeded.
+
+`fine-rain-live` is a thin local browser client around this same host. It derives
+one minimal UTF-8 byte edit from each submitted textarea value, calls `advance`,
+starts the named generation asynchronously, and polls `state.json` through the
+locked host API. The browser never admits evidence. During a run it can display
+only the host's transported or unplaced predecessor annotations; current
+annotations appear only after the ordinary completion gate replaces the set.
+The HTTP boundary is loopback by default, accepts edits only as JSON, and rejects
+non-loopback browser origins. This is the first editor integration, not an IME,
+incremental parsing, or collaboration claim.
 
 For `check`, rainfall records the one source-level refutation assertion, the
 public query boundary and polarity, each completed parameter evaluation, and

@@ -191,6 +191,25 @@ or persistent AST IDs. Once it is closed, the next component is a viewer that
 consumes only validator-admitted projections and visibly distinguishes current
 from transported evidence.
 
+## Browser integration slice
+
+`fine-rain-live` is now one concrete client of that protocol. The browser sends
+the complete textarea value, but the local server reduces it to the single
+changed UTF-8 middle before calling the ordinary host `advance` transaction.
+It starts Fine on a background thread and never owns a second revision counter,
+generation token, admission rule, or annotation set. Polling merely renders the
+authoritative host state. A quick second edit therefore produces the same real
+late-result race as any future editor: the predecessor is retained as discarded
+history and cannot repaint the current display.
+
+The pane groups evidence by source node, shows exact display ranges and accepted
+instance/admitted-lemma counts, and uses three visibly different states for
+`current`, `transported`, and `unplaced`. The 220 ms textarea debounce is only a
+request-rate choice; it carries no evidentiary meaning. The server defaults to
+loopback, requires JSON for edits, and rejects browser edit requests whose
+Origin is not loopback. It is intentionally not yet an IME-aware transaction
+source, collaborative editor, incremental parser, or syntax-highlighting system.
+
 ## Rejected shortcuts
 
 - Do not key source nodes by span, source text, declaration name, or a hash of
