@@ -763,3 +763,98 @@ loopback-only CLI and CSP tightening follows this log entry.
 Implementation commit: `56299c727`. The final dirty-tree validation artifact
 before this log-only commit was
 `/nix/store/ld8xnxwqqscqs21b18b7ri1x41nnv415-fine-0.0.1`.
+
+## 2026-09-01 — external direct-subterm induction (`b3a4f6fb8`)
+
+Closed the first induction vertical slice by putting the tactic in Fine rather
+than reviving Z3's disabled `smt_induction` sources. Full local copies and text
+extractions of Leino's *Automating Induction with an SMT Solver*, Reynolds and
+Kuncak's *Induction for SMT Solvers*, and Amin--Leino--Rompf's *Computing with
+an SMT Solver* are under `/root/reading/fine-induction/`; the source-facing
+decision is `fine/research/induction-translation.md`. Leino's frontend rewrite
+was the appropriate first boundary: Fine owns the well-founded order and emits
+an ordinary quantified formula, while Z3 remains responsible only for solving
+that formula. The more invasive CVC4/CVC5 work adds lazy induction choice,
+variable-order search, and conjecture generation inside the solver; none was
+needed to test the source-to-SMT path.
+
+Added declaration-level structurally recursive functions with the deliberately
+narrow Latte-shaped surface
+
+```
+function length(xs: List): Int {
+  match xs {
+    nil => 0,
+    cons(_, tail) => 1 + length(tail),
+  }
+}
+```
+
+The elaborator registers the function with the same Z3 manager through
+`Z3_add_rec_def`. It accepts only an exhaustive, nonduplicated match on one named
+field-bearing-datatype parameter. A recursive self-call's matched argument must
+be the name of a direct self-typed field bound by the current arm; a mutation
+from `length(tail)` to `length(xs)` is rejected at the exact call argument.
+There is no mutual recursion, general match expression, projection syntax,
+nested/transitive decrease, or termination claim delegated to Z3.
+
+Added `inducts(xs);` at the start of a check. For the source theorem
+`P = assumptions -> guarantees`, Fine constructs the direct-field relation `R`
+from the datatype declaration and asks Z3 to refute
+
+```
+(forall smaller. R(smaller, xs) -> P[xs := smaller]) -> P.
+```
+
+The check parameters are already arbitrary fresh same-manager constants, so an
+unsatisfiable negation closes the universally quantified induction step. Other
+check parameters remain fixed across the smaller premise. A datatype without a
+direct recursive field and an unknown or nondatatype induction parameter are
+rejected. A deliberately false mutation, `length(xs) == 1`, is refuted with the
+source counterexample `xs: List = nil`, showing that the translation does not
+make checks vacuously verify. Both verified and refuted output names the actual
+`direct-subterm` induction policy.
+
+The induction query disables MBQI and enables E-matching; quantifier events now
+record both engine settings and say `ematching-only-query`, `mbqi-only-query`, or
+`not-distinguished` rather than inferring MBQI merely from a Boolean with an
+ambiguous name. Rainfall gives the function declaration and check declaration
+compiler-owned `generated` edges, records `function.recursive-definition` and
+`check.induction.translate`, and then keeps the query-scoped Z3 instance and
+clause observers separate. The length trace has 120 events, 13 source nodes, 49
+strong terms, and 11 source-term edges. It has no accepted quantifier-instance
+event: preprocessing reduces the singleton direct-field premise to a ground
+assumption clause. The trace honestly retains that assumption plus inferred
+recursive-function clauses containing `tail`, `case-def`, and
+`recfun-num-rounds`; no causal join is invented from their chronology.
+
+The control experiment without `inducts(xs);` remained inside recursive
+unfolding beyond the install check's two-second boundary. An earlier raw Z3
+control process was accidentally left alive for about 25 minutes at nearly one
+CPU before being noticed and killed; it had still not returned. This is kept as
+a timeout control, not reported as a proof that the untransformed problem never
+terminates.
+
+Validation commands and retained checks:
+
+```
+cmake --build build/fine --target fine-bin -j2
+./build/fine/fine run fine/fixtures/induction-length.fine
+./build/fine/fine rain fine/fixtures/induction-length.fine > /tmp/induction.rain
+python fine/rainfall_validate.py \
+  fine/fixtures/induction-length.fine /tmp/induction.rain
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The install check also mutates the fixture to require rejection of a
+nondecreasing recursive call and an unknown induction parameter, refutation of
+the false `length(xs) == 1` claim, timeout of the no-induction control, exact
+Rainfall event ordering and engine flags, assumption/inference clause coverage,
+generated function/check source edges, and validation of any accepted
+E-matching instance should a later Z3 preprocessing path retain one. All prior
+language, synthesis, model, bisimulation, projection, generation, host-race, and
+live-browser checks remain in the same clean build.
+
+Clean implementation artifact:
+`/nix/store/8a6wkr1ch7s1zffzfbqchk7k8dr2a08w-fine-0.0.1`.
