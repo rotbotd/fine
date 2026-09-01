@@ -515,3 +515,73 @@ edge is the host transaction itself: atomically advance displayed bytes and the
 current request, retain predecessor annotations only as transported, launch the
 structured run, and replace them only with an admitted completion. The separate
 solver edge remains observer coverage past the three current narrow boundaries.
+
+## 2026-09-01 — atomic editor-neutral host transaction (`54320748e`)
+
+Implemented the transaction as the installed `fine-rain-host` filesystem
+harness. It is intentionally not a CodeMirror extension. Its authoritative
+`state.json`, described by `fine/host-state-schema.json`, contains the exact
+displayed UTF-8 source, recomputed document/revision/hash/length identity, current
+generation, every generation record, and the annotations currently painted.
+Immutable retained source and request files live beside it; completed traces are
+retained separately.
+
+`init` creates revision zero and its first request. `advance` takes the same
+ordered byte-offset edit transaction as `fine-rain-project`. Under a POSIX host
+`flock`, it applies the edit, maps every currently displayed range again, makes
+current annotations transported and preserves already transported ones, keeps
+collapsed annotations permanently unplaced, marks a pending predecessor
+superseded, writes the new immutable request/source artifacts, and replaces
+`state.json` using a same-directory temporary file, file fsync, rename, and
+directory fsync. Artifacts are durable before state can name them. A crash before
+the commit point can leave an orphan but cannot expose state pointing to a
+partially written request or source.
+
+`run` snapshots one requested or superseded generation under the lock and then
+releases the lock before starting Fine as an argument vector without a shell.
+The editor transaction is therefore not blocked by the solver. On completion it
+validates the trace outside the lock, reacquires the lock, reloads the newest
+display/request, and uses exact generation admission. An admitted completion
+replaces the annotation set whole. A late completion is stored as historical
+trace and a discarded generation record but cannot touch displayed annotations.
+Fine parse/elaboration failure is recorded as `failed` and leaves whatever stale
+markers are already displayed. `complete` exposes the same boundary for an
+external worker. Retained trace writes tolerate an identical orphan from a crash
+between trace persistence and state commit but reject different bytes at that
+identity.
+
+State loading does not merely parse JSON. It recomputes the display identity,
+validates every embedded generation request and its key, requires retained paths
+to be relative and non-traversing, checks the current request against the display,
+and bounds every placed annotation span within the displayed bytes. This is
+corruption detection, not an authentication boundary against someone who owns
+the host directory.
+
+The clean install check exercises a real race. Revision zero is run and admitted;
+revision one transports its eleven markers. A slow wrapper starts revision one's
+Fine process, revision two advances while that process sleeps, and the actual
+revision-one completion is then discarded against revision two. Revision two is
+run and admitted, restoring eleven current markers. The test verifies generation
+records and every retained source/request artifact. A second host replaces the
+whole program with malformed Fine; the requested process fails, its generation
+is recorded failed, and no annotation is invented. All prior replay, projection,
+and pure generation hostile tests remain in the same isolated build.
+
+Validation commands were:
+
+```
+cmake --build .build -j4
+python fine/rainfall_host_cli.py init /tmp/fine-live \
+  fine/fixtures/check-counterexample.fine --document document:host-test
+python fine/rainfall_host_cli.py run /tmp/fine-live --fine .build/fine
+python fine/rainfall_host_cli.py advance /tmp/fine-live /tmp/edits.json
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The clean artifact is
+`/nix/store/m5z6pbg8vz2h21f6hrdv918m60rqcxpn-fine-0.0.1`. The live protocol is
+now closed through an editor-neutral host transaction. Remaining editor work is
+integration and UX policy—IME deferral, viewport rendering, and process
+lifecycle—not another evidence identity layer. The independent semantic edge is
+truthful solver-search coverage beyond the three narrow observers.
