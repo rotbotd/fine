@@ -282,3 +282,36 @@ nix build --no-link --print-out-paths
 The isolated build ran the legacy suite plus exact datatype, finite-enum, and
 tuple witness assertions. The clean artifact is
 `/nix/store/n2486qxpxi6l0nzsnc59i1bxjbn8h7bk-fine-0.0.1`.
+
+## 2026-09-01 — reference transfer for a live Rainfall projection
+
+Inspected h's Latte checkout, the native TypeScript parser port, Dark's editor
+specification, the recovered Obsidian live-preview implementation, and
+obsidian-demin against Fine's current parser and Rainfall v2 recorder. The
+result is `docs/reference-transfer.md`.
+
+The closed decision is that solver evidence remains bound to the exact source
+snapshot and Z3 manager that produced it. A decoration may be mapped through a
+source edit for visual continuity, but it becomes explicitly transported/stale
+and cannot acquire truth about the new program from matching text, names, or
+spans. The design separates document, snapshot, parse-local source-node, and
+same-manager Z3-term identities, then represents source correspondence as an
+evidence relation with exact/desugared/generated/internal alternatives.
+
+Latte contributes the live-document versus immutable-artifact separation,
+phase-owned compilation snapshots, explicit mapping kinds, and query ownership
+derived from an AST-to-IR identity join rather than ranges. typescript-go
+contributes parser construction and recovery techniques, but its lazy
+process-global AST IDs and within-parse reparsing do not establish cross-edit
+identity. Dark contributes typed revision transport and generation staleness,
+but its current Lean tree has forty proof holes and is not treated as proved
+infrastructure. The recovered Obsidian code contributes one observed UI rule:
+map old decorations while composing or while demanded syntax is unavailable,
+then rebuild from current syntax. Its numeric tree-length test is not promoted
+into Fine semantics, and neither the proprietary source nor obsidian-demin
+becomes a dependency.
+
+The proposed first vertical slice is a document/snapshot object in Rainfall,
+parse-local source objects, explicit source-to-term evidence for the existing
+`check` path, and a replay validator with hostile cross-revision and
+cross-manager tests. No implementation claim was made in this study commit.
