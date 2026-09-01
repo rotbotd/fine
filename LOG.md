@@ -585,3 +585,62 @@ now closed through an editor-neutral host transaction. Remaining editor work is
 integration and UX policy—IME deferral, viewport rendering, and process
 lifecycle—not another evidence identity layer. The independent semantic edge is
 truthful solver-search coverage beyond the three narrow observers.
+
+## 2026-09-01 — exact MBQI-instance-to-clause evidence (`439fb34a3`)
+
+Started by testing the proposed next observer boundary rather than assuming it
+would yield information. Temporarily instrumented both discard returns in
+`qi_queue::instantiate(entry&)`: redundancy-checker satisfaction and
+rewrite-to-true. Rebuilt Fine and ran the two-state MBQI bisimulation fixture.
+Both counts were exactly zero while the existing `on_binding` observer reported
+six accepted instances. Reverted the probe completely. For this workload, a new
+discard observer would add API and soft-fork surface while producing an empty
+trace; that null result is why this slice did not add one.
+
+The live trace did contain a narrower missing evidence edge. Each accepted
+`z3.mbqi-instance` was followed eventually by a `z3.clause.infer` whose public
+proof hint had head `inst`, but the two records were only adjacent-looking facts.
+The existing `qi_queue` callback occurs before lemma insertion; Z3's clause-proof
+path later constructs an `inst` proof term containing the exact preprocessed
+quantifier, negated unsimplified ground body, `bind` arguments, and generation.
+That is enough to prove the handoff without claiming anything after admission.
+
+Changed `RainfallRecorder::record` to return its emitted event ID. The quantifier
+observer registers a pending pair keyed by the quantifier and positive ground-body
+strong handles. When the clause observer sees a structurally valid `inst` hint, it
+recovers those same two live terms, consumes the pending pair exactly once, and
+adds the accepted-instance event, quantifier handle, instance handle, and each
+ground-binding handle to the clause event. It rejects malformed `inst` hints,
+duplicate pending pairs, and `inst` clauses that do not match an observed accepted
+instance. The explicit relation is
+`accepted-instance-became-admitted-clause`; chronology is not evidence.
+
+On the fixture there are six accepted MBQI instances and exactly six `inst` clause
+inferences, with six distinct one-to-one event references. This proves only that
+an accepted ground instance became an admitted quantifier lemma. It does not say
+the lemma propagated, conflicted, repaired the candidate model, or caused `sat`.
+The observer boundary remains blind to the auxiliary MBQI context, discarded
+candidates, assignments, decisions, watched literals, and blocking work.
+
+Replay validation now validates the entire public clause payload—proof hint,
+literal handles, count, and dependency indices—and, for `inst`, requires a prior
+accepted-instance event with identical quantifier and instance handles, known
+ground bindings, and the exact relation. The schema declares that payload.
+Install checks assert the six-way bijection and reject traces whose instance event
+or ground term was exchanged for another valid reference. `fine-rain-validate`
+now runs on the bisimulation trace as well as check traces.
+
+Validation commands and results:
+
+```
+cmake --build .build -j4
+./.build/fine rain fine/fixtures/two-state-bisim.fine > /tmp/join.rain
+python fine/rainfall_validate.py \
+  fine/fixtures/two-state-bisim.fine /tmp/join.rain
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The validator reported 216 events, 41 source nodes, 97 strong terms, and zero
+source-term edges for this generated bisimulation path. The clean Nix artifact is
+`/nix/store/dw36gbxviwviiclh0xazkyzac8cyrpsl-fine-0.0.1`.
