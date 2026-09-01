@@ -447,3 +447,71 @@ generation control: while a revision is compiling, retain only transported
 annotations from its immediate predecessor; accept a completed trace only for
 the generation and exact display snapshot that requested it; discard late old
 generations without promoting or merging their claims.
+
+## 2026-09-01 — exact generation admission (`837bbe1ac`)
+
+Closed the pure admission boundary for racing live runs. The installed
+`fine-rain-generation request` command binds an opaque generation ID to one
+exact display identity: document, revision, SHA-256, and byte length. It emits
+the structured arguments for the new extended rain form:
+
+```
+fine rain --document <id> --revision <n> --generation <id> <source.fine>
+```
+
+That form does not trust a caller-supplied hash; Fine reads the file and computes
+the snapshot hash and size itself. It preserves the supplied document and
+revision and uses the supplied generation as Rainfall's existing run identity,
+including every event and strong term identity. The ordinary `fine rain
+<source>` path still creates a fresh document, revision zero, and fresh run.
+
+`fine-rain-generation admit` takes the current request and display bytes plus a
+candidate's retained source and completed trace. It first runs the full replay
+validator against the candidate's own source. A malformed or truncated
+candidate is an error, not a stale result. It then recomputes the current display
+identity and compares the candidate run, document, revision, hash, and length to
+the request. Exact agreement emits `fine.rainfall.admission.v1` with an admitted
+current projection. Any mismatch emits one whole discarded completion with a
+specific reason: display advanced, late/unrequested generation, different
+document, different revision, or different source. Candidate events are never
+partially merged with transported markers.
+
+The request/admission shape is recorded in `fine/generation-schema.json`. The
+gate is deliberately pure and has no daemon or filesystem lock: the future host
+must retain the newest request and its source, supply that request as “current,”
+and never reuse a generation ID. Killing a predecessor is an optimization only;
+a process that ignores cancellation can finish and will still fail admission.
+This slice therefore establishes the comparison that a live host must perform,
+not process scheduling, IPC, CodeMirror lifecycle, or persistent editor state.
+
+The isolated install check runs revision zero and revision one under the same
+document with distinct generations. Both requested completions are admitted and
+produce only current annotations. It then presents revision zero after revision
+one, a second run for the exact revision-one bytes under another generation, a
+different document, a different revision, a different source under otherwise
+matching identity, and a request whose displayed bytes advanced. Each is
+discarded for the intended reason. A post-terminal hostile trace is rejected by
+validation before admission. The test also verifies that the generation is the
+run envelope on every event and that Fine preserved the requested document and
+revision in the snapshot.
+
+Validation commands were:
+
+```
+cmake --build .build -j4
+python fine/rainfall_generation_cli.py request /tmp/rev1.fine \
+  --document document:live-test --revision 1 --generation generation:1
+./.build/fine rain --document document:live-test --revision 1 \
+  --generation generation:1 /tmp/rev1.fine
+python fine/rainfall_generation_cli.py admit \
+  /tmp/request.json /tmp/rev1.fine /tmp/rev1.fine /tmp/rain1.jsonl
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The clean artifact is
+`/nix/store/5vhfk2bpvzwjzyvxjwkj1l1w290f2m23-fine-0.0.1`. The next editor-facing
+edge is the host transaction itself: atomically advance displayed bytes and the
+current request, retain predecessor annotations only as transported, launch the
+structured run, and replace them only with an admitted completion. The separate
+solver edge remains observer coverage past the three current narrow boundaries.
