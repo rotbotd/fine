@@ -125,3 +125,53 @@ The flake checks assert MBQI enabled and E-matching disabled, a nonempty instanc
 set, all instance events preceding the result, the exact producer and engine,
 and the exact three source roles. The clean artifact is
 `/nix/store/m29hxiapp2awjz3ang87wvn5byy5p9qf-fine-0.0.1`.
+
+## 2026-09-01 — source-level counterexample loop (`deaf510e8`)
+
+The pitch's missing third result path is now executable. A `check` declaration
+has typed Int/Bool parameters, an `assumes` block, and an `ensures` block. Fine
+asks one public query for assumptions conjoined with the negation of all
+guarantees. `unsat` reports no counterexample; `sat` completes each parameter
+under the returned model and emits a typed, parseable `counterexample`
+declaration. The latter is deliberately a returned witness envelope rather
+than another executable declaration.
+
+Each primitive assignment is lifted from the model value, printed, parsed by
+the ordinary declaration parser, elaborated in the same manager, and checked
+for exact AST identity. Negative integer literals were added to the source
+grammar specifically so a Z3 negative numeral remains a numeral rather than
+being disguised as a subtraction expression. The refuting fixture returns
+`a: Int = -1` and `b: Int = 1` for a false subtraction lower-bound claim; a
+separate addition fixture closes the no-counterexample path.
+
+The 17-event rainfall for the refuting fixture contains the source-level
+refutation assertion, public counterexample query, `sat` result, both completed
+model assignments, the parsed Fine witness, and acceptance. Assignment values
+are labelled equality under that model. There is no claim of minimality and no
+coverage of arithmetic propagation, conflict analysis, model construction, or
+other solver-internal search. The flake checks enforce event order, polarity,
+outcome, assignment names and provenance, negative-literal source output, exact
+round-trip identity, and the absence of the unrelated theory-rewrite and MBQI
+producers.
+
+Validation commands were:
+
+```
+cmake --build build/fine --target fine-bin -j2
+./build/fine/fine run fine/fixtures/check-counterexample.fine
+./build/fine/fine run fine/fixtures/check-valid.fine
+./build/fine/fine rain fine/fixtures/check-counterexample.fine
+./build/fine/fine run fine/fixtures/synth-max.fine
+nix build --no-link --print-out-paths
+```
+
+The local Debug build's `.ninja_deps` repeatedly reported `premature end of
+file; recovering`, which caused otherwise unnecessary full Z3 recompiles. Two
+such recompiles completed successfully; a third redundant one was interrupted.
+The isolated Nix build and all install checks completed cleanly, producing
+`/nix/store/xlfz52hd2hl15rl6hy76lgs554mvvf2h-fine-0.0.1`.
+
+After the clean artifact closed the slice, `ninja -C build/fine -t recompact`
+recovered and rewrote both local Ninja databases. A following
+`ninja -C build/fine -t deps` produced no warning; no further full rebuild was
+needed because the isolated Nix build had already passed.
