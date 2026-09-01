@@ -175,8 +175,10 @@ inside that snapshot. `source.node.declare` therefore always carries both the
 snapshot reference and the parse-local ID; neither a span nor a repeated node ID
 is a cross-parse identity. The compiler emits `source.term.evidence` edges for
 the original `check` expressions while elaborating them, labelled `exact` for
-names and literals or `desugared` for constructors and compound syntax. Generated
-witness parses and post-preprocessing Z3 terms do not inherit those edges.
+names and literals or `desugared` for constructors and compound syntax. The
+`proof bisimulation` declaration also has four `generated` edges to the exact
+fully elaborated clause terms produced from that proof form. Generated witness
+parses and post-preprocessing Z3 terms do not inherit those edges.
 
 `fine-rain-validate <source.fine> <rain.jsonl>` replays this boundary without a
 solver. It checks the exact source hash and size, one document/snapshot envelope,
@@ -198,6 +200,13 @@ any transaction, even when the resulting bytes equal the old bytes. A new
 validated trace, not range or text continuity, is the only route back to
 `current`. The command can emit a standalone HTML table whose stale state is
 both written in text and styled separately; color is not the sole distinction.
+For a generated bisimulation clause, projection joins its exact assertion handle
+to the compiler role, gathers accepted instances carrying that role, and follows
+each explicit instance-to-lemma evidence edge. The JSON and collapsed HTML
+details show the ground body and binding terms and distinguish acceptance from
+lemma admission. This is activity attached to the proof declaration, not a claim
+that preprocessed quantifiers or clauses are Fine source syntax, nor an account
+of what caused the solver result.
 
 Live generation admission is a separate boundary. A generation request binds an
 opaque generation ID to the exact current document/revision/hash/length. The

@@ -235,6 +235,40 @@
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/two-state-bisim.fine" "$bisim_rain"
 
+          bisim_projection="$(mktemp)"
+          bisim_html="$(mktemp)"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-project \
+            "$src/fine/fixtures/two-state-bisim.fine" "$bisim_rain" \
+            --html "$bisim_html" > "$bisim_projection"
+          ${pkgs.python3}/bin/python - "$bisim_projection" "$bisim_html" <<'PY'
+          import json, pathlib, sys
+          projection = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          html = pathlib.Path(sys.argv[2]).read_text()
+          annotations = projection["annotations"]
+          assert len(annotations) == 4
+          assert len({item["claim"]["source"] for item in annotations}) == 1
+          assert all(item["syntax_kind"] == "decl.proof" for item in annotations)
+          assert all(item["claim"]["correspondence"] == "generated"
+                     for item in annotations)
+          activity = {item["activity"]["role"]: item["activity"]
+                      for item in annotations}
+          assert {role: len(item["accepted_instances"])
+                  for role, item in activity.items()} == {
+              "labels-agree": 1,
+              "left-step-matched": 3,
+              "right-step-matched": 2,
+              "initial-related": 0,
+          }
+          instances = [instance for item in activity.values()
+                       for instance in item["accepted_instances"]]
+          assert len(instances) == 6
+          assert all(instance["admitted_clause_event"] for instance in instances)
+          assert all(instance["ground_bindings"] for instance in instances)
+          assert "left-step-matched" in html
+          assert "3 accepted instances, 3 admitted lemmas" in html
+          assert html.count('<tr class="current"') == 1
+          PY
+
           bisim_hostile="$(mktemp -d)"
           ${pkgs.python3}/bin/python - "$bisim_rain" "$bisim_hostile" <<'PY'
           import copy, json, pathlib, sys

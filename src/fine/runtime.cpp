@@ -1203,6 +1203,9 @@ namespace fine {
                     if (rainfall_) {
                         std::string reference = rainfall_->term(assertion);
                         assertion_references.push_back(reference);
+                        rainfall_->source_term(
+                            proof.node_id, proof.span, "decl.proof", assertion,
+                            "generated", {run_scope});
                         rainfall_->record(
                             "constraint", "bisim.clause.assert", {run_scope}, "fine.bisimulation",
                             "Fully elaborated bisimulation clause asserted through Z3's public solver API",

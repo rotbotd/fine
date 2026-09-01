@@ -119,6 +119,53 @@ def project(source: bytes, events: list[dict[str, Any]], edits: list[Edit]) -> t
         "exact_source_hash": "sha256:" + hashlib.sha256(displayed_source).hexdigest(),
         "byte_length": len(displayed_source),
     }
+    bisimulation_assertions = {
+        event["data"]["assertion"]: event
+        for event in events
+        if event["operation"] == "bisim.clause.assert"
+    }
+    admitted_lemmas = {
+        event["data"]["quantifier_instance_event"]: event
+        for event in events
+        if event["operation"] == "z3.clause.infer"
+        and event["data"].get("proof_hint_head") == "inst"
+    }
+    accepted_by_role: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        if event["operation"] not in {"z3.mbqi-instance", "z3.quantifier-instance"}:
+            continue
+        role = event["data"].get("source_role")
+        if isinstance(role, str):
+            accepted_by_role.setdefault(role, []).append(event)
+
+    def bisimulation_activity(term_reference: str) -> dict[str, Any] | None:
+        assertion = bisimulation_assertions.get(term_reference)
+        if assertion is None:
+            return None
+        role = assertion["data"]["role"]
+        accepted = accepted_by_role.get("fine.bisim." + role, [])
+        instances = []
+        for event in accepted:
+            lemma = admitted_lemmas.get(event["event_id"])
+            bindings = [
+                {"term": reference, "text": objects["terms"][reference]["text"]}
+                for reference in (lemma["data"]["ground_bindings"] if lemma else [])
+            ]
+            instance_reference = event["data"]["instance"]
+            instances.append({
+                "accepted_event": event["event_id"],
+                "instance": instance_reference,
+                "instance_text": objects["terms"][instance_reference]["text"],
+                "admitted_clause_event": lemma["event_id"] if lemma else None,
+                "ground_bindings": bindings,
+            })
+        return {
+            "kind": "bisimulation-clause-activity",
+            "role": role,
+            "assertion_event": assertion["event_id"],
+            "accepted_instances": instances,
+        }
+
     annotations: list[dict[str, Any]] = []
     for event in objects["evidence"]:
         edge = event["data"]
@@ -142,6 +189,7 @@ def project(source: bytes, events: list[dict[str, Any]], edits: list[Edit]) -> t
             "claim_span": node["span"],
             "display_span": source_span(displayed_source, *mapped) if mapped else None,
             "term_text": term["text"],
+            "activity": bisimulation_activity(edge["term"]),
         })
     result = {
         "schema": "fine.rainfall.projection.v1",
@@ -170,8 +218,38 @@ def render_html(projection: dict[str, Any], displayed_source: bytes) -> str:
         warning = "current evidence — this trace was admitted for the displayed snapshot"
     else:
         warning = "stale evidence — these claims belong to the previous revision and do not describe this one"
-    rows: list[str] = []
+    grouped: dict[str, list[dict[str, Any]]] = {}
     for item in annotations:
+        grouped.setdefault(item["claim"]["source"], []).append(item)
+
+    def render_activity(activity: dict[str, Any]) -> str:
+        instances = activity["accepted_instances"]
+        admitted = sum(instance["admitted_clause_event"] is not None
+                       for instance in instances)
+        details = []
+        for instance in instances:
+            binding_text = ", ".join(
+                binding["text"] for binding in instance["ground_bindings"]
+            ) or "no binding terms"
+            admission = (f'admitted as {instance["admitted_clause_event"]}'
+                         if instance["admitted_clause_event"] else
+                         "accepted; no admitted lemma was observed")
+            details.append(
+                f'<details><summary>{html.escape(instance["accepted_event"])} — '
+                f'{html.escape(admission)}</summary>'
+                f'<div>bindings: <code>{html.escape(binding_text)}</code></div>'
+                f'<pre>{html.escape(instance["instance_text"])}</pre></details>'
+            )
+        noun = "instance" if len(instances) == 1 else "instances"
+        return (
+            f'<section><strong>{html.escape(activity["role"])}</strong><br>'
+            f'{len(instances)} accepted {noun}, {admitted} admitted lemmas'
+            + "".join(details) + "</section>"
+        )
+
+    rows: list[str] = []
+    for group in grouped.values():
+        item = group[0]
         span = item["display_span"]
         if span is None:
             location = "unplaced"
@@ -180,13 +258,32 @@ def render_html(projection: dict[str, Any], displayed_source: bytes) -> str:
             begin, end = span["begin"]["offset"], span["end"]["offset"]
             location = f"{span['begin']['line']}:{span['begin']['column']}–{span['end']['line']}:{span['end']['column']}"
             excerpt = displayed_source[begin:end].decode("utf-8", errors="replace")
+        activities = [entry["activity"] for entry in group
+                      if entry["activity"] is not None]
+        activity_html = "".join(render_activity(activity) for activity in activities) or "—"
+        correspondences = ", ".join(dict.fromkeys(
+            entry["claim"]["correspondence"] for entry in group
+        ))
+        if len(group) == 1:
+            terms_html = f'<code>{html.escape(item["term_text"])}</code>'
+        else:
+            term_details = []
+            for entry in group:
+                label = (entry["activity"]["role"] if entry["activity"]
+                         else entry["claim"]["term"])
+                term_details.append(
+                    f'<details><summary>{html.escape(label)}</summary>'
+                    f'<pre>{html.escape(entry["term_text"])}</pre></details>'
+                )
+            terms_html = "".join(term_details)
         rows.append(
             f'<tr class="{item["status"]}" data-state="{item["status"]}">'
             f'<td>{html.escape(item["status"])}</td>'
             f'<td>{html.escape(location)}</td>'
             f'<td><code>{html.escape(excerpt)}</code></td>'
-            f'<td>{html.escape(item["claim"]["correspondence"])}</td>'
-            f'<td><code>{html.escape(item["term_text"])}</code></td></tr>'
+            f'<td>{html.escape(correspondences)}</td>'
+            f'<td>{terms_html}</td>'
+            f'<td>{activity_html}</td></tr>'
         )
     title = projection["document"].get("display_name", "Fine Rainfall")
     return f"""<!doctype html>
@@ -198,8 +295,10 @@ h1 {{ font-size: 1rem }} .banner {{ padding: .8rem; border: 1px solid #6f6f6f; m
 table {{ border-collapse: collapse; width: 100% }} th, td {{ padding: .5rem; border-bottom: 1px solid #393939; text-align: left }}
 tr.transported td:first-child {{ color: #ffd486 }} tr.unplaced td:first-child {{ color: #ff8585 }}
 tr.current td:first-child {{ color: #8fe1a2 }} code {{ white-space: pre-wrap }}
+td {{ vertical-align: top }} section + section {{ margin-top: 1rem }}
+details {{ margin-top: .5rem }} pre {{ max-height: 18rem; overflow: auto; white-space: pre-wrap }}
 </style><body><h1>{html.escape(title)}</h1><div class="banner {state}">{html.escape(warning)}</div>
-<table><thead><tr><th>state</th><th>display range</th><th>display text</th><th>edge</th><th>claimed term</th></tr></thead>
+<table><thead><tr><th>state</th><th>display range</th><th>display text</th><th>edge</th><th>claimed term</th><th>solver activity</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></body></html>"""
 
 

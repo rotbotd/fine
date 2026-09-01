@@ -118,7 +118,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "status", "claim", "syntax_kind", "claim_span", "display_span", "term_text"
+        "status", "claim", "syntax_kind", "claim_span", "display_span", "term_text", "activity"
       ],
       "properties": {
         "status": { "enum": ["current", "transported", "unplaced"] },
@@ -128,7 +128,13 @@
         "display_span": {
           "oneOf": [{ "$ref": "#/$defs/span" }, { "type": "null" }]
         },
-        "term_text": { "type": "string" }
+        "term_text": { "type": "string" },
+        "activity": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/bisimulationActivity" }
+          ]
+        }
       },
       "allOf": [{
         "if": {
@@ -138,6 +144,51 @@
         "then": { "properties": { "display_span": { "type": "null" } } },
         "else": { "properties": { "display_span": { "$ref": "#/$defs/span" } } }
       }]
+    },
+    "bisimulationActivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "role", "assertion_event", "accepted_instances"],
+      "properties": {
+        "kind": { "const": "bisimulation-clause-activity" },
+        "role": { "type": "string", "minLength": 1 },
+        "assertion_event": { "type": "string", "minLength": 1 },
+        "accepted_instances": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/acceptedInstanceActivity" }
+        }
+      }
+    },
+    "acceptedInstanceActivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted_event", "instance", "instance_text",
+        "admitted_clause_event", "ground_bindings"
+      ],
+      "properties": {
+        "accepted_event": { "type": "string", "minLength": 1 },
+        "instance": { "type": "string", "minLength": 1 },
+        "instance_text": { "type": "string" },
+        "admitted_clause_event": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "ground_bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["term", "text"],
+            "properties": {
+              "term": { "type": "string", "minLength": 1 },
+              "text": { "type": "string" }
+            }
+          }
+        }
+      }
     }
   }
 }

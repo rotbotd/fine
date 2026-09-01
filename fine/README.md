@@ -23,7 +23,9 @@ cmake --build build/fine --target fine-bin
 ./build/fine/fine run fine/fixtures/check-datatype-counterexample.fine
 ./build/fine/fine run fine/fixtures/check-tuple-counterexample.fine
 ./build/fine/fine rain fine/fixtures/synth-max.fine
-./build/fine/fine rain fine/fixtures/two-state-bisim.fine
+./build/fine/fine rain fine/fixtures/two-state-bisim.fine > bisim.rain.jsonl
+python fine/rainfall_project.py fine/fixtures/two-state-bisim.fine bisim.rain.jsonl \
+  --html bisim.html > bisim.projection.json
 ./build/fine/fine rain fine/fixtures/check-counterexample.fine > check.rain.jsonl
 python fine/rainfall_validate.py fine/fixtures/check-counterexample.fine check.rain.jsonl
 python fine/rainfall_project.py fine/fixtures/check-counterexample.fine check.rain.jsonl \
