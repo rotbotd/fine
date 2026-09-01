@@ -212,6 +212,26 @@ not merged. A request whose display has already advanced is discarded before
 any candidate can replace transported markers. Cancellation may save work but
 is not relied on for correctness.
 
+`fine-rain-host` realizes the missing transaction as an editor-neutral durable
+harness. Its authoritative `state.json` contains the displayed UTF-8 bytes,
+their recomputed identity, the current generation, generation records, and the
+annotations currently painted. Under one advisory host lock, `advance` applies
+the ordered edit, maps every displayed range again, marks the prior pending
+generation superseded, writes immutable source/request artifacts, and commits
+the new state by fsync plus same-directory rename. Immutable artifacts are
+durable before the state can name them; a crash before the rename can leave an
+unreferenced artifact but cannot expose half a transaction.
+
+The host releases its lock before running Fine. Completion validation may
+therefore race with later edits; it reacquires the lock, reloads the newest
+request and bytes, and uses the generation gate above. An admitted completion
+replaces the annotation set whole. A late completion is retained as historical
+trace plus a discarded record but does not touch displayed annotations. Solver
+failure is recorded and leaves transported markers in place. This harness uses
+POSIX `flock`, ordinary subprocess execution, and atomic local-filesystem rename;
+it is not the future editor process, cross-machine collaboration protocol, or a
+claim that cancellation succeeded.
+
 For `check`, rainfall records the one source-level refutation assertion, the
 public query boundary and polarity, each completed parameter evaluation, and
 the checked source witness. Those model assignments are equality under the

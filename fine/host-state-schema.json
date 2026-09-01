@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fine-lang.invalid/schema/rainfall-host-state-v1.json",
+  "title": "Fine Rainfall host state v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "document", "display_snapshot", "display_source",
+    "current_generation", "generations", "annotations"
+  ],
+  "properties": {
+    "schema": { "const": "fine.rainfall.host-state.v1" },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "display_name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string" }
+      }
+    },
+    "display_snapshot": { "$ref": "generation-schema.json#/$defs/identity" },
+    "display_source": { "type": "string" },
+    "current_generation": { "type": "string", "minLength": 1 },
+    "generations": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/generationRecord" },
+      "minProperties": 1
+    },
+    "annotations": {
+      "type": "array",
+      "items": { "$ref": "projection-schema.json#/$defs/annotation" }
+    }
+  },
+  "$defs": {
+    "generationRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "request", "source_file", "request_file"],
+      "properties": {
+        "status": {
+          "enum": ["requested", "superseded", "admitted", "discarded", "failed"]
+        },
+        "request": { "$ref": "generation-schema.json#/$defs/request" },
+        "source_file": { "type": "string", "minLength": 1 },
+        "request_file": { "type": "string", "minLength": 1 },
+        "trace_file": { "type": "string", "minLength": 1 },
+        "admission": {
+          "oneOf": [
+            { "$ref": "generation-schema.json#/$defs/admitted" },
+            { "$ref": "generation-schema.json#/$defs/discarded" }
+          ]
+        },
+        "failure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "status", "generation", "error"],
+          "properties": {
+            "schema": { "const": "fine.rainfall.host-completion.v1" },
+            "status": { "const": "failed" },
+            "generation": { "type": "string", "minLength": 1 },
+            "error": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

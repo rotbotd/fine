@@ -36,6 +36,9 @@ python fine/rainfall_generation_cli.py request edited.fine \
   --generation generation:1 edited.fine > generation-1.rain.jsonl
 python fine/rainfall_generation_cli.py admit request.json edited.fine \
   edited.fine generation-1.rain.jsonl > admission.json
+python fine/rainfall_host_cli.py init .fine-live edited.fine \
+  --document document:editor > launch.json
+python fine/rainfall_host_cli.py run .fine-live --fine ./build/fine/fine
 ```
 
 `demo-bisim` embeds that exact checked-in Fine fixture; it is not a second
@@ -95,3 +98,12 @@ display identity and prints the corresponding structured `fine rain` arguments.
 it only when the current display still matches the request and the trace's run,
 document, revision, hash, and length all match. A valid but late predecessor is
 returned as `discarded`, never merged with current or transported annotations.
+
+`fine-rain-host` is the editor-neutral transaction harness. `init` creates one
+authoritative JSON state and immutable request/source artifacts. `advance`
+holds a host lock while it applies an edit transaction, maps existing markers
+to transported/unplaced, supersedes the previous request, issues the next one,
+and atomically replaces the state. `run` executes Fine without holding that
+lock, so edits remain responsive, then reopens the latest state for admission.
+This deliberately permits a real late completion and proves that it is
+discarded. The host is a filesystem protocol and test harness, not an editor UI.

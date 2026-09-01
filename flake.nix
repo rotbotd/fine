@@ -526,6 +526,101 @@
           assert snapshot["data"]["identity"]["document"] == "document:live-test"
           assert snapshot["data"]["identity"]["revision"] == 1
           PY
+
+          host_dir="$(mktemp -d)"
+          host_work="$(mktemp -d)"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host init \
+            "$host_dir" "$src/fine/fixtures/check-counterexample.fine" \
+            --document document:host-test > "$host_work/init.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host run \
+            "$host_dir" --fine "$out/bin/fine" > "$host_work/admit0.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host advance \
+            "$host_dir" "$projection_dir/transport.json" > "$host_work/advance1.json"
+          ${pkgs.python3}/bin/python - "$host_work" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          (root / "edit2.json").write_text(json.dumps([
+              {"from": 0, "to": 0, "insert": "// displayed r2\n"},
+          ]))
+          PY
+          cat > "$host_work/slow-fine" <<EOF
+          #!${pkgs.runtimeShell}
+          ${pkgs.coreutils}/bin/sleep 1
+          exec "$out/bin/fine" "\$@"
+          EOF
+          chmod +x "$host_work/slow-fine"
+          generation1="$(${pkgs.python3}/bin/python -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["generation"])' \
+            "$host_work/advance1.json")"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host run \
+            "$host_dir" --fine "$host_work/slow-fine" --generation "$generation1" \
+            > "$host_work/late1.json" &
+          host_pid=$!
+          ${pkgs.coreutils}/bin/sleep 0.2
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host advance \
+            "$host_dir" "$host_work/edit2.json" > "$host_work/advance2.json"
+          wait "$host_pid"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host run \
+            "$host_dir" --fine "$out/bin/fine" > "$host_work/admit2.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host state \
+            "$host_dir" > "$host_work/state.json"
+          ${pkgs.python3}/bin/python - "$host_work" "$host_dir" <<'PY'
+          import json, pathlib, sys
+          root, host = map(pathlib.Path, sys.argv[1:])
+          read = lambda name: json.loads((root / name).read_text())
+          assert read("admit0.json")["status"] == "admitted"
+          assert read("advance1.json")["annotation_states"] == {
+              "current": 0, "transported": 11, "unplaced": 0,
+          }
+          assert read("advance2.json")["annotation_states"] == {
+              "current": 0, "transported": 11, "unplaced": 0,
+          }
+          late = read("late1.json")
+          assert late["status"] == "discarded"
+          assert late["reason"] == "late-or-unrequested-generation"
+          assert read("admit2.json")["status"] == "admitted"
+          state = read("state.json")
+          assert state["display_snapshot"]["revision"] == 2
+          assert {item["status"] for item in state["annotations"]} == {"current"}
+          generation1 = read("advance1.json")["generation"]
+          generation2 = read("advance2.json")["generation"]
+          assert state["generations"][generation1]["status"] == "discarded"
+          assert state["generations"][generation2]["status"] == "admitted"
+          for record in state["generations"].values():
+              assert (host / record["source_file"]).is_file()
+              assert (host / record["request_file"]).is_file()
+          PY
+
+          failure_host="$(mktemp -d)"
+          failure_work="$(mktemp -d)"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host init \
+            "$failure_host" "$src/fine/fixtures/check-counterexample.fine" \
+            --document document:failure-test > "$failure_work/init.json"
+          ${pkgs.python3}/bin/python - \
+            "$src/fine/fixtures/check-counterexample.fine" "$failure_work" <<'PY'
+          import json, pathlib, sys
+          source = pathlib.Path(sys.argv[1]).read_bytes()
+          root = pathlib.Path(sys.argv[2])
+          (root / "break.json").write_text(json.dumps([
+              {"from": 0, "to": len(source), "insert": "check broken("},
+          ]))
+          PY
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host advance \
+            "$failure_host" "$failure_work/break.json" > "$failure_work/advance.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host run \
+            "$failure_host" --fine "$out/bin/fine" > "$failure_work/failed.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-host state \
+            "$failure_host" > "$failure_work/state.json"
+          ${pkgs.python3}/bin/python - "$failure_work" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          read = lambda name: json.loads((root / name).read_text())
+          assert read("failed.json")["status"] == "failed"
+          state = read("state.json")
+          current = state["current_generation"]
+          assert state["generations"][current]["status"] == "failed"
+          assert state["annotations"] == []
+          PY
           datatype_rain="$($out/bin/fine rain "$src/fine/fixtures/check-datatype-counterexample.fine")"
           RAIN="$datatype_rain" ${pkgs.python3}/bin/python - <<'PY'
           import json, os
