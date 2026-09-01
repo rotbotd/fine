@@ -43,3 +43,10 @@ install(FILES "${PROJECT_SOURCE_DIR}/fine/rainfall_replay.py"
 install(FILES "${PROJECT_SOURCE_DIR}/fine/rainfall_projection.py"
   DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
+install(PROGRAMS "${PROJECT_SOURCE_DIR}/fine/rainfall_generation_cli.py"
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  RENAME fine-rain-generation
+)
+install(FILES "${PROJECT_SOURCE_DIR}/fine/rainfall_generation.py"
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)

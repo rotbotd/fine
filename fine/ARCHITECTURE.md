@@ -199,6 +199,19 @@ validated trace, not range or text continuity, is the only route back to
 `current`. The command can emit a standalone HTML table whose stale state is
 both written in text and styled separately; color is not the sole distinction.
 
+Live generation admission is a separate boundary. A generation request binds an
+opaque generation ID to the exact current document/revision/hash/length. The
+host passes that generation as Rainfall's run ID through the structured
+`fine rain --document ... --revision ... --generation ...` form and retains the
+requested source until completion. `fine-rain-generation admit` first validates
+the candidate trace against that retained source. It emits a current projection
+only if the displayed bytes still equal the request and the candidate run plus
+snapshot identity equal it field for field. A completion from a predecessor is
+valid historical evidence but is returned whole as `discarded`; its events are
+not merged. A request whose display has already advanced is discarded before
+any candidate can replace transported markers. Cancellation may save work but
+is not relied on for correctness.
+
 For `check`, rainfall records the one source-level refutation assertion, the
 public query boundary and polarity, each completed parameter evaluation, and
 the checked source witness. Those model assignments are equality under the

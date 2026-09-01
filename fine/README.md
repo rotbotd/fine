@@ -29,6 +29,13 @@ python fine/rainfall_validate.py fine/fixtures/check-counterexample.fine check.r
 python fine/rainfall_project.py fine/fixtures/check-counterexample.fine check.rain.jsonl \
   --edits transaction.json --html projection.html --write-source edited.fine \
   > projection.json
+python fine/rainfall_generation_cli.py request edited.fine \
+  --document document:editor --revision 1 --generation generation:1 \
+  > request.json
+./build/fine/fine rain --document document:editor --revision 1 \
+  --generation generation:1 edited.fine > generation-1.rain.jsonl
+python fine/rainfall_generation_cli.py admit request.json edited.fine \
+  edited.fine generation-1.rain.jsonl > admission.json
 ```
 
 `demo-bisim` embeds that exact checked-in Fine fixture; it is not a second
@@ -81,3 +88,10 @@ label every surviving old marker `transported`, label a wholly deleted marker
 snapshot. With no transaction, evidence is `current`. Matching text and equal
 hashes never upgrade an edited revision; only a separately validated Rainfall
 trace for that revision can produce current evidence.
+
+`fine-rain-generation request` binds one opaque generation to the exact current
+display identity and prints the corresponding structured `fine rain` arguments.
+`admit` validates a completed trace against its own retained source, then admits
+it only when the current display still matches the request and the trace's run,
+document, revision, hash, and length all match. A valid but late predecessor is
+returned as `discarded`, never merged with current or transported annotations.

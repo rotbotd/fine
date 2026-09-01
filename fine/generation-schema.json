@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fine-lang.invalid/schema/rainfall-generation-v1.json",
+  "title": "Fine Rainfall generation request or admission v1",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/admitted" },
+    { "$ref": "#/$defs/discarded" }
+  ],
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "revision", "exact_source_hash", "byte_length"],
+      "properties": {
+        "document": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "exact_source_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "byte_length": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "identity"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "identity": { "$ref": "#/$defs/identity" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "generation", "display_snapshot", "rain_arguments"],
+      "properties": {
+        "schema": { "const": "fine.rainfall.generation-request.v1" },
+        "generation": { "type": "string", "minLength": 1 },
+        "display_snapshot": { "$ref": "#/$defs/identity" },
+        "rain_arguments": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "rain" },
+            { "const": "--document" },
+            { "type": "string", "minLength": 1 },
+            { "const": "--revision" },
+            { "type": "string", "pattern": "^[0-9]+$" },
+            { "const": "--generation" },
+            { "type": "string", "minLength": 1 }
+          ],
+          "items": false,
+          "minItems": 7,
+          "maxItems": 7
+        }
+      }
+    },
+    "admitted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "status", "generation", "snapshot", "projection"],
+      "properties": {
+        "schema": { "const": "fine.rainfall.admission.v1" },
+        "status": { "const": "admitted" },
+        "generation": { "type": "string", "minLength": 1 },
+        "snapshot": { "$ref": "#/$defs/snapshot" },
+        "projection": { "$ref": "projection-schema.json" }
+      }
+    },
+    "discarded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "status", "reason", "requested_generation", "candidate_run",
+        "requested_snapshot", "candidate_snapshot"
+      ],
+      "properties": {
+        "schema": { "const": "fine.rainfall.admission.v1" },
+        "status": { "const": "discarded" },
+        "reason": {
+          "enum": [
+            "display-advanced-after-request", "late-or-unrequested-generation",
+            "different-document", "different-revision", "different-source"
+          ]
+        },
+        "requested_generation": { "type": "string", "minLength": 1 },
+        "candidate_run": { "type": "string", "minLength": 1 },
+        "requested_snapshot": { "$ref": "#/$defs/identity" },
+        "candidate_snapshot": { "$ref": "#/$defs/identity" }
+      }
+    }
+  }
+}

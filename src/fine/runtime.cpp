@@ -103,10 +103,12 @@ namespace fine {
 
         class Runtime {
         public:
-            explicit Runtime(std::ostream &output, std::ostream *rainfall_output, SourceSnapshot const *snapshot)
-                : output_(output), rainfall_(rainfall_output ? std::make_unique<RainfallRecorder>(
-                                                                   context_, *rainfall_output, std::string{}, snapshot)
-                                                             : nullptr),
+            explicit Runtime(std::ostream &output, std::ostream *rainfall_output, SourceSnapshot const *snapshot,
+                             std::string rainfall_run)
+                : output_(output),
+                  rainfall_(rainfall_output ? std::make_unique<RainfallRecorder>(context_, *rainfall_output,
+                                                                                 std::move(rainfall_run), snapshot)
+                                            : nullptr),
                   bool_type_(std::make_shared<RuntimeType>(RuntimeType::Kind::boolean, context_.bool_sort(), "Bool")),
                   int_type_(std::make_shared<RuntimeType>(RuntimeType::Kind::integer, context_.int_sort(), "Int")) {
                 types_.emplace("Bool", bool_type_);
@@ -1588,8 +1590,8 @@ namespace fine {
     }
 
     int execute(syntax::Document const &document, std::ostream &output, std::ostream *rainfall_output,
-                SourceSnapshot const *snapshot) {
-        return Runtime(output, rainfall_output, snapshot).execute(document);
+                SourceSnapshot const *snapshot, std::string rainfall_run) {
+        return Runtime(output, rainfall_output, snapshot, std::move(rainfall_run)).execute(document);
     }
 
 }  // namespace fine

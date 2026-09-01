@@ -431,6 +431,101 @@
           assert transport_range(5, 10, [edit(8, 12, "")]) == (5, 8)
           assert transport_range(5, 10, [edit(0, 0, "x"), edit(7, 7, "y")]) == (6, 12)
           PY
+
+          generation_dir="$(mktemp -d)"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation request \
+            "$src/fine/fixtures/check-counterexample.fine" \
+            --document document:live-test --revision 0 --generation generation:0 \
+            > "$generation_dir/request0.json"
+          $out/bin/fine rain --document document:live-test --revision 0 \
+            --generation generation:0 "$src/fine/fixtures/check-counterexample.fine" \
+            > "$generation_dir/rain0.jsonl"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation admit \
+            "$generation_dir/request0.json" \
+            "$src/fine/fixtures/check-counterexample.fine" \
+            "$src/fine/fixtures/check-counterexample.fine" \
+            "$generation_dir/rain0.jsonl" > "$generation_dir/admit0.json"
+
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation request \
+            "$projection_dir/displayed.fine" \
+            --document document:live-test --revision 1 --generation generation:1 \
+            > "$generation_dir/request1.json"
+          $out/bin/fine rain --document document:live-test --revision 1 \
+            --generation generation:1 "$projection_dir/displayed.fine" \
+            > "$generation_dir/rain1.jsonl"
+          $out/bin/fine rain --document document:live-test --revision 1 \
+            --generation generation:other "$projection_dir/displayed.fine" \
+            > "$generation_dir/other-generation.jsonl"
+          $out/bin/fine rain --document document:other --revision 1 \
+            --generation generation:1 "$projection_dir/displayed.fine" \
+            > "$generation_dir/other-document.jsonl"
+          $out/bin/fine rain --document document:live-test --revision 2 \
+            --generation generation:1 "$projection_dir/displayed.fine" \
+            > "$generation_dir/other-revision.jsonl"
+          $out/bin/fine rain --document document:live-test --revision 1 \
+            --generation generation:1 "$src/fine/fixtures/check-counterexample.fine" \
+            > "$generation_dir/other-source.jsonl"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation admit \
+            "$generation_dir/request1.json" "$projection_dir/displayed.fine" \
+            "$projection_dir/displayed.fine" "$generation_dir/rain1.jsonl" \
+            > "$generation_dir/admit1.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation admit \
+            "$generation_dir/request1.json" "$projection_dir/displayed.fine" \
+            "$src/fine/fixtures/check-counterexample.fine" "$generation_dir/rain0.jsonl" \
+            > "$generation_dir/late.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation admit \
+            "$generation_dir/request1.json" "$projection_dir/displayed.fine" \
+            "$projection_dir/displayed.fine" "$generation_dir/other-generation.jsonl" \
+            > "$generation_dir/other-generation.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation admit \
+            "$generation_dir/request1.json" "$projection_dir/displayed.fine" \
+            "$projection_dir/displayed.fine" "$generation_dir/other-document.jsonl" \
+            > "$generation_dir/other-document.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation admit \
+            "$generation_dir/request1.json" "$projection_dir/displayed.fine" \
+            "$projection_dir/displayed.fine" "$generation_dir/other-revision.jsonl" \
+            > "$generation_dir/other-revision.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation admit \
+            "$generation_dir/request1.json" "$projection_dir/displayed.fine" \
+            "$src/fine/fixtures/check-counterexample.fine" "$generation_dir/other-source.jsonl" \
+            > "$generation_dir/other-source.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-generation admit \
+            "$generation_dir/request1.json" "$src/fine/fixtures/check-counterexample.fine" \
+            "$projection_dir/displayed.fine" "$generation_dir/rain1.jsonl" \
+            > "$generation_dir/advanced-display.json"
+          if ${pkgs.python3}/bin/python $out/bin/fine-rain-generation admit \
+            "$generation_dir/request1.json" "$projection_dir/displayed.fine" \
+            "$src/fine/fixtures/check-counterexample.fine" "$hostile_dir/late-event.rain"; then
+            echo "generation admission accepted an invalid candidate trace" >&2; exit 1
+          fi
+          ${pkgs.python3}/bin/python - "$generation_dir" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          read = lambda name: json.loads((root / name).read_text())
+          assert read("admit0.json")["status"] == "admitted"
+          admitted = read("admit1.json")
+          assert admitted["status"] == "admitted"
+          assert admitted["generation"] == "generation:1"
+          assert {item["status"] for item in admitted["projection"]["annotations"]} == {"current"}
+          assert read("late.json")["reason"] == "late-or-unrequested-generation"
+          assert read("other-generation.json")["reason"] == "late-or-unrequested-generation"
+          assert read("other-document.json")["reason"] == "different-document"
+          assert read("other-revision.json")["reason"] == "different-revision"
+          assert read("other-source.json")["reason"] == "different-source"
+          assert read("advanced-display.json")["reason"] == "display-advanced-after-request"
+          request = read("request1.json")
+          assert request["rain_arguments"] == [
+              "rain", "--document", "document:live-test", "--revision", "1",
+              "--generation", "generation:1",
+          ]
+          with (root / "rain1.jsonl").open() as stream:
+              events = [json.loads(line) for line in stream]
+          assert {event["run"] for event in events} == {"generation:1"}
+          snapshot = next(event for event in events
+                          if event["operation"] == "source.snapshot.declare")
+          assert snapshot["data"]["identity"]["document"] == "document:live-test"
+          assert snapshot["data"]["identity"]["revision"] == 1
+          PY
           datatype_rain="$($out/bin/fine rain "$src/fine/fixtures/check-datatype-counterexample.fine")"
           RAIN="$datatype_rain" ${pkgs.python3}/bin/python - <<'PY'
           import json, os

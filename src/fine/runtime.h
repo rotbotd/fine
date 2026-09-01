@@ -27,6 +27,6 @@ namespace fine {
     // Returns zero for a returned model and throws SemanticError for invalid Fine.
     // When rainfall_output is non-null, Fine also writes a JSONL semantic trace.
     int execute(syntax::Document const &document, std::ostream &output, std::ostream *rainfall_output = nullptr,
-                SourceSnapshot const *snapshot = nullptr);
+                SourceSnapshot const *snapshot = nullptr, std::string rainfall_run = {});
 
 }  // namespace fine
