@@ -1039,3 +1039,29 @@ Clean artifact:
 The remaining match-slice edge is deliberately not papered over: arms run
 sequentially inside one source generation. Per-arm cancellation and projection
 of a live residual onto each hole still require a finer host/query boundary.
+
+## 2026-09-01 — GADT/SMT representation survey (`5d78d8554`)
+
+Corrected an initial false assumption about Z3's datatype API. This checkout has
+native type variables, polymorphic datatype declarations, concrete datatype-sort
+instantiation, and specialized constructor/accessor retrieval; ordinary
+`List<A>` and `Either<A,B>` do not require a Fine-owned monomorphizer. The
+remaining GADT boundary is constructor-specific result indices, which Z3's
+uniform parametric datatype schema does not express.
+
+`fine/research/gadts-smt.md` compares the relevant constraints from OutsideIn(X),
+the injectivity/discriminability account in *The Essence of GADTs*, the
+semi-decidable GADT exhaustiveness result, and F*'s broader SMT encoding. The
+result is not a paper-inspired feature list but one representation test. Closed
+index specialization preserves Fine's one-Z3-sort-per-value-type invariant but
+cannot cover an open recursive index family. An erased carrier plus an `index`
+or `HasType` invariant covers open indices but makes distinct Fine indexed types
+share a Z3 sort and requires typing evidence for user-surface lifting. The latter
+is a deliberate revision of the v1 boundary, not a datatype implementation
+trick.
+
+The proposed spike compares both encodings on `integer`, `less`, and polymorphic
+`if_` constructors. It must test raw model inhabitants, branch-local index
+evidence, index-directed synthesis grammar, and exact lift/reify. The deciding
+failure is solver grammar: a frontend GADT that lets Z3 enumerate ill-indexed raw
+terms and filters them afterward is rejected as ornamental.
