@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <iosfwd>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -42,8 +43,19 @@ namespace fine {
                          z3::expr const &expression, std::string_view correspondence,
                          std::vector<std::string> const &within = {});
 
-        void record(std::string_view kind, std::string_view operation, std::vector<std::string> const &within,
-                    std::string_view producer, std::string_view coverage, std::vector<RainfallField> const &data = {});
+        std::string record(std::string_view kind, std::string_view operation,
+                           std::vector<std::string> const &within,
+                           std::string_view producer, std::string_view coverage,
+                           std::vector<RainfallField> const &data = {});
+
+        // The qi_queue acceptance callback and the later on-clause callback are
+        // separate Z3 boundaries. Pair them by exact strong term handles rather
+        // than chronology, and consume each accepted instance at most once.
+        void remember_quantifier_instance(std::string quantifier,
+                                          std::string instance,
+                                          std::string event);
+        std::optional<std::string> take_quantifier_instance(
+            std::string const &quantifier, std::string const &instance);
 
         static RainfallField string_field(std::string name, std::string_view value);
         static RainfallField number_field(std::string name, std::size_t value);
@@ -58,6 +70,8 @@ namespace fine {
         std::string run_;
         SourceSnapshot const *snapshot_ = nullptr;
         std::vector<z3::expr> terms_;
+        std::map<std::pair<std::string, std::string>, std::string>
+            pending_quantifier_instances_;
         std::map<std::size_t, std::string> source_nodes_;
         std::size_t sequence_ = 0;
     };

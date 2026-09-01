@@ -61,10 +61,15 @@ instances, or solver search.
 The bisimulation replay disables E-matching and records the accepted,
 nontrivial quantifier instances which reach Z3's `qi_queue` binding callback
 during the MBQI-only query. Each preprocessed quantifier retains a Fine source
-role through its qid. The stream then records every completed finite relation
-cell, deterministic constant-array-plus-stores extensionalization, and the
-checked Fine model witness. It does not expose MBQI's auxiliary-context search,
-discarded candidates, blocking clauses, or general CDCL(T) search.
+role through its qid. The public clause stream records assumptions, inferences,
+and deletions after preprocessing. For quantifier lemmas, the `inst` proof hint
+joins the exact accepted-instance event to its admitted clause and ground
+bindings; sequence adjacency is not treated as evidence. The stream then records
+every completed finite relation cell, deterministic constant-array-plus-stores
+extensionalization, and the checked Fine model witness. It does not expose
+MBQI's auxiliary-context search,
+discarded candidates, blocking clauses, assignments, decisions, watched-literal
+traffic, or the causal contribution of a clause to the result.
 
 `check` closes the missing counterexample loop for admitted value inputs. Fine
 asserts the source assumptions together with the negation of the guarantees. A

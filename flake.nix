@@ -191,6 +191,22 @@
           assert {event["data"]["proof_hint_head"] for event in clause_events} >= {
               "assumption", "inst", "del"
           }
+          instance_clauses = [event for event in clause_events
+                              if event["operation"] == "z3.clause.infer"
+                              and event["data"]["proof_hint_head"] == "inst"]
+          assert len(instance_clauses) == len(instances)
+          events_by_id = {event["event_id"]: event for event in events}
+          assert len({event["data"]["quantifier_instance_event"]
+                      for event in instance_clauses}) == len(instances)
+          for clause in instance_clauses:
+              accepted = events_by_id[clause["data"]["quantifier_instance_event"]]
+              assert accepted["operation"] == "z3.mbqi-instance"
+              assert accepted["sequence"] < clause["sequence"]
+              assert clause["data"]["quantifier"] == accepted["data"]["quantifier"]
+              assert clause["data"]["instance"] == accepted["data"]["instance"]
+              assert clause["data"]["ground_bindings"]
+              assert clause["data"]["relation"] == \
+                  "accepted-instance-became-admitted-clause"
           declared = {event["data"]["id"] for event in events
                       if event["operation"] == "term.declare"}
           assert all(reference in declared for event in clause_events
@@ -216,6 +232,44 @@
           handles = [event["data"]["identity"]["handle"] for event in terms]
           assert handles == list(range(len(handles)))
           PY
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/two-state-bisim.fine" "$bisim_rain"
+
+          bisim_hostile="$(mktemp -d)"
+          ${pkgs.python3}/bin/python - "$bisim_rain" "$bisim_hostile" <<'PY'
+          import copy, json, pathlib, sys
+          source, output = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+          events = [json.loads(line) for line in source.read_text().splitlines()]
+          output.mkdir(exist_ok=True)
+          instances = [event for event in events
+                       if event["operation"] == "z3.mbqi-instance"]
+          clause = next(event for event in events
+                        if event["operation"] == "z3.clause.infer"
+                        and event["data"]["proof_hint_head"] == "inst")
+
+          wrong_event = copy.deepcopy(events)
+          target = next(event for event in wrong_event
+                        if event["event_id"] == clause["event_id"])
+          target["data"]["quantifier_instance_event"] = instances[1]["event_id"]
+          (output / "wrong-instance-event.rain").write_text("".join(
+              json.dumps(event, separators=(",", ":")) + "\n"
+              for event in wrong_event))
+
+          wrong_term = copy.deepcopy(events)
+          target = next(event for event in wrong_term
+                        if event["event_id"] == clause["event_id"])
+          target["data"]["instance"] = instances[1]["data"]["instance"]
+          (output / "wrong-instance-term.rain").write_text("".join(
+              json.dumps(event, separators=(",", ":")) + "\n"
+              for event in wrong_term))
+          PY
+          for hostile in "$bisim_hostile"/*.rain; do
+            if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+              "$src/fine/fixtures/two-state-bisim.fine" "$hostile"; then
+              echo "accepted hostile quantifier-clause join $hostile" >&2
+              exit 1
+            fi
+          done
           check_rain="$($out/bin/fine rain "$src/fine/fixtures/check-counterexample.fine")"
           echo "$check_rain"
           RAIN="$check_rain" ${pkgs.python3}/bin/python - <<'PY'

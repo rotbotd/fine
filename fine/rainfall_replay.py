@@ -44,6 +44,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     terms: dict[str, dict[str, Any]] = {}
     term_handles: set[int] = set()
     event_ids: set[str] = set()
+    events_by_id: dict[str, dict[str, Any]] = {}
     evidence: list[dict[str, Any]] = []
     terminal_sequence: int | None = None
 
@@ -58,6 +59,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
         _require(isinstance(event_id, str) and event_id not in event_ids,
                  f"event {sequence}: missing or reused event ID")
         event_ids.add(event_id)
+        events_by_id[event_id] = event
         within = event.get("within")
         _require(isinstance(within, list) and
                  all(isinstance(scope, str) and scope for scope in within),
@@ -136,6 +138,41 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             term_handles.add(handle)
         elif operation == "source.term.evidence":
             evidence.append(data)
+        elif operation.startswith("z3.clause."):
+            proof_hint = data.get("proof_hint")
+            literals = data.get("literals")
+            dependencies = data.get("dependency_indices")
+            _require(proof_hint in terms,
+                     f"event {sequence}: clause names an unknown proof hint")
+            _require(isinstance(literals, list) and
+                     all(literal in terms for literal in literals),
+                     f"event {sequence}: clause names an unknown literal")
+            _require(data.get("literal_count") == len(literals),
+                     f"event {sequence}: clause literal count disagrees")
+            _require(isinstance(dependencies, list) and
+                     all(isinstance(value, int) and value >= 0 for value in dependencies),
+                     f"event {sequence}: malformed clause dependency indices")
+            if operation == "z3.clause.infer" and data.get("proof_hint_head") == "inst":
+                accepted_id = data.get("quantifier_instance_event")
+                accepted = events_by_id.get(accepted_id)
+                _require(accepted is not None and accepted is not event and
+                         accepted.get("operation") in {
+                             "z3.mbqi-instance", "z3.quantifier-instance"
+                         },
+                         f"event {sequence}: inst clause names no prior accepted instance")
+                _require(data.get("quantifier") in terms and
+                         data.get("instance") in terms,
+                         f"event {sequence}: inst clause names unknown ground terms")
+                _require(data.get("quantifier") == accepted["data"].get("quantifier") and
+                         data.get("instance") == accepted["data"].get("instance"),
+                         f"event {sequence}: inst clause disagrees with accepted instance")
+                bindings = data.get("ground_bindings")
+                _require(isinstance(bindings, list) and
+                         all(binding in terms for binding in bindings),
+                         f"event {sequence}: inst clause names unknown bindings")
+                _require(data.get("relation") ==
+                         "accepted-instance-became-admitted-clause",
+                         f"event {sequence}: inst clause has an unknown relation")
 
         if operation in {"check.run.close", "synth.run.close", "bisim.run.close"}:
             terminal_sequence = sequence

@@ -42,7 +42,7 @@ bool RainfallQuantifierObserver::on_binding(
     std::string source_role = qid.kind() == Z3_STRING_SYMBOL
                                   ? qid.str()
                                   : std::string("unlabelled");
-    rainfall_->record(
+    std::string event = rainfall_->record(
         "derive",
         ematching_enabled_ ? "z3.quantifier-instance" : "z3.mbqi-instance",
         within_, "z3.qi_queue.on_binding",
@@ -56,6 +56,9 @@ bool RainfallQuantifierObserver::on_binding(
          RainfallRecorder::boolean_field("ematching", ematching_enabled_),
          RainfallRecorder::string_field(
              "relation", "quantifier-body-under-ground-binding")});
+    rainfall_->remember_quantifier_instance(
+        std::move(quantifier_reference), std::move(instance_reference),
+        std::move(event));
     return true;
 }
 

@@ -4,6 +4,7 @@
 #include <ostream>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 
 namespace fine {
     namespace {
@@ -90,13 +91,16 @@ namespace fine {
         return {std::move(name), std::move(json)};
     }
 
-    void RainfallRecorder::record(std::string_view kind, std::string_view operation,
-                                  std::vector<std::string> const &within, std::string_view producer,
-                                  std::string_view coverage, std::vector<RainfallField> const &data) {
+    std::string RainfallRecorder::record(std::string_view kind, std::string_view operation,
+                                         std::vector<std::string> const &within,
+                                         std::string_view producer,
+                                         std::string_view coverage,
+                                         std::vector<RainfallField> const &data) {
         std::size_t current = sequence_++;
+        std::string event = "event:" + std::to_string(current);
         output_ << "{\"schema\":\"fine.rainfall.v2\",\"run\":" << quote(run_)
                 << ",\"recorder\":\"recorder:0\",\"manager\":\"manager:0\""
-                << ",\"event_id\":\"event:" << current << "\",\"sequence\":" << current << ",\"kind\":" << quote(kind)
+                << ",\"event_id\":" << quote(event) << ",\"sequence\":" << current << ",\"kind\":" << quote(kind)
                 << ",\"operation\":" << quote(operation) << ",\"within\":" << string_array(within)
                 << ",\"producer\":{\"component\":" << quote(producer) << ",\"coverage\":" << quote(coverage)
                 << "},\"data\":{";
@@ -107,6 +111,24 @@ namespace fine {
         }
         output_ << "}}\n";
         output_.flush();
+        return event;
+    }
+
+    void RainfallRecorder::remember_quantifier_instance(
+        std::string quantifier, std::string instance, std::string event) {
+        auto key = std::make_pair(std::move(quantifier), std::move(instance));
+        if (!pending_quantifier_instances_.emplace(std::move(key), std::move(event)).second)
+            throw std::runtime_error("duplicate pending Rainfall quantifier instance");
+    }
+
+    std::optional<std::string> RainfallRecorder::take_quantifier_instance(
+        std::string const &quantifier, std::string const &instance) {
+        auto found = pending_quantifier_instances_.find({quantifier, instance});
+        if (found == pending_quantifier_instances_.end())
+            return std::nullopt;
+        std::string event = std::move(found->second);
+        pending_quantifier_instances_.erase(found);
+        return event;
     }
 
     std::string RainfallRecorder::term(z3::expr const &expression, std::string_view representation) {

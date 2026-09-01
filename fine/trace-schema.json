@@ -128,6 +128,42 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": { "const": "z3.clause.infer" },
+          "data": {
+            "type": "object",
+            "properties": { "proof_hint_head": { "const": "inst" } },
+            "required": ["proof_hint_head"]
+          }
+        },
+        "required": ["operation", "data"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "quantifier_instance_event", "quantifier", "instance",
+              "ground_bindings", "relation"
+            ],
+            "properties": {
+              "quantifier_instance_event": { "type": "string", "minLength": 1 },
+              "quantifier": { "type": "string", "minLength": 1 },
+              "instance": { "type": "string", "minLength": 1 },
+              "ground_bindings": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "relation": {
+                "const": "accepted-instance-became-admitted-clause"
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {

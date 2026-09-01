@@ -289,7 +289,19 @@ are assumed by, inferred into, or deleted from CDCL(T). Rainfall classifies the
 dummy proof-hint heads `assumption` and `del` only as the public API specifies;
 every other hint is conservatively an inference and its uninterpreted head is
 preserved. Each literal and proof hint receives a strong recorder handle. The
-resulting `z3.clause.assume`, `z3.clause.infer`, and `z3.clause.delete` events
+`inst` proof hint is the one place these two narrow observers meet: it contains
+the exact preprocessed quantifier, negated unsimplified ground body, bindings,
+and generation used to build the lemma. The recorder pairs its quantifier and
+positive body handles with the pending `on_binding` event and consumes that
+pair once. The resulting clause event explicitly references the accepted
+instance event and ground bindings; adjacency in the stream is never used as
+evidence. Replay validation rejects unknown events, changed term handles, and
+relations other than `accepted-instance-became-admitted-clause`.
+
+This join proves that one accepted ground instance became one admitted
+quantifier lemma. It does not say the lemma caused a propagation, conflict,
+model repair, or final result. The resulting `z3.clause.assume`,
+`z3.clause.infer`, and `z3.clause.delete` events
 cover this admitted clause stream, not rejected candidate clauses, assignments,
 decisions, watched-literal traffic, the auxiliary MBQI context, or the causal
 contribution of a clause to the final answer. Clause literals may be internal
