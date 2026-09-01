@@ -123,6 +123,45 @@ to its Z3 meaning is a one-way compiler operation. See
 `research/synthesis-pressure-test.md` for the selected refutation-synthesis
 slice, result vocabulary, and provenance obligations.
 
+## External structural induction
+
+Fine does not enable the disabled `smt_induction` source in the Z3 fork. Its
+first induction form is a compiler translation over an existing monomorphic Z3
+datatype. For a check theorem `P(x)` and the datatype's direct-recursive-field
+relation `R`,
+
+```text
+forall x. P(x)
+```
+
+is reduced to the single step
+
+```text
+forall x. (forall smaller. R(smaller, x) -> P(smaller)) -> P(x).
+```
+
+The CLI check already represents an arbitrary `x` by a fresh same-manager
+constant, so the public counterexample query is the negation of that step. The
+well-foundedness argument belongs to Fine: `R` is generated only from recursive
+fields of the Z3 datatype, and source recursive calls are accepted only when
+the matched argument is one of those fields. Z3 receives no induction command.
+
+This boundary is visible in Rainfall. `check.induction.translate` names the
+source parameter, direct-subterm order, theorem, hypothesis, and generated step.
+The check declaration has a `generated` edge to that step. Subsequent
+`z3.quantifier-instance` and `z3.clause.*` events remain Z3 observations. If
+preprocessing turns the direct-field hypothesis directly into ground clauses,
+Fine reports those clause assumptions rather than inventing an instantiation
+event. Neither chronology nor shared query scope claims that a particular
+clause caused unsatisfiability.
+
+`function` is currently narrower than a general match expression: it matches
+one named field-bearing-datatype parameter, requires exactly one exhaustive arm
+per constructor, forbids shadowing, and has no mutual recursion. Other
+parameters may be held fixed during induction. There is no strong/transitive,
+lexicographic, integer, nested, or conjecture-generating induction, and no fuel
+surface yet. These exclusions matter for the locally nameless STLC target.
+
 ## Counterexample boundary
 
 `check name(parameters) { assumes { ... } ensures { ... } }` turns a source
@@ -141,14 +180,15 @@ fields may refer directly to the enclosing type, so recursive trees are real
 Z3 constructor terms rather than tagged arrays. Constructor calls are
 positional even though declarations name their fields.
 
-This datatype slice has no projection syntax, patterns, exhaustiveness check,
-mutual recursion, parametric types, indexed constructors, codata, or datatype
-synthesis. Recursive self-reference is admitted only as a direct field type;
-other referenced types must already be declared. Pure nullary enums retain the
-finite enumeration path used by bisimulation. The witness declaration itself
-is a source envelope and is deliberately not executable. Checks still have no
-quantifiers, arrays, shrinking, or claim that the returned model is a minimal
-counterexample.
+This datatype slice has no standalone projection syntax or general match
+expression. Recursive functions provide one exhaustive declaration-level match,
+but there is no mutual recursion, parametric types, indexed constructors,
+codata, or datatype synthesis. Recursive self-reference is admitted only as a
+direct field type; other referenced types must already be declared. Pure
+nullary enums retain the finite enumeration path used by bisimulation. The
+witness declaration itself is a source envelope and is deliberately not
+executable. Ordinary checks still have no source quantifiers, arrays, shrinking,
+or claim that the returned model is a minimal counterexample.
 
 ## Rainfall identity and coverage
 

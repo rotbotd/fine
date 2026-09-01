@@ -8,11 +8,13 @@ namespace fine {
 
 RainfallQuantifierObserver::RainfallQuantifierObserver(
     z3::solver& solver, RainfallRecorder& rainfall,
-    std::vector<std::string> within, bool ematching_enabled)
+    std::vector<std::string> within, bool ematching_enabled,
+    bool mbqi_enabled)
     : z3::user_propagator_base(&solver),
       rainfall_(&rainfall),
       within_(std::move(within)),
-      ematching_enabled_(ematching_enabled) {
+      ematching_enabled_(ematching_enabled),
+      mbqi_enabled_(mbqi_enabled) {
     register_on_binding();
 }
 
@@ -46,14 +48,17 @@ bool RainfallQuantifierObserver::on_binding(
         "derive",
         ematching_enabled_ ? "z3.quantifier-instance" : "z3.mbqi-instance",
         within_, "z3.qi_queue.on_binding",
-        "Accepted nontrivial quantifier instances after redundancy and rewrite-to-true rejection, before lemma insertion; discarded candidates and auxiliary-context search are not exposed, and MBQI attribution comes from E-matching being disabled for this query",
+        "Accepted nontrivial quantifier instances after redundancy and rewrite-to-true rejection, before lemma insertion; discarded candidates and auxiliary-context search are not exposed, and engine attribution is made only when this query disables the competing instantiation engine",
         {RainfallRecorder::string_field("quantifier", quantifier_reference),
          RainfallRecorder::string_field("instance", instance_reference),
          RainfallRecorder::string_field("source_role", source_role),
          RainfallRecorder::string_field(
              "instantiation_engine",
-             ematching_enabled_ ? "not-distinguished" : "mbqi-only-query"),
+             ematching_enabled_ && !mbqi_enabled_ ? "ematching-only-query"
+             : !ematching_enabled_ && mbqi_enabled_ ? "mbqi-only-query"
+                                                    : "not-distinguished"),
          RainfallRecorder::boolean_field("ematching", ematching_enabled_),
+         RainfallRecorder::boolean_field("mbqi", mbqi_enabled_),
          RainfallRecorder::string_field(
              "relation", "quantifier-body-under-ground-binding")});
     rainfall_->remember_quantifier_instance(

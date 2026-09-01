@@ -15,9 +15,12 @@ namespace fine::syntax {
             let_kw,
             model_kw,
             proof_kw,
+            function_kw,
             synth_kw,
             check_kw,
             counterexample_kw,
+            match_kw,
+            inducts_kw,
             assumes_kw,
             ensures_kw,
             if_kw,
@@ -35,6 +38,7 @@ namespace fine::syntax {
             comma,
             semicolon,
             equal,
+            fat_arrow,
             equal_equal,
             greater_equal,
             less_equal,
@@ -63,9 +67,12 @@ namespace fine::syntax {
             case TokenKind::let_kw: return "`let`";
             case TokenKind::model_kw: return "`model`";
             case TokenKind::proof_kw: return "`proof`";
+            case TokenKind::function_kw: return "`function`";
             case TokenKind::synth_kw: return "`synth`";
             case TokenKind::check_kw: return "`check`";
             case TokenKind::counterexample_kw: return "`counterexample`";
+            case TokenKind::match_kw: return "`match`";
+            case TokenKind::inducts_kw: return "`inducts`";
             case TokenKind::assumes_kw: return "`assumes`";
             case TokenKind::ensures_kw: return "`ensures`";
             case TokenKind::if_kw: return "`if`";
@@ -83,6 +90,7 @@ namespace fine::syntax {
             case TokenKind::comma: return "`,`";
             case TokenKind::semicolon: return "`;`";
             case TokenKind::equal: return "`=`";
+            case TokenKind::fat_arrow: return "`=>`";
             case TokenKind::equal_equal: return "`==`";
             case TokenKind::greater_equal: return "`>=`";
             case TokenKind::less_equal: return "`<=`";
@@ -122,11 +130,13 @@ namespace fine::syntax {
                     return {TokenKind::integer, {begin, position()}, source_.substr(start, offset_ - start)};
                 }
 
-                if ((c == '=' && peek(1) == '=') || (c == '>' && peek(1) == '=') || (c == '<' && peek(1) == '=') ||
+                if ((c == '=' && peek(1) == '=') || (c == '=' && peek(1) == '>') ||
+                    (c == '>' && peek(1) == '=') || (c == '<' && peek(1) == '=') ||
                     (c == '&' && peek(1) == '&') || (c == '|' && peek(1) == '|')) {
                     advance();
                     advance();
-                    TokenKind kind = c == '='   ? TokenKind::equal_equal
+                    TokenKind kind = c == '='   ? (source_[begin.offset + 1] == '>' ? TokenKind::fat_arrow
+                                                                                   : TokenKind::equal_equal)
                                      : c == '>' ? TokenKind::greater_equal
                                      : c == '<' ? TokenKind::less_equal
                                      : c == '&' ? TokenKind::logical_and
@@ -205,12 +215,18 @@ namespace fine::syntax {
                     return TokenKind::model_kw;
                 if (text == "proof")
                     return TokenKind::proof_kw;
+                if (text == "function")
+                    return TokenKind::function_kw;
                 if (text == "synth")
                     return TokenKind::synth_kw;
                 if (text == "check")
                     return TokenKind::check_kw;
                 if (text == "counterexample")
                     return TokenKind::counterexample_kw;
+                if (text == "match")
+                    return TokenKind::match_kw;
+                if (text == "inducts")
+                    return TokenKind::inducts_kw;
                 if (text == "assumes")
                     return TokenKind::assumes_kw;
                 if (text == "ensures")
@@ -248,6 +264,7 @@ namespace fine::syntax {
                     case TokenKind::let_kw: result.declarations.emplace_back(let_decl()); break;
                     case TokenKind::model_kw: result.declarations.emplace_back(model_decl()); break;
                     case TokenKind::proof_kw: result.declarations.emplace_back(proof_decl()); break;
+                    case TokenKind::function_kw: result.declarations.emplace_back(function_decl()); break;
                     case TokenKind::synth_kw: result.declarations.emplace_back(synth_decl()); break;
                     case TokenKind::check_kw: result.declarations.emplace_back(check_decl()); break;
                     case TokenKind::counterexample_kw: result.declarations.emplace_back(counterexample_decl()); break;
@@ -389,6 +406,48 @@ namespace fine::syntax {
                 return {joined(first.span, close.span), std::string(name.text), std::move(takes), std::move(gives)};
             }
 
+            FunctionDecl function_decl() {
+                Token first = take(TokenKind::function_kw);
+                Token name = take(TokenKind::identifier, "after `function`");
+                std::vector<Parameter> inputs = parameters();
+                take(TokenKind::colon, "before the function result type");
+                Type result_type = type();
+                take(TokenKind::left_brace, "before the function body");
+                take(TokenKind::match_kw, "as the function body");
+                Expr scrutinee = expr();
+                take(TokenKind::left_brace, "after the matched expression");
+                std::vector<MatchArm> arms;
+                while (current_.kind != TokenKind::right_brace) {
+                    Token constructor = take(TokenKind::identifier, "as a match constructor");
+                    std::vector<MatchBinding> bindings;
+                    SourceSpan pattern_span = constructor.span;
+                    if (accept(TokenKind::left_paren)) {
+                        while (current_.kind != TokenKind::right_paren) {
+                            Token binding = take(TokenKind::identifier, "as a pattern binding");
+                            bindings.push_back({binding.span, std::string(binding.text)});
+                            pattern_span = joined(constructor.span, binding.span);
+                            if (!accept(TokenKind::comma) && current_.kind != TokenKind::right_paren)
+                                fail("expected `,` or `)` after a pattern binding");
+                        }
+                        Token close = take(TokenKind::right_paren, "to close the pattern");
+                        pattern_span = joined(constructor.span, close.span);
+                    }
+                    take(TokenKind::fat_arrow, "after the match pattern");
+                    Expr value = expr();
+                    SourceSpan arm_span = joined(pattern_span, value.span);
+                    arms.push_back({arm_span, std::string(constructor.text), std::move(bindings),
+                                    std::move(value)});
+                    if (!accept(TokenKind::comma) && current_.kind != TokenKind::right_brace)
+                        fail("expected `,` or `}` after a match arm");
+                }
+                if (arms.empty())
+                    fail("a function match needs at least one arm");
+                take(TokenKind::right_brace, "to close the match");
+                Token close = take(TokenKind::right_brace, "to close the function");
+                return {joined(first.span, close.span), std::string(name.text), std::move(inputs),
+                        std::move(result_type), std::move(scrutinee), std::move(arms)};
+            }
+
             SynthDecl synth_decl() {
                 Token first = take(TokenKind::synth_kw);
                 Token name = take(TokenKind::identifier, "after `synth`");
@@ -446,10 +505,22 @@ namespace fine::syntax {
                 Token name = take(TokenKind::identifier, "after `check`");
                 std::vector<Parameter> inputs = parameters();
                 take(TokenKind::left_brace, "before the check specification");
+                std::optional<std::string> induction_parameter;
+                std::optional<SourceSpan> induction_span;
+                if (current_.kind == TokenKind::inducts_kw) {
+                    Token first_inducts = take(TokenKind::inducts_kw);
+                    take(TokenKind::left_paren, "after `inducts`");
+                    Token parameter = take(TokenKind::identifier, "as the induction parameter");
+                    Token close_inducts = take(TokenKind::right_paren, "after the induction parameter");
+                    take(TokenKind::semicolon, "after `inducts(...)`");
+                    induction_parameter = std::string(parameter.text);
+                    induction_span = joined(first_inducts.span, close_inducts.span);
+                }
                 std::vector<Expr> assumes = condition_block(TokenKind::assumes_kw, "as the first check clause", true);
                 std::vector<Expr> ensures = condition_block(TokenKind::ensures_kw, "after `assumes`", false);
                 Token close = take(TokenKind::right_brace, "to close the check declaration");
-                return {joined(first.span, close.span), std::string(name.text), std::move(inputs), std::move(assumes),
+                return {joined(first.span, close.span), std::string(name.text), std::move(inputs),
+                        std::move(induction_parameter), std::move(induction_span), std::move(assumes),
                         std::move(ensures)};
             }
 

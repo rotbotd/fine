@@ -73,6 +73,15 @@ syntax alongside the nullary enum value `marked`.
 check parameter and returns `(7, true)`. Both fixtures gate exact same-manager
 round trips rather than merely comparing printed text.
 
+`induction-length.fine` introduces the first structurally recursive Fine
+function and the first external induction translation. `length` is an
+exhaustive match over a recursive `List`; its only self-call consumes the
+pattern-bound tail. `inducts(xs)` asks Fine to generate weak direct-subterm
+induction for non-negativity. With that line removed, the same Z3 fork remains
+in recursive unfolding beyond two seconds; with it present, the query closes
+immediately. Its Rainfall trace retains the generated theorem separately from
+the later `case-def`, `recfun-num-rounds`, theory, and clause traffic.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.

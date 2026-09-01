@@ -61,6 +61,42 @@
           echo "$verified"
           grep -F "verified: addition_preserves_left" <<<"$verified"
           grep -F "counterexample: none" <<<"$verified"
+          induction="$($out/bin/fine run "$src/fine/fixtures/induction-length.fine")"
+          echo "$induction"
+          grep -F "verified: length_nonnegative" <<<"$induction"
+          grep -F "induction: direct-subterm on xs" <<<"$induction"
+          grep -F "counterexample: none" <<<"$induction"
+          bad_recursion="$(mktemp)"
+          sed 's/length(tail)/length(xs)/' \
+            "$src/fine/fixtures/induction-length.fine" > "$bad_recursion"
+          if $out/bin/fine run "$bad_recursion" >"$bad_recursion.out" 2>&1; then
+            echo "accepted a non-decreasing recursive call" >&2
+            exit 1
+          fi
+          grep -F 'must pass a direct `List` pattern field' "$bad_recursion.out"
+          bad_parameter="$(mktemp)"
+          sed 's/inducts(xs)/inducts(ys)/' \
+            "$src/fine/fixtures/induction-length.fine" > "$bad_parameter"
+          if $out/bin/fine run "$bad_parameter" >"$bad_parameter.out" 2>&1; then
+            echo "accepted an unknown induction parameter" >&2
+            exit 1
+          fi
+          grep -F 'unknown induction parameter `ys`' "$bad_parameter.out"
+          false_induction="$(mktemp)"
+          sed 's/length(xs) >= 0/length(xs) == 1/' \
+            "$src/fine/fixtures/induction-length.fine" > "$false_induction"
+          refuted_induction="$($out/bin/fine run "$false_induction")"
+          echo "$refuted_induction"
+          grep -F "refuted: length_nonnegative" <<<"$refuted_induction"
+          grep -F "induction: direct-subterm on xs" <<<"$refuted_induction"
+          grep -F "xs: List = nil;" <<<"$refuted_induction"
+          no_induction="$(mktemp)"
+          sed '/  inducts(xs);/d' "$src/fine/fixtures/induction-length.fine" > "$no_induction"
+          set +e
+          ${pkgs.coreutils}/bin/timeout 2 $out/bin/fine run "$no_induction" >/dev/null 2>&1
+          no_induction_status=$?
+          set -e
+          test "$no_induction_status" -eq 124
           datatype="$($out/bin/fine run "$src/fine/fixtures/check-datatype-counterexample.fine")"
           echo "$datatype"
           grep -F "refuted: node_is_leaf" <<<"$datatype"
@@ -234,6 +270,73 @@
           PY
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/two-state-bisim.fine" "$bisim_rain"
+
+          induction_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/induction-length.fine" > "$induction_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/induction-length.fine" "$induction_rain"
+          ${pkgs.python3}/bin/python - "$induction_rain" <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as stream:
+              events = [json.loads(line) for line in stream]
+          operations = [event["operation"] for event in events]
+          required = [
+              "function.recursive-definition",
+              "check.run.open",
+              "check.induction.translate",
+              "check.counterexample.assert",
+              "solver.query.open",
+              "solver.query.result",
+              "check.run.close",
+          ]
+          positions = [operations.index(operation) for operation in required]
+          assert positions == sorted(positions), (required, positions)
+          translation = next(event for event in events
+                             if event["operation"] == "check.induction.translate")
+          assert translation["data"]["parameter"] == "xs"
+          assert translation["data"]["order"] == "direct-subterm"
+          assert translation["data"]["recursive_positions"] == 1
+          assert translation["data"]["responsibility"] == \
+              "fine-generated-induction-scheme"
+          opened = next(event for event in events
+                        if event["operation"] == "solver.query.open")
+          assert opened["data"]["induction_translation"] is True
+          assert opened["data"]["ematching"] is True
+          assert opened["data"]["mbqi"] is False
+          result = next(event for event in events
+                        if event["operation"] == "solver.query.result")
+          assert result["data"]["status"] == "unsat"
+          assert result["data"]["domain_outcome"] == "verified"
+          clauses = [event for event in events
+                     if event["operation"].startswith("z3.clause.")]
+          assert {event["operation"] for event in clauses} >= {
+              "z3.clause.assume", "z3.clause.infer"
+          }
+          terms = {event["data"]["id"]: event["data"]["text"]
+                   for event in events if event["operation"] == "term.declare"}
+          clause_text = "\n".join(
+              terms[reference]
+              for event in clauses for reference in event["data"]["literals"])
+          assert "tail Fine.check.length_nonnegative.arg0" in clause_text
+          assert "case-def" in clause_text
+          assert "recfun-num-rounds" in clause_text
+          generated = [event for event in events
+                       if event["operation"] == "source.term.evidence"
+                       and event["data"]["correspondence"] == "generated"]
+          source_kinds = {
+              next(node["data"]["syntax_kind"] for node in events
+                   if node["operation"] == "source.node.declare"
+                   and node["data"]["id"] == edge["data"]["source"])
+              for edge in generated
+          }
+          assert {"decl.function", "decl.check"} <= source_kinds
+          for instance in (event for event in events
+                           if event["operation"] == "z3.quantifier-instance"):
+              assert instance["data"]["instantiation_engine"] == \
+                  "ematching-only-query"
+              assert instance["data"]["ematching"] is True
+              assert instance["data"]["mbqi"] is False
+          PY
 
           bisim_projection="$(mktemp)"
           bisim_html="$(mktemp)"

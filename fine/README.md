@@ -22,6 +22,7 @@ cmake --build build/fine --target fine-bin
 ./build/fine/fine run fine/fixtures/check-valid.fine
 ./build/fine/fine run fine/fixtures/check-datatype-counterexample.fine
 ./build/fine/fine run fine/fixtures/check-tuple-counterexample.fine
+./build/fine/fine run fine/fixtures/induction-length.fine
 ./build/fine/fine rain fine/fixtures/synth-max.fine
 ./build/fine/fine rain fine/fixtures/two-state-bisim.fine > bisim.rain.jsonl
 python fine/rainfall_project.py fine/fixtures/two-state-bisim.fine bisim.rain.jsonl \
@@ -81,9 +82,22 @@ satisfiable query returns a typed `counterexample` declaration; every completed
 Int, Bool, enum, binary tuple, or monomorphic datatype assignment is lifted,
 printed, parsed, and elaborated back to the identical same-manager AST. Recursive
 field-bearing enum constructors lower directly to Z3 datatypes. An
-unsatisfiable query reports that no counterexample exists. The current slice is
-quantifier-free and has no pattern matching or projections; `counterexample` is
-a returned witness form, not an executable declaration.
+unsatisfiable query reports that no counterexample exists. An ordinary check
+remains quantifier-free and check expressions have no match or projection;
+`counterexample` is a returned witness form, not an executable declaration.
+
+The first induction slice deliberately translates rather than modifies Z3. A
+structurally recursive `function` uses Latte's exhaustive `match` surface and is
+registered through `Z3_add_rec_def`; Fine rejects a self-call unless the matched
+argument is a direct recursive pattern field. `inducts(xs);` on a `check`
+replaces its theorem with the weak direct-subterm induction step and gives the
+ordinary quantified result to an otherwise untouched solver. The length fixture
+is not provable by merely removing `inducts`: that control query remains in
+Z3's recursive unfolding search past the install check's two-second boundary.
+Rainfall labels the induction scheme as compiler-generated, then separately
+records the E-matching-only query's admitted clauses and any accepted instances;
+query scope never substitutes for a causal link. The translation, papers, and
+remaining STLC boundary are in `research/induction-translation.md`.
 
 For every rain, the first objects bind the run to a fresh opaque document and an
 exact source snapshot (revision, SHA-256 hash, and byte length). Parsed declarations

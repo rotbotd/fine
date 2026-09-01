@@ -7,6 +7,7 @@
 #include "c++/z3++.h"
 
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -62,6 +63,15 @@ namespace fine {
             std::string name;
             TypePtr type;
             std::vector<DatatypeCaseInfo> cases;
+        };
+
+        struct FunctionInfo {
+            std::string name;
+            std::vector<TypePtr> parameter_types;
+            TypePtr result_type;
+            z3::func_decl declaration;
+
+            explicit FunctionInfo(z3::context &context) : declaration(context) {}
         };
 
         struct Binding {
@@ -128,6 +138,7 @@ namespace fine {
             std::map<std::string, std::pair<EnumInfo *, unsigned>> cases_;
             std::map<std::string, std::unique_ptr<DatatypeInfo>> datatypes_;
             std::map<std::string, std::pair<DatatypeInfo *, unsigned>> constructors_;
+            std::map<std::string, std::unique_ptr<FunctionInfo>> functions_;
             std::map<std::string, Binding> bindings_;
             std::map<std::string, TypePtr> compound_types_;
             std::set<std::string> value_names_;
@@ -198,6 +209,8 @@ namespace fine {
                                 kind = "decl.model";
                             else if constexpr (std::is_same_v<T, syntax::ProofDecl>)
                                 kind = "decl.proof";
+                            else if constexpr (std::is_same_v<T, syntax::FunctionDecl>)
+                                kind = "decl.function";
                             else if constexpr (std::is_same_v<T, syntax::SynthDecl>)
                                 kind = "decl.synth";
                             else if constexpr (std::is_same_v<T, syntax::CheckDecl>)
@@ -217,6 +230,11 @@ namespace fine {
                                 for (syntax::NamedArgument const &argument : item.takes)
                                     declare_expression_sources(argument.value);
                                 declare_expression_sources(item.gives);
+                            }
+                            else if constexpr (std::is_same_v<T, syntax::FunctionDecl>) {
+                                declare_expression_sources(item.scrutinee);
+                                for (syntax::MatchArm const &arm : item.arms)
+                                    declare_expression_sources(arm.value);
                             }
                             else if constexpr (std::is_same_v<T, syntax::SynthDecl>) {
                                 for (syntax::Expr const &condition : item.ensures)
@@ -360,6 +378,156 @@ namespace fine {
                     constructors_.emplace(stable->cases[i].name, std::make_pair(stable, i));
                 types_.emplace(declaration.name, type);
                 datatypes_.emplace(declaration.name, std::move(info));
+            }
+
+            void declare_function(syntax::FunctionDecl const &declaration) {
+                reserve_value_name(declaration.name, declaration.span);
+                if (declaration.parameters.empty())
+                    reject(declaration.span, "a function needs at least one parameter");
+                if (declaration.scrutinee.kind != syntax::Expr::Kind::name)
+                    reject(declaration.scrutinee.span,
+                           "the first function slice matches one named parameter directly");
+
+                ExpressionEnvironment environment;
+                std::vector<TypePtr> parameter_types;
+                std::vector<z3::sort> parameter_sorts;
+                z3::expr_vector formal_parameters(context_);
+                TypePtr matched_type;
+                z3::expr matched_term(context_);
+                bool found_match = false;
+                std::size_t matched_parameter_index = 0;
+                for (std::size_t i = 0; i < declaration.parameters.size(); ++i) {
+                    syntax::Parameter const &parameter = declaration.parameters[i];
+                    TypePtr type = resolve_type(parameter.type);
+                    if (type->kind == RuntimeType::Kind::table)
+                        reject(parameter.type.span, "function parameters cannot have Table type in this slice");
+                    std::string internal = "Fine.function." + declaration.name + ".arg" + std::to_string(i);
+                    z3::expr term = context_.constant(internal.c_str(), type->sort);
+                    if (!environment.emplace(parameter.name, TypedExpression{type, term}).second)
+                        reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
+                    parameter_types.push_back(type);
+                    parameter_sorts.push_back(type->sort);
+                    formal_parameters.push_back(term);
+                    if (parameter.name == declaration.scrutinee.name) {
+                        matched_type = type;
+                        matched_term = term;
+                        found_match = true;
+                        matched_parameter_index = i;
+                    }
+                }
+                if (!found_match)
+                    reject(declaration.scrutinee.span, "the matched name is not a function parameter");
+                if (matched_type->kind != RuntimeType::Kind::datatype)
+                    reject(declaration.scrutinee.span, "a function match requires a field-bearing datatype");
+
+                TypePtr result_type = resolve_type(declaration.result_type);
+                if (result_type->kind == RuntimeType::Kind::table)
+                    reject(declaration.result_type.span, "functions cannot return Table in this slice");
+                auto info = std::make_unique<FunctionInfo>(context_);
+                info->name = declaration.name;
+                info->parameter_types = parameter_types;
+                info->result_type = result_type;
+                info->declaration = context_.recfun(declaration.name.c_str(),
+                                                    static_cast<unsigned>(parameter_sorts.size()),
+                                                    parameter_sorts.data(), result_type->sort);
+                FunctionInfo *stable = info.get();
+                functions_.emplace(declaration.name, std::move(info));
+
+                DatatypeInfo *datatype = matched_type->datatype;
+                std::map<std::string, std::size_t> case_indices;
+                for (std::size_t i = 0; i < datatype->cases.size(); ++i)
+                    case_indices.emplace(datatype->cases[i].name, i);
+                std::set<std::string> seen_cases;
+                std::vector<std::pair<z3::expr, z3::expr>> branches;
+                branches.reserve(declaration.arms.size());
+
+                bool previous_capture = capture_source_edges_;
+                std::vector<std::string> previous_within = source_edge_within_;
+                capture_source_edges_ = true;
+                source_edge_within_ = {"function:" + declaration.name};
+                for (syntax::MatchArm const &arm : declaration.arms) {
+                    auto found_case = case_indices.find(arm.constructor);
+                    if (found_case == case_indices.end())
+                        reject(arm.span, "constructor `" + arm.constructor + "` does not belong to `" +
+                                             datatype->name + "`");
+                    if (!seen_cases.insert(arm.constructor).second)
+                        reject(arm.span, "duplicate match arm for `" + arm.constructor + "`");
+                    DatatypeCaseInfo const &item = datatype->cases[found_case->second];
+                    if (arm.bindings.size() != item.field_types.size())
+                        reject(arm.span, "constructor `" + arm.constructor + "` expects " +
+                                             std::to_string(item.field_types.size()) + " pattern bindings");
+                    ExpressionEnvironment arm_environment = environment;
+                    std::set<std::string> local_bindings;
+                    std::set<std::string> recursive_bindings;
+                    for (std::size_t i = 0; i < arm.bindings.size(); ++i) {
+                        syntax::MatchBinding const &binding = arm.bindings[i];
+                        if (binding.name == "_")
+                            continue;
+                        if (!local_bindings.insert(binding.name).second || arm_environment.contains(binding.name))
+                            reject(binding.span, "duplicate or shadowing pattern binding `" + binding.name + "`");
+                        arm_environment.emplace(
+                            binding.name,
+                            TypedExpression{item.field_types[i], item.accessors[i](matched_term)});
+                        if (same(item.field_types[i], matched_type))
+                            recursive_bindings.insert(binding.name);
+                    }
+                    std::function<void(syntax::Expr const &)> check_structural_calls =
+                        [&](syntax::Expr const &expression) {
+                            if (expression.kind == syntax::Expr::Kind::call &&
+                                expression.name == declaration.name) {
+                                if (expression.elements.size() != declaration.parameters.size())
+                                    reject(expression.span, "recursive call to `" + declaration.name +
+                                                                "` has the wrong arity");
+                                syntax::Expr const &decreasing = expression.elements[matched_parameter_index];
+                                if (decreasing.kind != syntax::Expr::Kind::name ||
+                                    !recursive_bindings.contains(decreasing.name))
+                                    reject(decreasing.span,
+                                           "recursive call to `" + declaration.name + "` must pass a direct `" +
+                                               datatype->name + "` pattern field as its matched argument");
+                            }
+                            for (syntax::Expr const &child : expression.elements)
+                                check_structural_calls(child);
+                        };
+                    check_structural_calls(arm.value);
+                    TypedExpression value = elaborate_expression(arm.value, arm_environment);
+                    if (!same(value.type, result_type))
+                        reject(arm.value.span, "match arm must return `" + result_type->display + "`");
+                    branches.emplace_back(item.recognizer(matched_term), value.expression);
+                }
+                capture_source_edges_ = previous_capture;
+                source_edge_within_ = std::move(previous_within);
+                if (seen_cases.size() != datatype->cases.size()) {
+                    std::string missing;
+                    for (DatatypeCaseInfo const &item : datatype->cases) {
+                        if (!seen_cases.contains(item.name)) {
+                            if (!missing.empty())
+                                missing += ", ";
+                            missing += "`" + item.name + "`";
+                        }
+                    }
+                    reject(declaration.span, "non-exhaustive match; missing " + missing);
+                }
+
+                z3::expr body = branches.back().second;
+                for (std::size_t i = branches.size() - 1; i-- > 0;)
+                    body = z3::ite(branches[i].first, branches[i].second, body);
+                context_.recdef(stable->declaration, formal_parameters, body);
+
+                if (rainfall_) {
+                    std::string scope = "function:" + declaration.name;
+                    z3::expr application = stable->declaration(formal_parameters);
+                    rainfall_->source_term(declaration.node_id, declaration.span, "decl.function", body,
+                                           "generated", {scope});
+                    rainfall_->record(
+                        "transform", "function.recursive-definition", {scope}, "fine.elaborator",
+                        "Compiler-owned exhaustive datatype match registered through Z3_add_rec_def; records the "
+                        "formal application and body but does not pretend Z3 stores a source-level equation",
+                        {RainfallRecorder::string_field("function", declaration.name),
+                         RainfallRecorder::string_field("matched_parameter", declaration.scrutinee.name),
+                         RainfallRecorder::string_field("formal_application", rainfall_->term(application)),
+                         RainfallRecorder::string_field("definition_body", rainfall_->term(body)),
+                         RainfallRecorder::number_field("arms", branches.size())});
+                }
             }
 
             TypePtr tuple_type(TypePtr const &first, TypePtr const &second, syntax::SourceSpan span) {
@@ -567,8 +735,28 @@ namespace fine {
                 }
                 case syntax::Expr::Kind::call: {
                     auto found = constructors_.find(expression.name);
-                    if (found == constructors_.end())
-                        reject(expression.span, "unknown constructor `" + expression.name + "`");
+                    if (found == constructors_.end()) {
+                        auto function = functions_.find(expression.name);
+                        if (function == functions_.end())
+                            reject(expression.span, "unknown constructor or function `" + expression.name + "`");
+                        FunctionInfo const &item = *function->second;
+                        if (expression.elements.size() != item.parameter_types.size())
+                            reject(expression.span, "function `" + expression.name + "` expects " +
+                                                        std::to_string(item.parameter_types.size()) + " arguments");
+                        std::vector<z3::expr> arguments;
+                        arguments.reserve(expression.elements.size());
+                        for (std::size_t i = 0; i < expression.elements.size(); ++i) {
+                            TypedExpression argument = elaborate_expression(expression.elements[i], environment);
+                            if (!same(argument.type, item.parameter_types[i]))
+                                reject(expression.elements[i].span, "argument " + std::to_string(i + 1) + " of `" +
+                                                                        item.name + "` must have type `" +
+                                                                        item.parameter_types[i]->display + "`");
+                            arguments.push_back(argument.expression);
+                        }
+                        return completed_expression(
+                            expression, item.result_type,
+                            item.declaration(static_cast<unsigned>(arguments.size()), arguments.data()));
+                    }
                     DatatypeInfo *datatype = found->second.first;
                     DatatypeCaseInfo const &item = datatype->cases[found->second.second];
                     if (expression.elements.size() != item.field_types.size())
@@ -933,7 +1121,8 @@ namespace fine {
                 if (rainfall_)
                     rainfall_->record("scope", "check.run.open", {run_scope}, "fine.check",
                                       "Fine check elaboration, one public counterexample query, and optional "
-                                      "source-witness round trip; excludes Z3-internal search",
+                                      "source-witness round trip; induction checks additionally expose the public "
+                                      "qi_queue binding and on-clause boundaries, not the rest of Z3 search",
                                       {RainfallRecorder::string_field("declaration", declaration.name),
                                        RainfallRecorder::number_field("parameters", parameters.size())});
 
@@ -943,26 +1132,124 @@ namespace fine {
                 z3::expr guarantees = conjunction(declaration.ensures, "ensured");
                 capture_source_edges_ = false;
                 source_edge_within_.clear();
-                z3::expr counterexample_query = assumptions && !guarantees;
+                z3::expr theorem = z3::implies(assumptions, guarantees);
+                z3::expr induction_hypothesis = context_.bool_val(true);
+                z3::expr induction_step = theorem;
+                std::string induction_parameter;
+                if (declaration.induction_parameter) {
+                    induction_parameter = *declaration.induction_parameter;
+                    auto found = std::find_if(parameters.begin(), parameters.end(), [&](CheckParameter const &item) {
+                        return item.name == induction_parameter;
+                    });
+                    if (found == parameters.end())
+                        reject(*declaration.induction_span,
+                               "unknown induction parameter `" + induction_parameter + "`");
+                    if (found->type->kind != RuntimeType::Kind::datatype)
+                        reject(*declaration.induction_span,
+                               "direct-subterm induction requires a field-bearing datatype parameter");
+
+                    DatatypeInfo const &datatype = *found->type->datatype;
+                    std::string smaller_name = "Fine.check." + declaration.name + ".smaller";
+                    z3::expr smaller = context_.constant(smaller_name.c_str(), found->type->sort);
+                    z3::expr direct_subterm = context_.bool_val(false);
+                    std::size_t recursive_positions = 0;
+                    for (DatatypeCaseInfo const &item : datatype.cases) {
+                        z3::expr is_case = item.recognizer(found->term);
+                        for (std::size_t i = 0; i < item.field_types.size(); ++i) {
+                            if (!same(item.field_types[i], found->type))
+                                continue;
+                            direct_subterm = direct_subterm ||
+                                             (is_case && smaller == item.accessors[i](found->term));
+                            ++recursive_positions;
+                        }
+                    }
+                    if (recursive_positions == 0)
+                        reject(*declaration.induction_span,
+                               "the induction datatype has no direct recursive fields");
+
+                    z3::expr_vector source(context_);
+                    z3::expr_vector destination(context_);
+                    source.push_back(found->term);
+                    destination.push_back(smaller);
+                    z3::expr smaller_theorem = theorem.substitute(source, destination);
+                    z3::expr hypothesis_body = z3::implies(direct_subterm, smaller_theorem);
+                    std::vector<Z3_app> bound{
+                        reinterpret_cast<Z3_app>(static_cast<Z3_ast>(smaller))};
+                    std::string qid = "fine.induction." + declaration.name + "." + induction_parameter;
+                    Z3_ast quantified = Z3_mk_quantifier_const_ex(
+                        context_, true, 0, context_.str_symbol(qid.c_str()), context_.str_symbol(""),
+                        static_cast<unsigned>(bound.size()), bound.data(), 0, nullptr, 0, nullptr,
+                        hypothesis_body);
+                    context_.check_error();
+                    induction_hypothesis = z3::expr(context_, quantified);
+                    induction_step = z3::implies(induction_hypothesis, theorem);
+
+                    if (rainfall_) {
+                        rainfall_->source_term(declaration.node_id, declaration.span, "decl.check", induction_step,
+                                               "generated", {run_scope});
+                        rainfall_->record(
+                            "transform", "check.induction.translate", {run_scope}, "fine.elaborator",
+                            "Compiler-owned weak structural induction translation over direct recursive datatype "
+                            "fields; Z3 receives only the resulting ordinary quantified formula",
+                            {RainfallRecorder::string_field("parameter", induction_parameter),
+                             RainfallRecorder::string_field("order", "direct-subterm"),
+                             RainfallRecorder::number_field("recursive_positions", recursive_positions),
+                             RainfallRecorder::string_field("theorem", rainfall_->term(theorem)),
+                             RainfallRecorder::string_field("hypothesis", rainfall_->term(induction_hypothesis)),
+                             RainfallRecorder::string_field("step", rainfall_->term(induction_step)),
+                             RainfallRecorder::string_field("responsibility", "fine-generated-induction-scheme")});
+                    }
+                }
+                z3::expr counterexample_query = !induction_step;
 
                 if (rainfall_) {
                     rainfall_->record(
                         "constraint", "check.counterexample.assert", {run_scope}, "fine.check",
-                        "Conjunction of source assumptions and the negation of all source guarantees",
+                        declaration.induction_parameter
+                            ? "Negation of Fine's compiler-generated direct-subterm induction step"
+                            : "Conjunction of source assumptions and the negation of all source guarantees",
                         {RainfallRecorder::string_field("assumptions", rainfall_->term(assumptions)),
                          RainfallRecorder::string_field("guarantees", rainfall_->term(guarantees)),
+                         RainfallRecorder::string_field("theorem", rainfall_->term(theorem)),
+                         RainfallRecorder::string_field("induction_hypothesis",
+                                                        rainfall_->term(induction_hypothesis)),
                          RainfallRecorder::string_field("assertion", rainfall_->term(counterexample_query))});
                     rainfall_->record(
                         "scope", "solver.query.open", {run_scope, query}, "fine.check",
-                        "Public solver assertion boundary",
+                        declaration.induction_parameter
+                            ? "Public solver assertion boundary with scoped read-only E-matching binding and "
+                              "on-clause observers"
+                            : "Public solver assertion boundary",
                         {RainfallRecorder::string_field("id", query),
-                         RainfallRecorder::string_field("purpose", "find a source-level counterexample"),
+                         RainfallRecorder::string_field(
+                             "purpose", declaration.induction_parameter
+                                            ? "refute the compiler-generated structural induction step"
+                                            : "find a source-level counterexample"),
                          RainfallRecorder::string_field("assertion", rainfall_->term(counterexample_query)),
-                         RainfallRecorder::string_field("polarity", "counterexample-exists")});
+                         RainfallRecorder::string_field("polarity", "counterexample-exists"),
+                         RainfallRecorder::boolean_field("induction_translation",
+                                                         declaration.induction_parameter.has_value()),
+                         RainfallRecorder::boolean_field("mbqi", !declaration.induction_parameter.has_value()),
+                         RainfallRecorder::boolean_field("ematching", true)});
                 }
 
                 z3::solver solver(context_);
+                if (declaration.induction_parameter) {
+                    z3::params parameters(context_);
+                    parameters.set("mbqi", false);
+                    parameters.set("ematching", true);
+                    parameters.set("rewriter.enable_der", false);
+                    solver.set(parameters);
+                }
                 solver.add(counterexample_query);
+                std::unique_ptr<RainfallQuantifierObserver> quantifier_observer;
+                std::unique_ptr<RainfallClauseObserver> clause_observer;
+                if (rainfall_ && declaration.induction_parameter) {
+                    quantifier_observer = std::make_unique<RainfallQuantifierObserver>(
+                        solver, *rainfall_, std::vector<std::string>{run_scope, query}, true, false);
+                    clause_observer = std::make_unique<RainfallClauseObserver>(
+                        solver, *rainfall_, std::vector<std::string>{run_scope, query});
+                }
                 z3::check_result result = solver.check();
                 if (rainfall_) {
                     char const *status = result == z3::sat ? "sat" : result == z3::unsat ? "unsat" : "unknown";
@@ -986,6 +1273,8 @@ namespace fine {
                                           "Source check completed with no counterexample",
                                           {RainfallRecorder::string_field("status", "verified")});
                     output_ << "verified: " << declaration.name << '\n';
+                    if (declaration.induction_parameter)
+                        output_ << "induction: direct-subterm on " << induction_parameter << '\n';
                     output_ << "counterexample: none\n";
                     return 0;
                 }
@@ -1054,6 +1343,8 @@ namespace fine {
                 }
 
                 output_ << "refuted: " << declaration.name << '\n';
+                if (declaration.induction_parameter)
+                    output_ << "induction: direct-subterm on " << induction_parameter << '\n';
                 output_ << witness_source;
                 output_ << "parse(print(lift(values))): exact ast identity\n";
                 return 0;
@@ -1232,7 +1523,7 @@ namespace fine {
                 std::unique_ptr<RainfallClauseObserver> clause_observer;
                 if (rainfall_) {
                     quantifier_observer = std::make_unique<RainfallQuantifierObserver>(
-                        solver, *rainfall_, std::vector<std::string>{run_scope, query}, false);
+                        solver, *rainfall_, std::vector<std::string>{run_scope, query}, false, true);
                     clause_observer = std::make_unique<RainfallClauseObserver>(
                         solver, *rainfall_, std::vector<std::string>{run_scope, query});
                 }
@@ -1523,6 +1814,9 @@ namespace fine {
             for (syntax::Declaration const &declaration : document.declarations) {
                 if (auto const *item = std::get_if<syntax::EnumDecl>(&declaration)) {
                     declare_enum(*item);
+                }
+                else if (auto const *item = std::get_if<syntax::FunctionDecl>(&declaration)) {
+                    declare_function(*item);
                 }
                 else if (auto const *item = std::get_if<syntax::LetDecl>(&declaration)) {
                     declare_let(*item);

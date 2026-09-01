@@ -18,7 +18,8 @@ class RainfallQuantifierObserver final : public z3::user_propagator_base {
 public:
     RainfallQuantifierObserver(
         z3::solver& solver, RainfallRecorder& rainfall,
-        std::vector<std::string> within, bool ematching_enabled);
+        std::vector<std::string> within, bool ematching_enabled,
+        bool mbqi_enabled);
 
     void push() override;
     void pop(unsigned scopes) override;
@@ -32,6 +33,7 @@ private:
     RainfallRecorder* rainfall_ = nullptr;
     std::vector<std::string> within_;
     bool ematching_enabled_ = true;
+    bool mbqi_enabled_ = true;
 };
 
 } // namespace fine

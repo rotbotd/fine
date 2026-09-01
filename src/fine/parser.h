@@ -130,6 +130,32 @@ namespace fine::syntax {
         Type type;
     };
 
+    struct MatchBinding {
+        SourceSpan span;
+        std::string name;
+    };
+
+    struct MatchArm {
+        SourceSpan span;
+        std::string constructor;
+        std::vector<MatchBinding> bindings;
+        Expr value;
+    };
+
+    // Fine functions retain a deliberately visible recursive-datatype match.
+    // The first executable slice does not hide recursion behind a printer-only
+    // eliminator: elaboration registers this definition with the same Z3
+    // manager later used by checks and Rainfall.
+    struct FunctionDecl {
+        SourceSpan span;
+        std::string name;
+        std::vector<Parameter> parameters;
+        Type result_type;
+        Expr scrutinee;
+        std::vector<MatchArm> arms;
+        std::size_t node_id = 0;
+    };
+
     struct SynthDecl {
         SourceSpan span;
         std::string name;
@@ -143,6 +169,8 @@ namespace fine::syntax {
         SourceSpan span;
         std::string name;
         std::vector<Parameter> parameters;
+        std::optional<std::string> induction_parameter;
+        std::optional<SourceSpan> induction_span;
         std::vector<Expr> assumes;
         std::vector<Expr> ensures;
         std::size_t node_id = 0;
@@ -163,7 +191,8 @@ namespace fine::syntax {
         std::size_t node_id = 0;
     };
 
-    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, SynthDecl, CheckDecl, CounterexampleDecl>;
+    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, FunctionDecl, SynthDecl, CheckDecl,
+                                     CounterexampleDecl>;
 
     struct Document {
         SourceSpan span;

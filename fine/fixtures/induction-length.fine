@@ -1,0 +1,22 @@
+// Fine generates the weak direct-subterm induction hypothesis; Z3 still has
+// to unfold this recursive definition, reduce the hypothesis, and close the
+// constructor cases. In this fixture preprocessing leaves no accepted QI event.
+enum List {
+  nil,
+  cons(head: Int, tail: List),
+}
+
+function length(xs: List): Int {
+  match xs {
+    nil => 0,
+    cons(_, tail) => 1 + length(tail),
+  }
+}
+
+check length_nonnegative(xs: List) {
+  inducts(xs);
+  assumes {}
+  ensures {
+    length(xs) >= 0;
+  }
+}
