@@ -224,3 +224,61 @@ The flake test requires assumed, inferred, and deleted clause events; the
 query result; exact producer attribution; strong declared handles for every
 literal and proof hint; and literal-count agreement. The clean artifact is
 `/nix/store/l08m34rhzwh1xyw9n9kkz2w4a01mzxx1-fine-0.0.1`.
+
+## 2026-09-01 — datatype and ordinary tuple counterexamples (`562f1716d`)
+
+The first source-level algebraic datatype loop is closed through `check`.
+Latte-shaped enum cases may now carry named fields, for example
+`node(value: Int, left: Tree, right: Tree)`, and constructor calls are ordinary
+Fine expressions. If an enum has any field-bearing constructor, elaboration
+uses Z3's public datatype constructor API directly. A field whose type is the
+enclosing enum uses Z3's recursive datatype-sort reference; no tag array,
+uninterpreted constructor axiom, or other compatibility encoding was added.
+Pure nullary enums retain the finite enumeration path used by the bisimulation
+runtime.
+
+The closed boundary is deliberately monomorphic and single-datatype recursive.
+Field names are checked for duplicates and retained for argument diagnostics;
+constructor calls are positional. Direct self fields are admitted, while other
+field types must already exist. There is no mutual recursion, type parameter,
+index, projection expression, pattern, match exhaustiveness, codata, datatype
+synthesis, or table-valued field. F* and Dafny were not consulted because this
+slice encountered no representation workaround: the source terms map directly
+to Z3 constructors. They remain the comparison point before introducing any
+bespoke solution at one of those missing boundaries.
+
+The same change makes binary tuples ordinary elaborated check expressions and
+parameters instead of restricting them to table keys. The check domain now
+admits Int, Bool, finite enums, monomorphic datatypes, and binary tuples.
+Type-directed model lifting recursively recognizes datatype constructors and
+tuple components, prints Fine constructor/tuple syntax, parses it through the
+ordinary expression parser, elaborates it in the same manager, and checks exact
+AST identity for every returned assignment.
+
+`check-datatype-counterexample.fine` declares recursive `Tree` and finite
+`Mark`, forces `tree = node(7, leaf, leaf)` and `mark = marked`, refutes the
+claim that they are the opposite cases, and returns both assignments in a
+parseable witness. Its rain has 17 events: two completed model assignments,
+seven strongly registered terms, the public query, and the exact witness.
+`check-tuple-counterexample.fine` independently returns
+`pair: (Int, Bool) = (7, true)`. Additional local probes closed a nested tree
+round trip, an unsatisfiable identical-tree claim, a pure-enum assignment, and
+a field-type error pointing at `true` in `node(true, leaf, leaf)`.
+
+Validation commands were:
+
+```
+cmake --build .build -j4
+./.build/fine run fine/fixtures/check-datatype-counterexample.fine
+./.build/fine rain fine/fixtures/check-datatype-counterexample.fine
+./.build/fine run fine/fixtures/check-tuple-counterexample.fine
+./.build/fine run fine/fixtures/two-state-bisim.fine
+./.build/fine run fine/fixtures/synth-max.fine
+./.build/fine run fine/fixtures/check-counterexample.fine
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The isolated build ran the legacy suite plus exact datatype, finite-enum, and
+tuple witness assertions. The clean artifact is
+`/nix/store/n2486qxpxi6l0nzsnc59i1bxjbn8h7bk-fine-0.0.1`.
