@@ -175,3 +175,52 @@ After the clean artifact closed the slice, `ninja -C build/fine -t recompact`
 recovered and rewrote both local Ninja databases. A following
 `ninja -C build/fine -t deps` produced no warning; no further full rebuild was
 needed because the isolated Nix build had already passed.
+
+## 2026-09-01 — admitted CDCL(T) clause stream (`1b352e8ea`)
+
+The bisimulation rainfall now retains Z3's existing public `on_clause`
+registration for the lifetime of its single solver query. No generic soft-fork
+hook was needed: `Z3_solver_register_on_clause` already reports clauses after
+preprocessing as they are assumed by, inferred into, or deleted from CDCL(T).
+A dedicated `RainfallClauseObserver` owns both the C++ callback and registration
+so neither can outlive the solver query.
+
+The observer conservatively classifies only dummy proof-hint heads documented
+by the callback boundary: `assumption` becomes `z3.clause.assume`, `del` becomes
+`z3.clause.delete`, and every other head becomes `z3.clause.infer` while
+preserving the uninterpreted head and full proof-hint term. Every proof hint and
+literal enters the existing never-reused, strong same-manager registry. Clause
+events also retain literal count and proof-log dependency indices. The
+post-preprocessing literals are explicitly represented as Z3 clause terms, not
+misprinted as Fine source.
+
+On the two-state MBQI fixture, the trace grew from 50 to 169 events. The public
+clause stream contains 54 events: 6 assumptions, 43 inferences, and 5 deletions.
+Observed inference hint heads include `inst`, `rup`, `smt`, and `tseitin`; the
+six independently observed `qi_queue::on_binding` MBQI instances remain. All
+clause events precede the public `sat` result. This covers clauses admitted to
+or removed from this parent CDCL(T) query, not rejected candidates, assignments,
+decisions, watched-literal activity, the auxiliary MBQI context, or the causal
+contribution of one clause to the result.
+
+The first isolated Nix build failed only in the install-check harness: passing
+the now-large JSONL trace through the `RAIN` environment variable exceeded the
+kernel argument/environment limit (`python: Argument list too long`, exit 126).
+The trace itself was valid. The test was corrected to write the bisimulation
+rain to a temporary file and pass only its path to Python. The second clean
+build completed all runnable and structural checks.
+
+Validation commands were:
+
+```
+cmake --build .build -j4
+./.build/fine rain fine/fixtures/two-state-bisim.fine
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The flake test requires assumed, inferred, and deleted clause events; the
+`assumption`, `inst`, and `del` proof-hint heads; event placement before the
+query result; exact producer attribution; strong declared handles for every
+literal and proof hint; and literal-count agreement. The clean artifact is
+`/nix/store/l08m34rhzwh1xyw9n9kkz2w4a01mzxx1-fine-0.0.1`.
