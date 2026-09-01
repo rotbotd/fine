@@ -100,6 +100,11 @@ carriers.
 - [ ] Admit a universally quantified constructor field by elaborating an
       arbitrary-fresh branch plus its explicit freshness/equivariance
       obligation, without exposing a raw Horn-clause surface.
+- [ ] Add named constrained views over one existing native carrier. A use site
+      must discharge the instantiated `requires` proposition by entailment; the
+      callee receives it as erased evidence and Rainfall records its source.
+      Do not add wrapper sorts, textual-premise matching, or general refinement
+      subtyping.
 - [ ] Generate indexed pattern refinement and induction on a proof derivation,
       rather than structural induction on the indexed `Tm` value.
 - [ ] Preserve the selected rule, opened bodies, arbitrary fresh name,

@@ -89,6 +89,32 @@ hypothesis as compiler-owned evidence. A proof that disappears from model data
 must not disappear from the explanation of why an SMT branch was admitted.
 Runtime indexed datatypes and a general second universe remain out of scope.
 
+## Constrained views
+
+Fine may name an erased proposition carried by an existing native value type.
+The intended surface is:
+
+```fine
+view FreshFor(left: Tm, right: Tm) over Name {
+  requires fresh(value, support(left, right));
+}
+```
+
+`x: FreshFor(body, body_prime)` is still represented by the native Z3 `Name`
+sort. The view adds no wrapper value or solver sort; it requires erased evidence
+for the instantiated `requires` clause. A caller must discharge that obligation,
+and the callee receives it among its assumptions. Checking is by entailment, not
+by looking for a textually identical expression in an `assumes` block. Rainfall
+records the exact assumption or derived clause that discharged each view
+obligation.
+
+Views are deliberately weaker than a general dependent type universe. They
+refine one existing native carrier with named erased propositions; they do not
+change runtime representation, quantify over Fine types, synthesize operations,
+or make functions first-class. The cofinite `Step` field uses a proof-only
+function from a `FreshFor` name to a recursive proof. Both the view evidence and
+the proof function erase at the value/model boundary.
+
 When a model supplies a finite map, Fine enumerates the complete finite domain,
 constructs a canonical constant-array-plus-stores Z3 term, then lifts that term.
 The model's `FuncInterp` is evidence used to construct the term; it is not the

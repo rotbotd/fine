@@ -1192,3 +1192,19 @@ nix flake check
 The run prints `sat`, `unsat` for the least relation, `sat` for the junk-admitting
 ordinary encoding, and `sat`, `sat` for the simultaneously derived binder head
 and cofinite counterexample, then reports that all boundary tests passed.
+
+## 2026-09-01 — constrained-view decision
+
+h accepted a small named-view mechanism for types that require particular proof
+premises. A view refines one existing native carrier with a parameterized erased
+`requires` proposition. `FreshFor(body, body_prime) over Name`, for example, is
+represented by the same Z3 `Name` sort plus evidence of freshness; it is not a
+wrapper datatype or a member of a universal type-code sort.
+
+At a use site Fine checks that the current assumptions entail the instantiated
+view requirement. Inside the receiving declaration the evidence is available as
+an assumption. The check is semantic rather than a demand that the source repeat
+an identical formula, and Rainfall must identify the assumption or derived clause
+which discharged it. Views do not add general refinement subtyping, type
+quantification, method synthesis, or first-class functions. The cofinite `Step`
+constructor uses this mechanism only in its erased proof-function field.
