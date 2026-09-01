@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fine-lang.invalid/schema/rainfall-projection-v1.json",
+  "title": "Fine Rainfall projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "document", "claim_snapshot", "display_snapshot",
+    "transaction", "annotations"
+  ],
+  "properties": {
+    "schema": { "const": "fine.rainfall.projection.v1" },
+    "document": {
+      "type": "object",
+      "required": ["id", "display_name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string" }
+      }
+    },
+    "claim_snapshot": {
+      "type": "object",
+      "required": ["id", "identity"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "identity": { "$ref": "#/$defs/snapshotIdentity" }
+      }
+    },
+    "display_snapshot": {
+      "type": "object",
+      "required": ["admitted_by_rainfall", "identity"],
+      "properties": {
+        "admitted_by_rainfall": { "type": "boolean" },
+        "id": { "type": "string", "minLength": 1 },
+        "identity": { "$ref": "#/$defs/snapshotIdentity" }
+      },
+      "allOf": [{
+        "if": {
+          "properties": { "admitted_by_rainfall": { "const": true } },
+          "required": ["admitted_by_rainfall"]
+        },
+        "then": { "required": ["id"] },
+        "else": { "not": { "required": ["id"] } }
+      }]
+    },
+    "transaction": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "to", "insert", "insert_byte_length"],
+        "properties": {
+          "from": { "type": "integer", "minimum": 0 },
+          "to": { "type": "integer", "minimum": 0 },
+          "insert": { "type": "string" },
+          "insert_byte_length": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "annotations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/annotation" }
+    }
+  },
+  "$defs": {
+    "snapshotIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "revision", "exact_source_hash", "byte_length"],
+      "properties": {
+        "document": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "exact_source_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "byte_length": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset", "line", "column"],
+      "properties": {
+        "offset": { "type": "integer", "minimum": 0 },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["begin", "end"],
+      "properties": {
+        "begin": { "$ref": "#/$defs/position" },
+        "end": { "$ref": "#/$defs/position" }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot", "source", "term", "correspondence", "event_id", "within"
+      ],
+      "properties": {
+        "snapshot": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "term": { "type": "string", "minLength": 1 },
+        "correspondence": { "enum": ["exact", "desugared", "generated"] },
+        "event_id": { "type": "string", "minLength": 1 },
+        "within": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "annotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status", "claim", "syntax_kind", "claim_span", "display_span", "term_text"
+      ],
+      "properties": {
+        "status": { "enum": ["current", "transported", "unplaced"] },
+        "claim": { "$ref": "#/$defs/claim" },
+        "syntax_kind": { "type": "string", "minLength": 1 },
+        "claim_span": { "$ref": "#/$defs/span" },
+        "display_span": {
+          "oneOf": [{ "$ref": "#/$defs/span" }, { "type": "null" }]
+        },
+        "term_text": { "type": "string" }
+      },
+      "allOf": [{
+        "if": {
+          "properties": { "status": { "const": "unplaced" } },
+          "required": ["status"]
+        },
+        "then": { "properties": { "display_span": { "type": "null" } } },
+        "else": { "properties": { "display_span": { "$ref": "#/$defs/span" } } }
+      }]
+    }
+  }
+}

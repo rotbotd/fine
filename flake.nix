@@ -349,6 +349,88 @@
               echo "accepted hostile replay $hostile" >&2; exit 1
             fi
           done
+
+          projection_dir="$(mktemp -d)"
+          ${pkgs.python3}/bin/python - \
+            "$src/fine/fixtures/check-counterexample.fine" "$projection_dir" <<'PY'
+          import json, pathlib, sys
+          source_path, output = map(pathlib.Path, sys.argv[1:])
+          source = source_path.read_bytes()
+          negative = source.index(b"-1")
+          (output / "transport.json").write_text(json.dumps([
+              {"from": 0, "to": 0, "insert": "// displayed revision\n"},
+              {"from": negative, "to": negative + 2, "insert": "-2"},
+          ]))
+          (output / "delete.json").write_text(json.dumps([
+              {"from": 0, "to": len(source), "insert": ""},
+          ]))
+          # Even byte-identical output belongs to a new, unadmitted revision.
+          (output / "same-bytes.json").write_text(json.dumps([
+              {"from": negative, "to": negative + 2, "insert": "-1"},
+          ]))
+          (output / "overlap.json").write_text(json.dumps([
+              {"from": negative, "to": negative + 2, "insert": "-2"},
+              {"from": negative + 1, "to": negative + 2, "insert": "1"},
+          ]))
+          PY
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-project \
+            "$src/fine/fixtures/check-counterexample.fine" "$check_rain_file" \
+            > "$projection_dir/current.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-project \
+            "$src/fine/fixtures/check-counterexample.fine" "$check_rain_file" \
+            --edits "$projection_dir/transport.json" \
+            --html "$projection_dir/transport.html" \
+            --write-source "$projection_dir/displayed.fine" \
+            > "$projection_dir/transported.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-project \
+            "$src/fine/fixtures/check-counterexample.fine" "$check_rain_file" \
+            --edits "$projection_dir/delete.json" \
+            > "$projection_dir/deleted.json"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-project \
+            "$src/fine/fixtures/check-counterexample.fine" "$check_rain_file" \
+            --edits "$projection_dir/same-bytes.json" \
+            > "$projection_dir/same-bytes-out.json"
+          if ${pkgs.python3}/bin/python $out/bin/fine-rain-project \
+            "$src/fine/fixtures/check-counterexample.fine" "$check_rain_file" \
+            --edits "$projection_dir/overlap.json"; then
+            echo "accepted overlapping projection edits" >&2; exit 1
+          fi
+          ${pkgs.python3}/bin/python - "$projection_dir" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          read = lambda name: json.loads((root / name).read_text())
+          current = read("current.json")
+          transported = read("transported.json")
+          deleted = read("deleted.json")
+          same = read("same-bytes-out.json")
+          assert {item["status"] for item in current["annotations"]} == {"current"}
+          assert {item["status"] for item in transported["annotations"]} == {"transported"}
+          assert {item["status"] for item in deleted["annotations"]} == {"unplaced"}
+          assert {item["status"] for item in same["annotations"]} == {"transported"}
+          assert current["display_snapshot"]["admitted_by_rainfall"] is True
+          assert transported["display_snapshot"]["admitted_by_rainfall"] is False
+          assert same["display_snapshot"]["admitted_by_rainfall"] is False
+          assert (same["claim_snapshot"]["identity"]["exact_source_hash"] ==
+                  same["display_snapshot"]["identity"]["exact_source_hash"])
+          claim_revision = transported["claim_snapshot"]["identity"]["revision"]
+          assert transported["display_snapshot"]["identity"]["revision"] == claim_revision + 1
+          page = (root / "transport.html").read_text()
+          assert 'data-state="transported"' in page
+          assert "do not describe this one" in page
+          PY
+          PYTHONPATH="$out/bin" ${pkgs.python3}/bin/python - <<'PY'
+          from rainfall_projection import Edit, transport_range
+          edit = lambda begin, end, text: Edit(begin, end, text.encode(), text)
+          assert transport_range(5, 10, [edit(0, 0, "xx")]) == (7, 12)
+          assert transport_range(5, 10, [edit(5, 5, "xx")]) == (7, 12)
+          assert transport_range(5, 10, [edit(10, 10, "xx")]) == (5, 10)
+          assert transport_range(5, 10, [edit(7, 7, "xx")]) == (5, 12)
+          assert transport_range(5, 10, [edit(5, 10, "")]) is None
+          assert transport_range(5, 10, [edit(5, 10, "x")]) == (5, 6)
+          assert transport_range(5, 10, [edit(3, 7, "")]) == (3, 6)
+          assert transport_range(5, 10, [edit(8, 12, "")]) == (5, 8)
+          assert transport_range(5, 10, [edit(0, 0, "x"), edit(7, 7, "y")]) == (6, 12)
+          PY
           datatype_rain="$($out/bin/fine rain "$src/fine/fixtures/check-datatype-counterexample.fine")"
           RAIN="$datatype_rain" ${pkgs.python3}/bin/python - <<'PY'
           import json, os

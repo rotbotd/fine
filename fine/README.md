@@ -26,6 +26,9 @@ cmake --build build/fine --target fine-bin
 ./build/fine/fine rain fine/fixtures/two-state-bisim.fine
 ./build/fine/fine rain fine/fixtures/check-counterexample.fine > check.rain.jsonl
 python fine/rainfall_validate.py fine/fixtures/check-counterexample.fine check.rain.jsonl
+python fine/rainfall_project.py fine/fixtures/check-counterexample.fine check.rain.jsonl \
+  --edits transaction.json --html projection.html --write-source edited.fine \
+  > projection.json
 ```
 
 `demo-bisim` embeds that exact checked-in Fine fixture; it is not a second
@@ -70,3 +73,11 @@ emits explicit exact/desugared source-to-term evidence edges; generated witnesse
 and internal Z3 terms remain unowned by source. The installed
 `fine-rain-validate` command admits only a replay whose snapshot, source nodes,
 live term handles, manager, edge endpoints, chronology, and terminal state agree.
+
+`fine-rain-project` first performs that same validation, then maps evidence
+ranges through one ordered byte-offset transaction. Its JSON and standalone HTML
+label every surviving old marker `transported`, label a wholly deleted marker
+`unplaced`, and keep the claim snapshot separate from the unadmitted display
+snapshot. With no transaction, evidence is `current`. Matching text and equal
+hashes never upgrade an edited revision; only a separately validated Rainfall
+trace for that revision can produce current evidence.

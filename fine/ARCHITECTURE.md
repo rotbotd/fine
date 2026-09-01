@@ -187,6 +187,18 @@ unknown or reused handles, manager substitution, source-bearing `internal_z3`
 edges, and events arriving after the run closed. This validator does not transport
 evidence across edits; a viewer may move a stale decoration separately.
 
+`fine-rain-project` is that deliberately weaker projection layer. It applies
+one ordered transaction of non-overlapping UTF-8 insertions/replacements at
+byte offsets to the validated source and maps half-open source ranges into the
+new bytes. A surviving mapped range is `transported`; a range collapsed by
+deletion is `unplaced`. The display snapshot retains the document ID and
+advances the revision, but is explicitly `admitted_by_rainfall: false`. The
+projection never alters the old claim snapshot and cannot emit `current` after
+any transaction, even when the resulting bytes equal the old bytes. A new
+validated trace, not range or text continuity, is the only route back to
+`current`. The command can emit a standalone HTML table whose stale state is
+both written in text and styled separately; color is not the sole distinction.
+
 For `check`, rainfall records the one source-level refutation assertion, the
 public query boundary and polarity, each completed parameter evaluation, and
 the checked source witness. Those model assignments are equality under the

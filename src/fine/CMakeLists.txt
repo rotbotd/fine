@@ -33,3 +33,13 @@ install(PROGRAMS "${PROJECT_SOURCE_DIR}/fine/rainfall_validate.py"
   DESTINATION "${CMAKE_INSTALL_BINDIR}"
   RENAME fine-rain-validate
 )
+install(PROGRAMS "${PROJECT_SOURCE_DIR}/fine/rainfall_project.py"
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  RENAME fine-rain-project
+)
+install(FILES "${PROJECT_SOURCE_DIR}/fine/rainfall_replay.py"
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
+install(FILES "${PROJECT_SOURCE_DIR}/fine/rainfall_projection.py"
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
