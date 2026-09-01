@@ -377,3 +377,73 @@ The clean artifact is
 not cross-revision truth transfer: it is a viewer transport that may preserve a
 visibly stale decoration while a new snapshot compiles, plus broader truthful
 solver-search coverage beyond the three current observer boundaries.
+
+## 2026-09-01 — stale decoration transport (`397461170`)
+
+Closed the viewer/transport edge without adding an editor. The installed
+`fine-rain-project` command first runs the exact replay validator, then consumes
+one ordered transaction of non-overlapping `{from,to,insert}` edits whose
+coordinates are byte offsets in the admitted source. It applies the transaction
+itself, constructs the next display identity with the same opaque document ID,
+revision plus one, exact resulting SHA-256, and byte length, and maps every
+source-evidence range into the displayed bytes.
+
+The output is `fine.rainfall.projection.v1`, specified in
+`fine/projection-schema.json`. Each annotation retains its old snapshot,
+source-node, term, correspondence, event, scope path, and claim span separately
+from its display span. With no transaction the validated trace is `current`.
+After any transaction a surviving range is `transported`; a range collapsed by
+deletion is `unplaced`; the display snapshot is explicitly
+`admitted_by_rainfall: false` and has no Rainfall snapshot ID. A replacement
+that writes the exact same bytes is still transported because the revision
+changed. Neither matching text nor matching whole-file hash upgrades it.
+
+Half-open interval behavior is fixed rather than delegated to a UI library. An
+insertion before or at a range start shifts it, an insertion strictly inside
+expands it, and an insertion at the end remains outside. Partial deletion keeps
+the surviving prefix or suffix; exact deletion makes the marker unplaced; exact
+replacement maps it to the replacement. Multiple edits are expressed in base
+snapshot coordinates and accumulated in source order. Overlaps and two
+insertions at the same byte are rejected as ambiguous.
+
+The optional standalone HTML makes the distinction visible in text, border
+style, and row state rather than color alone. Its stale banner says that the
+claims belong to the previous revision and do not describe the displayed one;
+every row also carries `data-state=current|transported|unplaced`. All document,
+source, and term text is HTML-escaped. This is a static protocol witness, not a
+CodeMirror integration, incremental parser, or claim that a transported range
+still selects the same syntax.
+
+The validator implementation moved into the importable `rainfall_replay.py`
+module so projection cannot take a weaker parsing path. Validation was tightened
+for the scope path and for the document name, syntax kind, and term text fields
+the viewer reads. Projection logic similarly lives in an importable module;
+the CLI files are thin installed entry points.
+
+The first isolated projection build passed the CLI and hostile replay cases but
+failed the direct interval tests with `ModuleNotFoundError: rainfall_project`:
+CMake had installed the executable under its hyphenated command name, not an
+importable module name. The implementation was split into
+`rainfall_projection.py` plus `fine-rain-project`; the next clean build passed.
+
+Install checks cover current, transported, and wholly unplaced projections;
+byte-identical edits remaining stale; revision advancement; an unadmitted
+display identity; overlapping-edit rejection; explicit stale HTML; and nine
+range-boundary cases including multiple edits. The preceding hostile replay
+suite still runs through the shared validator. Validation commands were:
+
+```
+cmake --build .build -j4
+python fine/rainfall_project.py \
+  fine/fixtures/check-counterexample.fine /tmp/check.rain \
+  --edits /tmp/edits.json --html /tmp/projection.html
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The clean artifact is
+`/nix/store/6gcdq7qiss1fsq0bck6cgq538y7bj776-fine-0.0.1`. The next live edge is
+generation control: while a revision is compiling, retain only transported
+annotations from its immediate predecessor; accept a completed trace only for
+the generation and exact display snapshot that requested it; discard late old
+generations without promoting or merging their claims.
