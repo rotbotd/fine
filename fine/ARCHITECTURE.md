@@ -141,6 +141,15 @@ to its Z3 meaning is a one-way compiler operation. See
 `research/synthesis-pressure-test.md` for the selected refutation-synthesis
 slice, result vocabulary, and provenance obligations.
 
+This is an explicit backend boundary, not a description of every Fine query.
+Bisimulation constructs a model value, `check` constructs a counterexample
+assignment when satisfiable, and induction refutes a compiler-generated step.
+Rainfall makes their solver terms parseable but does not thereby reconstruct a
+source program or structured proof. The public QF-LIA `synth` declaration is an
+experimental harness. Its useful successor must be justified by a proof task,
+currently failure-directed helper-lemma or invariant synthesis for a stuck
+induction; maximum synthesis is only a closed plumbing test.
+
 The first interruptible source slice admits an exhaustive datatype match inside
 `synth`. A whole arm may be a named hole such as `?payload`; that parse-local
 node becomes a snapshot-scoped Rainfall object with expected type `Int` and the
@@ -161,7 +170,9 @@ admitted generation and applies all replacements under the host lock as one
 ordinary revision advance. The new generation reparses the materialized arms
 and performs only whole-match verification: it has no hole or candidate events.
 Arm searches are still sequential inside one source generation, so this is not
-yet independent per-arm cancellation or residual projection.
+yet independent per-arm cancellation or residual projection. Those extensions
+are paused until a proof-directed synthesis task demonstrates that independently
+editable expression holes are the right user boundary.
 
 ## External structural induction
 

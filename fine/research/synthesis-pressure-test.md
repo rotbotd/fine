@@ -6,6 +6,22 @@ features inherited from the papers. Fine has one built-in semantics. It is not
 a host for user-defined object languages, user-written evaluators, raw Horn
 clauses, or SemGuS-LIB.
 
+## 2026-09-01 scope correction
+
+The review selected a technically honest refutation-synthesis slice; it did not
+establish that arithmetic program synthesis belongs in Fine's public pitch.
+`synth max` and the later materialized match arm remain regression fixtures for
+ground-instance selection, independent verification, exact source round trip,
+and host admission. Ordinary model, counterexample, and induction runs do not
+construct source programs merely because Rainfall lifts their terms.
+
+Further editor machinery for general expression holes is paused. The next test
+of this backend must consume a real proof failure: synthesize a helper lemma or
+invariant from a retained induction residual, admit it in its own generation,
+materialize it, and show the original theorem reruns without enumeration. If
+that test does not reuse the public `synth` declaration, the declaration should
+be removed while keeping the backend internal.
+
 ## The correction found by the review
 
 The first slice originally stopped short of its advertised source round trip.

@@ -1,34 +1,37 @@
 # Fine TODO
 
-## Governing principle: interruptible search that becomes code
+## Governing principle: interruptible solver evidence
 
-Fine should let Z3 continue searching without requiring the user to finish a
-proof or program skeleton first. Rainfall makes that search editable: every
-observed live Z3 term `x` is rendered as parseable Fine syntax by `lift(x)`, and
-the trace validates exact same-manager `reify(lift(x)) = x`. Rendering and
-provenance are independent. A solver-internal term has a Fine rendering without
-being falsely attributed to a source span.
+Fine should let Z3 continue searching for a proof, model, or counterexample
+without hiding the obligation behind one spinner. Rainfall makes that search
+inspectable: every observed live Z3 term `x` is rendered as parseable Fine syntax
+by `lift(x)`, and the trace validates exact same-manager
+`reify(lift(x)) = x`. Rendering and provenance are independent. A solver-internal
+term has a Fine rendering without being source code, a proof term, or a candidate
+program.
 
 At any time, the user can interrupt and constrain the next search by editing
-ordinary Fine source: fill part of a function, add an assertion or helper lemma,
-or split a parameter with a match and leave individual arms open. These are not
-separate manual tactics. The same partial and completed Fine AST shapes belong
-to the solver's synthesis grammar, so Z3 may eventually produce the match or
-lemma that the user could have supplied earlier. Each edit creates a new exact
-source snapshot and solver generation; an old Rainfall trace may remain visible
-as stale evidence but cannot make a claim about the edited program.
+ordinary Fine source: add an assertion, choose an induction, or provide a helper
+lemma. Each edit creates a new exact source snapshot and solver generation; an
+old Rainfall trace may remain visible as stale evidence but cannot make a claim
+about the edited program. An explicit synthesis backend may also propose source,
+but that is an additional search relation with a grammar and independent
+verification. It is not implied by lifting ordinary solver traffic.
 
-When search succeeds, Fine materializes the lifted result as ordinary Fine code.
-Later runs reify and verify that code instead of repeating synthesis. “Infinite
-fuel” names this interaction policy—search may be left running and interrupted
-at a useful boundary—not a termination claim about any individual Z3 query.
+Models and counterexamples materialize as typed witnesses. Solver-produced code
+or lemmas materialize only when a declared synthesis run binds a verified result
+to an exact source replacement; later runs then reify and verify that source
+instead of repeating synthesis. “Infinite fuel” names the interaction policy—an
+ordinary query may be left running and interrupted at a useful boundary—not a
+claim that Z3 normally constructs programs or that any query terminates.
 
-## Immediate truth gap: total Rainfall lift
+## Closed prerequisite: total Rainfall lift
 
-Rainfall currently retains strong same-manager handles but prints most internal
-terms as Z3 text. Model, program, and counterexample values have exact Fine
-lift/reparse coverage; the three internal observer boundaries do not. Do not
-build editable proof holes on the textual fallback.
+Rainfall originally retained strong same-manager handles but printed most
+internal terms as Z3 text. Model, program, and counterexample values had exact
+Fine lift/reparse coverage while the three internal observer boundaries did not.
+This had to close before any source materialization could consume an observed
+term.
 
 - [x] Define parseable Fine forms for every sort, declaration, quantifier,
       application, proof-clause literal, recursive-function auxiliary, and
@@ -58,34 +61,28 @@ printer survives only as a labelled diagnostic field and is never projected as
 the term rendering. Ordinary user-surface resugaring remains later work; it must
 consume this exact generated layer rather than replace it.
 
-## Next vertical slice: one interruptible match
+## Closed experiment: one materialized synthesis arm
 
 - [x] Give an open source expression a stable, snapshot-scoped hole identity and
       a typed synthesis grammar.
 - [x] Let a datatype match contain completed and open arms, and give each open
       arm a named Rainfall query scope with its own independently verified result.
-- [ ] Split those arm scopes into independently cancellable host generations;
-      the first slice still evaluates them sequentially inside one source-bound
-      generation.
-- [ ] Project the current residual Fine formula and observed activity onto each
-      open arm without treating query scope as causal proof evidence.
-- [ ] Interrupt one running arm, edit or fill another, and discard only
-      generations bound to the predecessor snapshot.
 - [x] Admit each solver-produced arm through the same AST constructors accepted
       from user source, assemble and verify the whole match, then materialize all
       open arms with one host-owned source transaction.
 - [x] Re-run the materialized file and demonstrate verification with no grammar
       enumeration or synthesis query.
 
-The closed fixture is `synth-match-open.fine`: `?payload` has the fixed
+The fixture is `synth-match-open.fine`: `?payload` has the fixed
 `fine.qf-lia-int.v1` grammar over `fallback` and the `some` field `value`. Its
 admitted replacement is exactly `value`. `fine-rain-host materialize` applies
 that replacement, advances the revision, issues a new generation, and the new
 trace contains one whole-match verification query but no hole declaration or
-candidate selection. The remaining edge is live residual projection and
-per-arm cancellation, not witness-to-source identity.
+candidate selection. This closes witness-to-source identity. Per-arm live
+projection and cancellation are paused until a proof-directed consumer justifies
+them; deriving `max` or filling an arithmetic match arm does not.
 
-## Failure-directed lemmas after the match slice
+## Next synthesis test, if retained: failure-directed lemmas
 
 Use Yang--Fedyukovich--Gupta's AdtInd mechanism as a test, not as a second proof
 language: retain a stuck lifted residual; derive a local grammar from only its
@@ -94,4 +91,7 @@ refute candidates cheaply on small constructor values; prove survivors in
 separate generations; and materialize an admitted helper lemma into Fine source.
 The first fixture should reproduce a recursive-list obligation that genuinely
 needs a concatenation/length lemma, and the second run must verify without lemma
-enumeration.
+enumeration. Until that fixture exists, top-level `synth` is an experimental
+QF-LIA regression surface, not part of Fine's language pitch. If proof-directed
+lemma search does not reuse source expression holes, remove the public
+declaration and retain the refutation engine only as an internal component.

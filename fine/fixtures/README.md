@@ -52,7 +52,9 @@ fine run fine/fixtures/synth-max.fine
 
 It synthesizes the two-argument maximum as a conditional, checks the returned
 body against the untouched specification, then parses and reifies the printed
-body to the identical same-manager semantic AST.
+body to the identical same-manager semantic AST. This is a backend regression,
+not a claim that maximum synthesis is a useful public feature or that ordinary
+Fine solver runs construct programs.
 
 `synth-projection.fine` and `synth-max-three.fine` are anti-hardcoding gates:
 the first closes with one core term and no conditional, while the second has a
@@ -70,6 +72,11 @@ replacement. `fine-rain-host materialize` applies all such replacements in one
 revision transaction. `synth-match-materialized.fine` is the expected result;
 its trace has the whole-match verification query but no hole declaration,
 candidate enumeration, or synthesis query.
+
+Further per-arm editor machinery is deliberately paused. The materialization
+fixture proves source identity and admission, but arithmetic arm completion does
+not by itself justify an interactive program-synthesis surface. The next consumer
+must be a helper lemma or invariant generated from a genuinely stuck induction.
 
 `check-counterexample.fine` refutes a false subtraction claim and returns the
 negative/positive assignment `a = -1, b = 1` as a parseable Fine

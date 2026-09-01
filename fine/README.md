@@ -55,15 +55,18 @@ rainfall trace identity rules are in `ARCHITECTURE.md`. The twelve-angle
 synthesis review and the narrowed built-in-semantics plan are recorded in
 `research/synthesis-pressure-test.md`.
 
-`rain` writes JSONL only. The synthesis replay follows native maximum
-synthesis through public solver queries, completed counterexample values,
+`rain` writes JSONL only. The experimental synthesis replay follows native
+maximum synthesis through public solver queries, completed counterexample values,
 candidate selection, labelled instance activation, the unsat core, conditional
 assembly, the successful builtin theory-application reductions inside its one
 public simplification, an independent verification query, and the checked Fine
 source witness. Every event names its producer and coverage. The internal
 events cover only the observed `th_rewriter::reduce_app` path; this stream does
 not pretend to contain substitutions, quantifier rewrites, other rewriter
-instances, or solver search.
+instances, or solver search. This QF-LIA example is a regression harness for a
+refutation-synthesis backend, not the language's reason to exist. Ordinary
+`check`, induction, and bisimulation runs ask Z3 for proofs, counterexamples, or
+models; lifting their terms does not turn them into synthesized source programs.
 
 The bisimulation replay disables E-matching and records the accepted,
 nontrivial quantifier instances which reach Z3's `qi_queue` binding callback
@@ -110,7 +113,9 @@ the current admitted trace and applies every verified arm replacement as one
 host-owned edit transaction. Re-running the resulting source follows the normal
 completed-arm path: its trace contains one whole-match verification query and
 no candidate enumeration. Per-arm cancellation and residual display are not in
-this slice.
+this slice and are paused until a proof-directed consumer justifies them. The
+intended consumer is failure-directed helper-lemma or invariant search for a
+stuck induction obligation, not arithmetic function generation.
 
 For every rain, the first objects bind the run to a fresh opaque document and an
 exact source snapshot (revision, SHA-256 hash, and byte length). Parsed declarations
