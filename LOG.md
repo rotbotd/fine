@@ -644,3 +644,62 @@ nix build --no-link --print-out-paths
 The validator reported 216 events, 41 source nodes, 97 strong terms, and zero
 source-term edges for this generated bisimulation path. The clean Nix artifact is
 `/nix/store/dw36gbxviwviiclh0xazkyzac8cyrpsl-fine-0.0.1`.
+
+## 2026-09-01 — source-facing bisimulation activity (`2760e9e31`)
+
+The preceding instance-to-clause join was still visible only to someone reading
+JSONL. The bisimulation trace had 41 declared source nodes but zero source-term
+edges, so projecting it produced no annotations despite its six accepted MBQI
+instances and public clause stream. This was not a rendering defect: the compiler
+had never stated which Fine syntax generated the four solver assertions.
+
+The bisimulation elaborator now emits four `source.term.evidence` edges from the
+exact `proof bisimulation { ... }` declaration node to the fully elaborated
+`labels-agree`, `left-step-matched`, `right-step-matched`, and `initial-related`
+assertion terms. Their correspondence is explicitly `generated`, not `exact` or
+`desugared`; preprocessed quantifiers and CDCL(T) clauses are still represented as
+Z3 terms and acquire no fake Fine source syntax.
+
+Extended the existing validator-admitted `fine-rain-project` path rather than
+adding a second viewer. Projection joins each generated evidence term to the exact
+`bisim.clause.assert` event carrying that same strong term handle. It then groups
+accepted quantifier instances by the compiler-assigned qid role and follows the
+explicit accepted-instance-to-admitted-clause reference added in `439fb34a3`.
+Each activity record retains the accepted event, ground instance handle and text,
+admitted clause event or null, and every binding handle and text. A missing clause
+is rendered as accepted without observed admission instead of being dropped.
+This is role-labelled activity, not a claim that the lemma caused the answer.
+
+`fine.rainfall.projection.v1` annotations now carry either null activity or a
+schema-described `bisimulation-clause-activity` payload. The standalone HTML
+shows all four roles on the proof declaration, with collapsed instance bodies and
+bindings. It groups annotations sharing one source node into one row, so the proof
+source is not repeated four times; the JSON remains four separate exact claims.
+Current/stale/unplaced state still belongs to the display projection as before,
+and all source, term, role, event, and binding text is HTML-escaped.
+
+The two-state fixture now produces 220 events, 41 source nodes, 97 strong terms,
+four generated source-term edges, and four proof annotations. Their accepted
+instance counts are exactly `1,3,2,0` for labels, left-step, right-step, and initial
+roles. All six accepted instances have admitted lemma references and nonempty
+ground bindings. The generated HTML contains one source row, four activity
+sections, and collapsed details for all six handoffs. Existing check projections,
+stale transport, generation admission, atomic host races, hostile replay cases,
+and language fixtures remain in the same install check.
+
+Validation commands:
+
+```
+cmake --build .build -j4
+./.build/fine rain fine/fixtures/two-state-bisim.fine > /tmp/bisim-view.rain
+python fine/rainfall_validate.py \
+  fine/fixtures/two-state-bisim.fine /tmp/bisim-view.rain
+python fine/rainfall_project.py \
+  fine/fixtures/two-state-bisim.fine /tmp/bisim-view.rain \
+  --html /tmp/bisim-view.html > /tmp/bisim-view.json
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The clean implementation artifact before this log-only commit was
+`/nix/store/nbiip8n8v6rm4p2shgq27ggp22q4i5ca-fine-0.0.1`.
