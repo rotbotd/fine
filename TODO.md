@@ -82,7 +82,32 @@ candidate selection. This closes witness-to-source identity. Per-arm live
 projection and cancellation are paused until a proof-directed consumer justifies
 them; deriving `max` or filling an arithmetic match arm does not.
 
-## Next synthesis test, if retained: failure-directed lemmas
+## Next language test: locally nameless indexed `Step`
+
+Add one ATS-style ghost indexed proof family without adding a universal
+`Term`/`HasType` encoding or changing ordinary Fine values into type-coded raw
+carriers.
+
+- [ ] Keep object `Tm`, `Ty`, `Env`, and `Name` as separate native Z3 sorts.
+- [ ] Parse and elaborate a strictly-positive indexed `proof` family whose
+      constructor-specific result indices are native Fine terms.
+- [ ] Admit a universally quantified constructor field and closure-convert its
+      proof function without exposing a raw Horn-clause surface.
+- [ ] Generate indexed pattern refinement and induction on a proof derivation,
+      rather than structural induction on the indexed `Tm` value.
+- [ ] Preserve the selected rule, opened bodies, arbitrary fresh name,
+      recursive premise, and induction hypothesis as exact Rainfall evidence
+      before erasing proof witnesses from value/model construction.
+- [ ] Verify preservation for full locally nameless reduction under
+      abstractions, then rerun the admitted source without synthesis or hidden
+      proof search.
+
+Exit test: the abstraction-congruence constructor carries its cofinite family
+of recursive `Step` premises through elaboration, induction, solver checking,
+exact Fine lift, and Rainfall projection. If that correspondence cannot close,
+do not broaden the feature to runtime GADTs or a general static type universe.
+
+## Later synthesis test, if retained: failure-directed lemmas
 
 Use Yang--Fedyukovich--Gupta's AdtInd mechanism as a test, not as a second proof
 language: retain a stuck lifted residual; derive a local grammar from only its

@@ -47,6 +47,36 @@ Model-produced finite maps use Z3 arrays. A relation on finite sorts `A` and
 `B` is `Array(Product(A, B), Bool)`. Fine may spell selection as `r(a, b)`, but
 reification constructs `select(r, pair(a, b))`.
 
+This rule governs values, not erased proofs. Fine will not copy F*'s SMT
+encoding in which source values and source types share one universal `Term`
+sort and `HasType` axioms recover their distinctions. An object-language
+datatype named `Tm` or `Ty` remains a literal, separate native Z3 datatype
+sort. `Ty` is object data, not a code for Fine's own type universe.
+
+## Indexed proof families
+
+The first indexed-family feature is proof-only, following ATS's separation of
+static indexed proofs from program values. A declaration such as
+`Step(before: Tm, after: Tm)` may construct, assume, and eliminate total proof
+witnesses during checking, but introduces no Z3 value sort for those witnesses.
+Its indices are values of existing native Fine/Z3 sorts; constructor result
+indices elaborate to equalities over those sorts. Proof erasure therefore does
+not erase or box `Tm`, `Ty`, names, environments, integers, or other ordinary
+values.
+
+The compiler owns the strictly-positive inductive interpretation and the
+indexed elimination/induction rule. It may lower a proof family internally to
+an inductive predicate or constrained Horn clauses, but Fine exposes neither a
+raw Horn-clause language nor an arbitrary user-defined object-language
+semantics. Universally quantified constructor fields elaborate through the same
+proof-family mechanism; a cofinite field is not a separate backend primitive.
+
+Erasure occurs only at the value/model boundary. Rainfall must first retain the
+constructor branch, exact native index terms, recursive premise, and induction
+hypothesis as compiler-owned evidence. A proof that disappears from model data
+must not disappear from the explanation of why an SMT branch was admitted.
+Runtime indexed datatypes and a general second universe remain out of scope.
+
 When a model supplies a finite map, Fine enumerates the complete finite domain,
 constructs a canonical constant-array-plus-stores Z3 term, then lifts that term.
 The model's `FuncInterp` is evidence used to construct the term; it is not the

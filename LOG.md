@@ -1130,3 +1130,21 @@ The resulting candidate is a hybrid: ATS-style static index sorts and proof
 erasure; native Z3 datatypes whenever indices are structurally synthesizable; and
 an inductive-relation/CHC layer for ghost indexed families. This is research only;
 no implementation, runtime, or artifact claim changed.
+
+## 2026-09-01 — ATS-style proof-family boundary
+
+h accepted the native-sorted direction after distinguishing object-language
+`Tm`/`Ty` from F*'s universal SMT `Term`. The architecture and TODO now fix the
+first indexed feature as a ghost, strictly-positive proof family. Its indices
+are terms of existing native Z3 sorts; its witnesses are available to source
+proof construction and induction but erased before model/value construction.
+The compiler retains their constructor and recursive-premise correspondences as
+Rainfall evidence before erasure.
+
+This does not add ATS's complete static language, a Fine type-code universe,
+runtime GADTs, raw Horn clauses, or user-defined object-language semantics. The
+single acceptance fixture is full locally nameless preservation: the
+abstraction-congruence constructor has a cofinite dependent proof field, and
+Rainfall must retain the chosen constructor, opened native `Tm` indices, fresh
+name, recursive `Step` premise, and induction hypothesis. Documentation only;
+no implementation or clean artifact claim changed.
