@@ -1065,3 +1065,39 @@ The proposed spike compares both encodings on `integer`, `less`, and polymorphic
 evidence, index-directed synthesis grammar, and exact lift/reify. The deciding
 failure is solver grammar: a frontend GADT that lets Z3 enumerate ill-indexed raw
 terms and filters them afterward is rejected as ornamental.
+
+## 2026-09-01 — synthesis scope correction (`fbfbaef94`)
+
+Corrected a design conflation exposed by h's question about whether the current
+`synth` feature is useful. Fine's ordinary queries do not construct programs.
+The bisimulation path constructs a model value, `check` constructs a model
+assignment when refuted, and induction asks whether a compiler-generated step
+has a counterexample. Rainfall's total Fine rendering of their internal terms is
+an observation/identity property; it is not source-program synthesis or proof
+reconstruction.
+
+The TODO, architecture, README, fixture guide, and synthesis pressure-test now
+say so. `synth max` is retained as an experimental QF-LIA backend regression for
+ground-instance selection, unsat-core assembly, independent verification, exact
+round trip, and Rainfall coverage. The materialized match arm remains a closed
+witness-to-source identity and host-admission experiment. Further per-arm live
+projection and cancellation are paused: an arithmetic hole does not justify that
+editor architecture.
+
+The next synthesis test, if the backend survives, must consume a genuinely stuck
+induction residual. It derives a bounded local helper-lemma or invariant grammar
+from the residual's own variables, recursive calls, predicates, and subterms;
+kills candidates on small constructor values; proves survivors in separate
+generations; materializes the admitted lemma; and requires the original theorem
+to rerun without enumeration. If that path does not reuse the public `synth`
+declaration, the surface should be removed while keeping its lower engine as an
+internal proof-search component.
+
+Validation was documentation-only:
+
+```
+git diff --check
+nix flake check
+```
+
+No runtime claim or clean artifact changed.
