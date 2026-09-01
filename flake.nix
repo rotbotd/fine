@@ -88,6 +88,9 @@
           assert [event["sequence"] for event in events] == list(range(len(events)))
           assert all(event["schema"] == "fine.rainfall.v2" for event in events)
           operations = [event["operation"] for event in events]
+          assert operations[:2] == [
+              "source.document.declare", "source.snapshot.declare"
+          ]
           required = [
               "synth.run.open",
               "synth.candidate.select",
@@ -251,7 +254,101 @@
           assert "b: Int = 1;" in witnesses[0]["data"]["source"]
           assert "z3.theory-rewrite" not in operations
           assert "z3.mbqi-instance" not in operations
+          source_nodes = [event for event in events
+                          if event["operation"] == "source.node.declare"]
+          edges = [event for event in events
+                   if event["operation"] == "source.term.evidence"]
+          assert source_nodes and edges
+          declared_sources = {event["data"]["id"] for event in source_nodes}
+          declared_terms = {event["data"]["id"] for event in events
+                            if event["operation"] == "term.declare"}
+          assert all(edge["data"]["source"] in declared_sources for edge in edges)
+          assert all(edge["data"]["term"] in declared_terms for edge in edges)
+          assert {edge["data"]["correspondence"] for edge in edges} == {
+              "exact", "desugared"
+          }
           PY
+          check_rain_file="$(mktemp)"
+          printf '%s\n' "$check_rain" > "$check_rain_file"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/check-counterexample.fine" "$check_rain_file"
+
+          reopened_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/check-counterexample.fine" \
+            > "$reopened_rain"
+          ${pkgs.python3}/bin/python - "$check_rain_file" "$reopened_rain" <<'PY'
+          import json, sys
+          def document(path):
+              with open(path) as stream:
+                  return next(json.loads(line)["data"]["id"] for line in stream
+                              if '"source.document.declare"' in line)
+          assert document(sys.argv[1]) != document(sys.argv[2])
+          PY
+
+          hostile_dir="$(mktemp -d)"
+          ${pkgs.python3}/bin/python - \
+            "$src/fine/fixtures/check-counterexample.fine" \
+            "$check_rain_file" "$hostile_dir" <<'PY'
+          import copy, json, pathlib, sys
+          source_path, rain_path, output = map(pathlib.Path, sys.argv[1:])
+          source = source_path.read_bytes()
+          events = [json.loads(line) for line in rain_path.read_text().splitlines()]
+          output.mkdir(exist_ok=True)
+
+          # Same byte length and stable spans do not transport a snapshot claim.
+          changed = source.replace(b"-1", b"-2", 1)
+          assert len(changed) == len(source) and changed != source
+          (output / "changed.fine").write_bytes(changed)
+          # Moving all following spans is also a different exact snapshot.
+          (output / "moved.fine").write_bytes(b" " + source)
+
+          def write(name, mutate):
+              altered = copy.deepcopy(events)
+              mutate(altered)
+              (output / name).write_text(
+                  "".join(json.dumps(event, separators=(",", ":")) + "\n"
+                          for event in altered))
+
+          write("cross-snapshot.rain", lambda value: next(
+              event for event in value
+              if event["operation"] == "source.term.evidence"
+          )["data"].__setitem__("snapshot", "snapshot:old"))
+          write("unknown-term.rain", lambda value: next(
+              event for event in value
+              if event["operation"] == "source.term.evidence"
+          )["data"].__setitem__("term", "term:never"))
+          def reuse_handle(value):
+              terms = [event for event in value if event["operation"] == "term.declare"]
+              terms[1]["data"]["identity"]["handle"] = terms[0]["data"]["identity"]["handle"]
+          write("reused-handle.rain", reuse_handle)
+          def wrong_manager(value):
+              term = next(event for event in value if event["operation"] == "term.declare")
+              term["data"]["identity"]["manager"] = "manager:other"
+          write("cross-manager.rain", wrong_manager)
+          write("internal-with-source.rain", lambda value: next(
+              event for event in value
+              if event["operation"] == "source.term.evidence"
+          )["data"].__setitem__("correspondence", "internal_z3"))
+          late = copy.deepcopy(events[-1])
+          late["sequence"] = len(events)
+          late["event_id"] = f"event:{len(events)}"
+          late["operation"] = "late.old-generation"
+          (output / "late-event.rain").write_text(
+              "".join(json.dumps(event, separators=(",", ":")) + "\n"
+                      for event in events + [late]))
+          PY
+          if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate "$hostile_dir/changed.fine" "$check_rain_file"; then
+            echo "accepted a span-preserving cross-revision replay" >&2; exit 1
+          fi
+          if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate "$hostile_dir/moved.fine" "$check_rain_file"; then
+            echo "accepted a moved-span cross-revision replay" >&2; exit 1
+          fi
+          for hostile in "$hostile_dir"/*.rain; do
+            if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+              "$src/fine/fixtures/check-counterexample.fine" "$hostile"; then
+              echo "accepted hostile replay $hostile" >&2; exit 1
+            fi
+          done
           datatype_rain="$($out/bin/fine rain "$src/fine/fixtures/check-datatype-counterexample.fine")"
           RAIN="$datatype_rain" ${pkgs.python3}/bin/python - <<'PY'
           import json, os

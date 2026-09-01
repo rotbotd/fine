@@ -24,6 +24,8 @@ cmake --build build/fine --target fine-bin
 ./build/fine/fine run fine/fixtures/check-tuple-counterexample.fine
 ./build/fine/fine rain fine/fixtures/synth-max.fine
 ./build/fine/fine rain fine/fixtures/two-state-bisim.fine
+./build/fine/fine rain fine/fixtures/check-counterexample.fine > check.rain.jsonl
+python fine/rainfall_validate.py fine/fixtures/check-counterexample.fine check.rain.jsonl
 ```
 
 `demo-bisim` embeds that exact checked-in Fine fixture; it is not a second
@@ -60,3 +62,11 @@ field-bearing enum constructors lower directly to Z3 datatypes. An
 unsatisfiable query reports that no counterexample exists. The current slice is
 quantifier-free and has no pattern matching or projections; `counterexample` is
 a returned witness form, not an executable declaration.
+
+For every rain, the first objects bind the run to a fresh opaque document and an
+exact source snapshot (revision, SHA-256 hash, and byte length). Parsed declarations
+and expressions have snapshot-scoped source identities. The `check` elaborator
+emits explicit exact/desugared source-to-term evidence edges; generated witnesses
+and internal Z3 terms remain unowned by source. The installed
+`fine-rain-validate` command admits only a replay whose snapshot, source nodes,
+live term handles, manager, edge endpoints, chronology, and terminal state agree.

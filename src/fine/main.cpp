@@ -1,6 +1,7 @@
 #include "demo_source.h"
 #include "parser.h"
 #include "runtime.h"
+#include "source.h"
 
 #include "c++/z3++.h"
 
@@ -18,8 +19,9 @@ namespace {
             fine::syntax::Document document = fine::syntax::parse(source);
             if (!rainfall)
                 return fine::execute(document, std::cout);
+            fine::SourceSnapshot snapshot = fine::make_source_snapshot(filename, source);
             std::ostringstream ordinary_output;
-            return fine::execute(document, ordinary_output, &std::cout);
+            return fine::execute(document, ordinary_output, &std::cout, &snapshot);
         } catch (fine::syntax::ParseError const &error) {
             std::cerr << error.format(filename, source) << '\n';
             return EXIT_FAILURE;

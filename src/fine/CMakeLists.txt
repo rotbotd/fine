@@ -11,6 +11,7 @@ add_executable(fine-bin
   quantifier_observer.cpp
   rainfall.cpp
   runtime.cpp
+  source.cpp
   synthesis.cpp
 )
 set_target_properties(fine-bin PROPERTIES OUTPUT_NAME fine)
@@ -27,4 +28,8 @@ target_include_directories(fine-bin PRIVATE
 
 install(TARGETS fine-bin
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
+install(PROGRAMS "${PROJECT_SOURCE_DIR}/fine/rainfall_validate.py"
+  DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  RENAME fine-rain-validate
 )

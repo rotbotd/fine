@@ -1,9 +1,12 @@
 #pragma once
 
+#include "parser.h"
+#include "source.h"
 #include "c++/z3++.h"
 
 #include <cstddef>
 #include <iosfwd>
+#include <map>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -21,12 +24,23 @@ namespace fine {
 
     class RainfallRecorder {
     public:
-        RainfallRecorder(z3::context &context, std::ostream &output, std::string run = {});
+        RainfallRecorder(z3::context &context, std::ostream &output, std::string run = {},
+                         SourceSnapshot const *snapshot = nullptr);
 
         // Registers a strong z3::expr reference and returns its recorder-scoped
         // reference. Handles are never reused. Z3 AST IDs are emitted only as
         // diagnostics and are not used to establish identity.
         std::string term(z3::expr const &expression, std::string_view representation = "semantic-z3");
+
+        // Declares a parse-local source object in the recorder's immutable source
+        // snapshot. Repeated declarations of the same node return the same ID.
+        std::string source_node(std::size_t parse_local_node_id, syntax::SourceSpan span, std::string_view syntax_kind);
+
+        // Records compiler evidence relating source syntax to a live Z3 term. The
+        // term is strongly registered before the edge is emitted.
+        void source_term(std::size_t parse_local_node_id, syntax::SourceSpan span, std::string_view syntax_kind,
+                         z3::expr const &expression, std::string_view correspondence,
+                         std::vector<std::string> const &within = {});
 
         void record(std::string_view kind, std::string_view operation, std::vector<std::string> const &within,
                     std::string_view producer, std::string_view coverage, std::vector<RainfallField> const &data = {});
@@ -42,7 +56,9 @@ namespace fine {
         z3::context &context_;
         std::ostream &output_;
         std::string run_;
+        SourceSnapshot const *snapshot_ = nullptr;
         std::vector<z3::expr> terms_;
+        std::map<std::size_t, std::string> source_nodes_;
         std::size_t sequence_ = 0;
     };
 

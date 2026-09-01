@@ -19,8 +19,22 @@ namespace fine {
 
     }  // namespace
 
-    RainfallRecorder::RainfallRecorder(z3::context &context, std::ostream &output, std::string run)
-        : context_(context), output_(output), run_(run.empty() ? fresh_run() : std::move(run)) {}
+    RainfallRecorder::RainfallRecorder(z3::context &context, std::ostream &output, std::string run,
+                                       SourceSnapshot const *snapshot)
+        : context_(context), output_(output), run_(run.empty() ? fresh_run() : std::move(run)), snapshot_(snapshot) {
+        if (!snapshot_)
+            return;
+        record("object", "source.document.declare", {}, "fine.source-snapshot",
+               "Opaque document identity for this CLI compilation",
+               {string_field("id", snapshot_->document_id), string_field("display_name", snapshot_->display_name)});
+        std::ostringstream identity;
+        identity << "{\"document\":" << quote(snapshot_->document_id) << ",\"revision\":" << snapshot_->revision
+                 << ",\"exact_source_hash\":" << quote(snapshot_->exact_source_hash)
+                 << ",\"byte_length\":" << snapshot_->byte_length << '}';
+        record("object", "source.snapshot.declare", {}, "fine.source-snapshot",
+               "Exact immutable source input for all source evidence in this run",
+               {string_field("id", "snapshot:0"), raw_field("identity", identity.str())});
+    }
 
     std::string RainfallRecorder::quote(std::string_view text) {
         std::ostringstream result;
@@ -113,6 +127,41 @@ namespace fine {
                {string_field("id", reference), raw_field("identity", identity.str()),
                 string_field("representation", representation), string_field("text", expression.to_string())});
         return reference;
+    }
+
+    std::string RainfallRecorder::source_node(std::size_t parse_local_node_id, syntax::SourceSpan span,
+                                              std::string_view syntax_kind) {
+        if (!snapshot_)
+            throw std::runtime_error("Rainfall source node requires a source snapshot");
+        auto found = source_nodes_.find(parse_local_node_id);
+        if (found != source_nodes_.end())
+            return found->second;
+        std::string reference = "source:" + std::to_string(parse_local_node_id);
+        std::ostringstream encoded_span;
+        auto position = [&](syntax::SourcePosition value) {
+            std::ostringstream result;
+            result << "{\"offset\":" << value.offset << ",\"line\":" << value.line << ",\"column\":" << value.column
+                   << '}';
+            return result.str();
+        };
+        encoded_span << "{\"begin\":" << position(span.begin) << ",\"end\":" << position(span.end) << '}';
+        source_nodes_.emplace(parse_local_node_id, reference);
+        record("object", "source.node.declare", {}, "fine.parser", "Parse-local syntax identity bound to snapshot:0",
+               {string_field("id", reference), string_field("snapshot", "snapshot:0"),
+                number_field("parse_local_node_id", parse_local_node_id), raw_field("span", encoded_span.str()),
+                string_field("syntax_kind", syntax_kind)});
+        return reference;
+    }
+
+    void RainfallRecorder::source_term(std::size_t parse_local_node_id, syntax::SourceSpan span,
+                                       std::string_view syntax_kind, z3::expr const &expression,
+                                       std::string_view correspondence, std::vector<std::string> const &within) {
+        std::string source = source_node(parse_local_node_id, span, syntax_kind);
+        std::string term_reference = term(expression);
+        record("derive", "source.term.evidence", within, "fine.elaborator",
+               "Compiler-owned source-to-term correspondence for this exact snapshot and manager",
+               {string_field("snapshot", "snapshot:0"), string_field("source", source),
+                string_field("term", term_reference), string_field("correspondence", correspondence)});
     }
 
 }  // namespace fine

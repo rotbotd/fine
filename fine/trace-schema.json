@@ -49,6 +49,85 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "operation": { "const": "source.document.declare" } },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["id", "display_name"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "display_name": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "operation": { "const": "source.snapshot.declare" } },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["id", "identity"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "identity": { "$ref": "#/$defs/sourceSnapshotIdentity" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "operation": { "const": "source.node.declare" } },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["id", "snapshot", "parse_local_node_id", "span", "syntax_kind"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "snapshot": { "type": "string", "minLength": 1 },
+              "parse_local_node_id": { "type": "integer", "minimum": 0 },
+              "span": { "$ref": "#/$defs/sourceSpan" },
+              "syntax_kind": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "operation": { "const": "source.term.evidence" } },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["snapshot", "source", "term", "correspondence"],
+            "properties": {
+              "snapshot": { "type": "string", "minLength": 1 },
+              "source": { "type": "string", "minLength": 1 },
+              "term": { "type": "string", "minLength": 1 },
+              "correspondence": {
+                "enum": ["exact", "desugared", "generated"]
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -79,6 +158,39 @@
           "minimum": 0,
           "description": "Diagnostic Z3 live-node ID; not part of the identity key."
         }
+      }
+    },
+    "sourceSnapshotIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "revision", "exact_source_hash", "byte_length"],
+      "properties": {
+        "document": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "exact_source_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "byte_length": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sourcePosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset", "line", "column"],
+      "properties": {
+        "offset": { "type": "integer", "minimum": 0 },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "sourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["begin", "end"],
+      "properties": {
+        "begin": { "$ref": "#/$defs/sourcePosition" },
+        "end": { "$ref": "#/$defs/sourcePosition" }
       }
     }
   }

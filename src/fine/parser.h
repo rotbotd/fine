@@ -56,6 +56,9 @@ namespace fine::syntax {
         std::string integer_text;
         BinaryOp binary_op = BinaryOp::equal;
         std::vector<Expr> elements;
+        // Unique only within one parse. A source identity also includes the exact
+        // snapshot that produced this node.
+        std::size_t node_id = 0;
     };
 
     struct EnumField {
@@ -74,6 +77,7 @@ namespace fine::syntax {
         SourceSpan span;
         std::string name;
         std::vector<EnumCase> cases;
+        std::size_t node_id = 0;
     };
 
     struct TableEntry {
@@ -93,6 +97,7 @@ namespace fine::syntax {
         std::string name;
         Type type;
         TableLiteral value;
+        std::size_t node_id = 0;
     };
 
     struct ModelDecl {
@@ -102,6 +107,7 @@ namespace fine::syntax {
         // Empty means a model-shaped hole. A present table is a concrete model
         // witness, using the same syntax as an ordinary table binding.
         std::optional<TableLiteral> value;
+        std::size_t node_id = 0;
     };
 
     struct NamedArgument {
@@ -115,6 +121,7 @@ namespace fine::syntax {
         std::string name;
         std::vector<NamedArgument> takes;
         Expr gives;
+        std::size_t node_id = 0;
     };
 
     struct Parameter {
@@ -129,6 +136,7 @@ namespace fine::syntax {
         std::vector<Parameter> parameters;
         Type result_type;
         std::vector<Expr> ensures;
+        std::size_t node_id = 0;
     };
 
     struct CheckDecl {
@@ -137,6 +145,7 @@ namespace fine::syntax {
         std::vector<Parameter> parameters;
         std::vector<Expr> assumes;
         std::vector<Expr> ensures;
+        std::size_t node_id = 0;
     };
 
     struct CounterexampleEntry {
@@ -151,6 +160,7 @@ namespace fine::syntax {
         SourceSpan span;
         std::string name;
         std::vector<CounterexampleEntry> entries;
+        std::size_t node_id = 0;
     };
 
     using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, SynthDecl, CheckDecl, CounterexampleDecl>;

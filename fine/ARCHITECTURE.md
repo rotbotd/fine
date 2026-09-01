@@ -168,6 +168,25 @@ references explicitly. Each term declaration carries identity
 `ast_id_at_observation` as a diagnostic. The recorder holds every registered
 `z3::expr` strongly until the run ends.
 
+Every CLI rain now begins with a fresh opaque document identity and an immutable
+snapshot identity containing revision zero, the exact SHA-256 source hash, and
+byte length. Parser-assigned declaration and expression IDs are unique only
+inside that snapshot. `source.node.declare` therefore always carries both the
+snapshot reference and the parse-local ID; neither a span nor a repeated node ID
+is a cross-parse identity. The compiler emits `source.term.evidence` edges for
+the original `check` expressions while elaborating them, labelled `exact` for
+names and literals or `desugared` for constructors and compound syntax. Generated
+witness parses and post-preprocessing Z3 terms do not inherit those edges.
+
+`fine-rain-validate <source.fine> <rain.jsonl>` replays this boundary without a
+solver. It checks the exact source hash and size, one document/snapshot envelope,
+contiguous events, parse-local node uniqueness and in-bounds spans, never-reused
+live term handles, same-run/recorder/manager term identities, known endpoints for
+every source edge, and a terminal run close. It rejects cross-snapshot edges,
+unknown or reused handles, manager substitution, source-bearing `internal_z3`
+edges, and events arriving after the run closed. This validator does not transport
+evidence across edits; a viewer may move a stale decoration separately.
+
 For `check`, rainfall records the one source-level refutation assertion, the
 public query boundary and polarity, each completed parameter evaluation, and
 the checked source witness. Those model assignments are equality under the

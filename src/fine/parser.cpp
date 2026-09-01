@@ -253,6 +253,8 @@ namespace fine::syntax {
                     case TokenKind::counterexample_kw: result.declarations.emplace_back(counterexample_decl()); break;
                     default: fail("expected a Fine declaration");
                     }
+                    std::visit([&](auto &declaration) { declaration.node_id = next_node_id_++; },
+                               result.declarations.back());
                 }
                 result.span = {begin, current_.span.end};
                 return result;
@@ -267,6 +269,12 @@ namespace fine::syntax {
         private:
             Lexer lexer_;
             Token current_{};
+            std::size_t next_node_id_ = 0;
+
+            Expr identified(Expr result) {
+                result.node_id = next_node_id_++;
+                return result;
+            }
 
             void advance() {
                 current_ = lexer_.next();
@@ -501,14 +509,14 @@ namespace fine::syntax {
                 return result;
             }
 
-            static Expr binary(Expr::BinaryOp op, Expr left, Expr right) {
+            Expr binary(Expr::BinaryOp op, Expr left, Expr right) {
                 Expr result;
                 result.kind = Expr::Kind::binary;
                 result.span = joined(left.span, right.span);
                 result.binary_op = op;
                 result.elements.push_back(std::move(left));
                 result.elements.push_back(std::move(right));
-                return result;
+                return identified(std::move(result));
             }
 
             Expr expr() {
@@ -574,11 +582,11 @@ namespace fine::syntax {
                         }
                         Token close = take(TokenKind::right_paren, "to close the constructor call");
                         result.span = joined(name.span, close.span);
-                        return result;
+                        return identified(std::move(result));
                     }
                     result.kind = Expr::Kind::name;
                     result.span = name.span;
-                    return result;
+                    return identified(std::move(result));
                 }
                 if (current_.kind == TokenKind::true_kw || current_.kind == TokenKind::false_kw) {
                     Token value = current_;
@@ -587,7 +595,7 @@ namespace fine::syntax {
                     result.kind = Expr::Kind::boolean;
                     result.span = value.span;
                     result.boolean_value = value.kind == TokenKind::true_kw;
-                    return result;
+                    return identified(std::move(result));
                 }
                 if (current_.kind == TokenKind::integer) {
                     Token value = take(TokenKind::integer);
@@ -595,7 +603,7 @@ namespace fine::syntax {
                     result.kind = Expr::Kind::integer;
                     result.span = value.span;
                     result.integer_text = std::string(value.text);
-                    return result;
+                    return identified(std::move(result));
                 }
                 if (current_.kind == TokenKind::minus) {
                     Token first = take(TokenKind::minus);
@@ -604,7 +612,7 @@ namespace fine::syntax {
                     result.kind = Expr::Kind::integer;
                     result.span = joined(first.span, value.span);
                     result.integer_text = "-" + std::string(value.text);
-                    return result;
+                    return identified(std::move(result));
                 }
                 if (current_.kind == TokenKind::if_kw) {
                     Token first = take(TokenKind::if_kw);
@@ -622,7 +630,7 @@ namespace fine::syntax {
                     result.elements.push_back(std::move(condition));
                     result.elements.push_back(std::move(yes));
                     result.elements.push_back(std::move(no));
-                    return result;
+                    return identified(std::move(result));
                 }
                 if (current_.kind == TokenKind::left_paren) {
                     Token first = take(TokenKind::left_paren);
@@ -642,7 +650,7 @@ namespace fine::syntax {
                     }
                     Token close = take(TokenKind::right_paren, "to close the tuple");
                     result.span = joined(first.span, close.span);
-                    return result;
+                    return identified(std::move(result));
                 }
                 fail("expected a name, call, integer, Boolean, tuple, or conditional expression");
             }

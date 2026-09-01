@@ -12,6 +12,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -102,9 +103,10 @@ namespace fine {
 
         class Runtime {
         public:
-            explicit Runtime(std::ostream &output, std::ostream *rainfall_output)
-                : output_(output),
-                  rainfall_(rainfall_output ? std::make_unique<RainfallRecorder>(context_, *rainfall_output) : nullptr),
+            explicit Runtime(std::ostream &output, std::ostream *rainfall_output, SourceSnapshot const *snapshot)
+                : output_(output), rainfall_(rainfall_output ? std::make_unique<RainfallRecorder>(
+                                                                   context_, *rainfall_output, std::string{}, snapshot)
+                                                             : nullptr),
                   bool_type_(std::make_shared<RuntimeType>(RuntimeType::Kind::boolean, context_.bool_sort(), "Bool")),
                   int_type_(std::make_shared<RuntimeType>(RuntimeType::Kind::integer, context_.int_sort(), "Int")) {
                 types_.emplace("Bool", bool_type_);
@@ -128,6 +130,110 @@ namespace fine {
             std::map<std::string, TypePtr> compound_types_;
             std::set<std::string> value_names_;
             unsigned tuple_sequence_ = 0;
+            bool capture_source_edges_ = false;
+            std::vector<std::string> source_edge_within_;
+
+            static char const *expression_syntax_kind(syntax::Expr const &expression) {
+                switch (expression.kind) {
+                case syntax::Expr::Kind::name: return "expr.name";
+                case syntax::Expr::Kind::boolean: return "expr.boolean";
+                case syntax::Expr::Kind::integer: return "expr.integer";
+                case syntax::Expr::Kind::tuple: return "expr.tuple";
+                case syntax::Expr::Kind::call: return "expr.call";
+                case syntax::Expr::Kind::binary: return "expr.binary";
+                case syntax::Expr::Kind::conditional: return "expr.conditional";
+                }
+                return "expr.unknown";
+            }
+
+            static char const *expression_correspondence(syntax::Expr const &expression) {
+                switch (expression.kind) {
+                case syntax::Expr::Kind::name:
+                case syntax::Expr::Kind::boolean:
+                case syntax::Expr::Kind::integer: return "exact";
+                case syntax::Expr::Kind::tuple:
+                case syntax::Expr::Kind::call:
+                case syntax::Expr::Kind::binary:
+                case syntax::Expr::Kind::conditional: return "desugared";
+                }
+                return "desugared";
+            }
+
+            TypedExpression completed_expression(syntax::Expr const &source, TypePtr type, z3::expr expression) {
+                if (rainfall_ && capture_source_edges_)
+                    rainfall_->source_term(source.node_id, source.span, expression_syntax_kind(source), expression,
+                                           expression_correspondence(source), source_edge_within_);
+                return {std::move(type), std::move(expression)};
+            }
+
+            void declare_expression_sources(syntax::Expr const &expression) {
+                rainfall_->source_node(expression.node_id, expression.span, expression_syntax_kind(expression));
+                for (syntax::Expr const &child : expression.elements)
+                    declare_expression_sources(child);
+            }
+
+            void declare_table_sources(syntax::TableLiteral const &table) {
+                declare_expression_sources(table.default_value);
+                for (syntax::TableEntry const &entry : table.entries) {
+                    declare_expression_sources(entry.key);
+                    declare_expression_sources(entry.value);
+                }
+            }
+
+            void declare_document_sources(syntax::Document const &document) {
+                if (!rainfall_)
+                    return;
+                for (syntax::Declaration const &declaration : document.declarations) {
+                    std::visit(
+                        [&](auto const &item) {
+                            using T = std::decay_t<decltype(item)>;
+                            char const *kind = "decl.unknown";
+                            if constexpr (std::is_same_v<T, syntax::EnumDecl>)
+                                kind = "decl.enum";
+                            else if constexpr (std::is_same_v<T, syntax::LetDecl>)
+                                kind = "decl.let";
+                            else if constexpr (std::is_same_v<T, syntax::ModelDecl>)
+                                kind = "decl.model";
+                            else if constexpr (std::is_same_v<T, syntax::ProofDecl>)
+                                kind = "decl.proof";
+                            else if constexpr (std::is_same_v<T, syntax::SynthDecl>)
+                                kind = "decl.synth";
+                            else if constexpr (std::is_same_v<T, syntax::CheckDecl>)
+                                kind = "decl.check";
+                            else if constexpr (std::is_same_v<T, syntax::CounterexampleDecl>)
+                                kind = "decl.counterexample";
+                            rainfall_->source_node(item.node_id, item.span, kind);
+
+                            if constexpr (std::is_same_v<T, syntax::LetDecl>) {
+                                declare_table_sources(item.value);
+                            }
+                            else if constexpr (std::is_same_v<T, syntax::ModelDecl>) {
+                                if (item.value)
+                                    declare_table_sources(*item.value);
+                            }
+                            else if constexpr (std::is_same_v<T, syntax::ProofDecl>) {
+                                for (syntax::NamedArgument const &argument : item.takes)
+                                    declare_expression_sources(argument.value);
+                                declare_expression_sources(item.gives);
+                            }
+                            else if constexpr (std::is_same_v<T, syntax::SynthDecl>) {
+                                for (syntax::Expr const &condition : item.ensures)
+                                    declare_expression_sources(condition);
+                            }
+                            else if constexpr (std::is_same_v<T, syntax::CheckDecl>) {
+                                for (syntax::Expr const &condition : item.assumes)
+                                    declare_expression_sources(condition);
+                                for (syntax::Expr const &condition : item.ensures)
+                                    declare_expression_sources(condition);
+                            }
+                            else if constexpr (std::is_same_v<T, syntax::CounterexampleDecl>) {
+                                for (syntax::CounterexampleEntry const &entry : item.entries)
+                                    declare_expression_sources(entry.value);
+                            }
+                        },
+                        declaration);
+                }
+            }
 
             void reserve_type_name(std::string const &name, syntax::SourceSpan span) {
                 if (types_.contains(name))
@@ -430,28 +536,32 @@ namespace fine {
                 case syntax::Expr::Kind::name: {
                     auto found = environment.find(expression.name);
                     if (found != environment.end())
-                        return found->second;
+                        return completed_expression(expression, found->second.type, found->second.expression);
                     auto enum_case = cases_.find(expression.name);
                     if (enum_case != cases_.end())
-                        return {enum_case->second.first->type,
-                                enum_case->second.first->values[enum_case->second.second]};
+                        return completed_expression(expression, enum_case->second.first->type,
+                                                    enum_case->second.first->values[enum_case->second.second]);
                     auto constructor = constructors_.find(expression.name);
                     if (constructor == constructors_.end())
                         reject(expression.span, "unknown value `" + expression.name + "`");
                     DatatypeCaseInfo const &item = constructor->second.first->cases[constructor->second.second];
                     if (!item.field_types.empty())
                         reject(expression.span, "constructor `" + expression.name + "` requires arguments");
-                    return {constructor->second.first->type, item.constructor()};
+                    return completed_expression(expression, constructor->second.first->type, item.constructor());
                 }
-                case syntax::Expr::Kind::boolean: return {bool_type_, context_.bool_val(expression.boolean_value)};
-                case syntax::Expr::Kind::integer: return {int_type_, context_.int_val(expression.integer_text.c_str())};
+                case syntax::Expr::Kind::boolean:
+                    return completed_expression(expression, bool_type_, context_.bool_val(expression.boolean_value));
+                case syntax::Expr::Kind::integer:
+                    return completed_expression(expression, int_type_,
+                                                context_.int_val(expression.integer_text.c_str()));
                 case syntax::Expr::Kind::tuple: {
                     if (expression.elements.size() != 2)
                         reject(expression.span, "Fine v1 tuples contain exactly two values");
                     TypedExpression first = elaborate_expression(expression.elements[0], environment);
                     TypedExpression second = elaborate_expression(expression.elements[1], environment);
                     TypePtr type = tuple_type(first.type, second.type, expression.span);
-                    return {type, (*type->tuple_constructor)(first.expression, second.expression)};
+                    return completed_expression(expression, type,
+                                                (*type->tuple_constructor)(first.expression, second.expression));
                 }
                 case syntax::Expr::Kind::call: {
                     auto found = constructors_.find(expression.name);
@@ -472,8 +582,9 @@ namespace fine {
                                                                     item.field_types[i]->display + "`");
                         arguments.push_back(argument.expression);
                     }
-                    return {datatype->type,
-                            item.constructor(static_cast<unsigned>(arguments.size()), arguments.data())};
+                    return completed_expression(
+                        expression, datatype->type,
+                        item.constructor(static_cast<unsigned>(arguments.size()), arguments.data()));
                 }
                 case syntax::Expr::Kind::binary: {
                     if (expression.elements.size() != 2)
@@ -484,28 +595,31 @@ namespace fine {
                     case syntax::Expr::BinaryOp::equal:
                         if (!same(left.type, right.type) || left.type->kind == RuntimeType::Kind::table)
                             reject(expression.span, "both sides of `==` must have the same value type");
-                        return {bool_type_, left.expression == right.expression};
+                        return completed_expression(expression, bool_type_, left.expression == right.expression);
                     case syntax::Expr::BinaryOp::greater_equal:
                     case syntax::Expr::BinaryOp::less_equal:
                         if (!same(left.type, int_type_) || !same(right.type, int_type_))
                             reject(expression.span, "ordered comparison requires two Int values");
-                        return {bool_type_, expression.binary_op == syntax::Expr::BinaryOp::greater_equal
-                                                ? left.expression >= right.expression
-                                                : left.expression <= right.expression};
+                        return completed_expression(expression, bool_type_,
+                                                    expression.binary_op == syntax::Expr::BinaryOp::greater_equal
+                                                        ? left.expression >= right.expression
+                                                        : left.expression <= right.expression);
                     case syntax::Expr::BinaryOp::logical_and:
                     case syntax::Expr::BinaryOp::logical_or:
                         if (!same(left.type, bool_type_) || !same(right.type, bool_type_))
                             reject(expression.span, "Boolean connective requires two Bool values");
-                        return {bool_type_, expression.binary_op == syntax::Expr::BinaryOp::logical_and
-                                                ? left.expression && right.expression
-                                                : left.expression || right.expression};
+                        return completed_expression(expression, bool_type_,
+                                                    expression.binary_op == syntax::Expr::BinaryOp::logical_and
+                                                        ? left.expression && right.expression
+                                                        : left.expression || right.expression);
                     case syntax::Expr::BinaryOp::add:
                     case syntax::Expr::BinaryOp::subtract:
                         if (!same(left.type, int_type_) || !same(right.type, int_type_))
                             reject(expression.span, "integer arithmetic requires two Int values");
-                        return {int_type_, expression.binary_op == syntax::Expr::BinaryOp::add
-                                               ? left.expression + right.expression
-                                               : left.expression - right.expression};
+                        return completed_expression(expression, int_type_,
+                                                    expression.binary_op == syntax::Expr::BinaryOp::add
+                                                        ? left.expression + right.expression
+                                                        : left.expression - right.expression);
                     }
                     throw std::runtime_error("internal Fine binary operator");
                 }
@@ -519,7 +633,8 @@ namespace fine {
                         reject(expression.elements[0].span, "an `if` condition must have type Bool");
                     if (!same(yes.type, no.type))
                         reject(expression.span, "both `if` branches must have the same type");
-                    return {yes.type, z3::ite(condition.expression, yes.expression, no.expression)};
+                    return completed_expression(expression, yes.type,
+                                                z3::ite(condition.expression, yes.expression, no.expression));
                 }
                 }
                 throw std::runtime_error("internal Fine expression kind");
@@ -811,18 +926,24 @@ namespace fine {
                     }
                     return result;
                 };
-                z3::expr assumptions = conjunction(declaration.assumes, "assumed");
-                z3::expr guarantees = conjunction(declaration.ensures, "ensured");
-                z3::expr counterexample_query = assumptions && !guarantees;
                 std::string run_scope = "check:" + declaration.name;
                 std::string query = "query:0";
-
-                if (rainfall_) {
+                if (rainfall_)
                     rainfall_->record("scope", "check.run.open", {run_scope}, "fine.check",
                                       "Fine check elaboration, one public counterexample query, and optional "
                                       "source-witness round trip; excludes Z3-internal search",
                                       {RainfallRecorder::string_field("declaration", declaration.name),
                                        RainfallRecorder::number_field("parameters", parameters.size())});
+
+                capture_source_edges_ = true;
+                source_edge_within_ = {run_scope};
+                z3::expr assumptions = conjunction(declaration.assumes, "assumed");
+                z3::expr guarantees = conjunction(declaration.ensures, "ensured");
+                capture_source_edges_ = false;
+                source_edge_within_.clear();
+                z3::expr counterexample_query = assumptions && !guarantees;
+
+                if (rainfall_) {
                     rainfall_->record(
                         "constraint", "check.counterexample.assert", {run_scope}, "fine.check",
                         "Conjunction of source assumptions and the negation of all source guarantees",
@@ -1389,6 +1510,7 @@ namespace fine {
         };
 
         int Runtime::execute(syntax::Document const &document) {
+            declare_document_sources(document);
             syntax::ProofDecl const *proof = nullptr;
             syntax::SynthDecl const *synth = nullptr;
             syntax::CheckDecl const *check = nullptr;
@@ -1465,8 +1587,9 @@ namespace fine {
         return output.str();
     }
 
-    int execute(syntax::Document const &document, std::ostream &output, std::ostream *rainfall_output) {
-        return Runtime(output, rainfall_output).execute(document);
+    int execute(syntax::Document const &document, std::ostream &output, std::ostream *rainfall_output,
+                SourceSnapshot const *snapshot) {
+        return Runtime(output, rainfall_output, snapshot).execute(document);
     }
 
 }  // namespace fine
