@@ -18,6 +18,8 @@ cmake --build build/fine --target fine-bin
 ./build/fine/fine demo-bisim
 ./build/fine/fine run fine/fixtures/two-state-bisim.fine
 ./build/fine/fine run fine/fixtures/synth-max.fine
+./build/fine/fine run fine/fixtures/check-counterexample.fine
+./build/fine/fine run fine/fixtures/check-valid.fine
 ./build/fine/fine rain fine/fixtures/synth-max.fine
 ./build/fine/fine rain fine/fixtures/two-state-bisim.fine
 ```
@@ -46,3 +48,12 @@ role through its qid. The stream then records every completed finite relation
 cell, deterministic constant-array-plus-stores extensionalization, and the
 checked Fine model witness. It does not expose MBQI's auxiliary-context search,
 discarded candidates, blocking clauses, or general CDCL(T) search.
+
+`check` closes the missing counterexample loop for primitive inputs. Fine
+asserts the source assumptions together with the negation of the guarantees. A
+satisfiable query returns a typed `counterexample` declaration; every completed
+Int or Bool assignment is lifted, printed, parsed, and elaborated back to the
+identical same-manager numeral or Boolean AST. An unsatisfiable query reports
+that no counterexample exists. The current slice is quantifier-free and admits
+only Int and Bool parameters; `counterexample` is a returned witness form, not
+an executable declaration.

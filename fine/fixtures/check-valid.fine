@@ -1,0 +1,10 @@
+// Over mathematical integers, adding a nonnegative value cannot decrease the
+// left operand. This exercises the no-counterexample result separately.
+check addition_preserves_left(a: Int, b: Int) {
+  assumes {
+    b >= 0;
+  }
+  ensures {
+    a + b >= a;
+  }
+}

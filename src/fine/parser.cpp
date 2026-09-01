@@ -16,6 +16,9 @@ enum class TokenKind {
     model_kw,
     proof_kw,
     synth_kw,
+    check_kw,
+    counterexample_kw,
+    assumes_kw,
     ensures_kw,
     if_kw,
     else_kw,
@@ -61,6 +64,9 @@ static char const* spelling(TokenKind kind) {
     case TokenKind::model_kw: return "`model`";
     case TokenKind::proof_kw: return "`proof`";
     case TokenKind::synth_kw: return "`synth`";
+    case TokenKind::check_kw: return "`check`";
+    case TokenKind::counterexample_kw: return "`counterexample`";
+    case TokenKind::assumes_kw: return "`assumes`";
     case TokenKind::ensures_kw: return "`ensures`";
     case TokenKind::if_kw: return "`if`";
     case TokenKind::else_kw: return "`else`";
@@ -193,6 +199,9 @@ private:
         if (text == "model") return TokenKind::model_kw;
         if (text == "proof") return TokenKind::proof_kw;
         if (text == "synth") return TokenKind::synth_kw;
+        if (text == "check") return TokenKind::check_kw;
+        if (text == "counterexample") return TokenKind::counterexample_kw;
+        if (text == "assumes") return TokenKind::assumes_kw;
         if (text == "ensures") return TokenKind::ensures_kw;
         if (text == "if") return TokenKind::if_kw;
         if (text == "else") return TokenKind::else_kw;
@@ -219,8 +228,11 @@ public:
             case TokenKind::model_kw: result.declarations.emplace_back(model_decl()); break;
             case TokenKind::proof_kw: result.declarations.emplace_back(proof_decl()); break;
             case TokenKind::synth_kw: result.declarations.emplace_back(synth_decl()); break;
+            case TokenKind::check_kw: result.declarations.emplace_back(check_decl()); break;
+            case TokenKind::counterexample_kw:
+                result.declarations.emplace_back(counterexample_decl()); break;
             default:
-                fail("expected a declaration beginning with `enum`, `let`, `model`, `proof`, or `synth`");
+                fail("expected a Fine declaration");
             }
         }
         result.span = {begin, current_.span.end};
@@ -328,19 +340,7 @@ private:
     SynthDecl synth_decl() {
         Token first = take(TokenKind::synth_kw);
         Token name = take(TokenKind::identifier, "after `synth`");
-        take(TokenKind::left_paren, "after the synthesized function name");
-        std::vector<Parameter> parameters;
-        while (current_.kind != TokenKind::right_paren) {
-            Token parameter_name = take(TokenKind::identifier, "as a parameter name");
-            take(TokenKind::colon, "after the parameter name");
-            Type parameter_type = type();
-            parameters.push_back({joined(parameter_name.span, parameter_type.span),
-                                  std::string(parameter_name.text),
-                                  std::move(parameter_type)});
-            if (!accept(TokenKind::comma) && current_.kind != TokenKind::right_paren)
-                fail("expected `,` or `)` after a parameter");
-        }
-        take(TokenKind::right_paren);
+        std::vector<Parameter> parameters = this->parameters();
         take(TokenKind::colon, "before the synthesized result type");
         Type result_type = type();
         take(TokenKind::left_brace, "before the synthesis specification");
@@ -356,6 +356,73 @@ private:
         Token close = take(TokenKind::right_brace, "to close the synthesis declaration");
         return {joined(first.span, close.span), std::string(name.text),
                 std::move(parameters), std::move(result_type), std::move(ensures)};
+    }
+
+    std::vector<Parameter> parameters() {
+        take(TokenKind::left_paren);
+        std::vector<Parameter> result;
+        while (current_.kind != TokenKind::right_paren) {
+            Token name = take(TokenKind::identifier, "as a parameter name");
+            take(TokenKind::colon, "after the parameter name");
+            Type parameter_type = type();
+            result.push_back({joined(name.span, parameter_type.span),
+                              std::string(name.text), std::move(parameter_type)});
+            if (!accept(TokenKind::comma) && current_.kind != TokenKind::right_paren)
+                fail("expected `,` or `)` after a parameter");
+        }
+        take(TokenKind::right_paren);
+        return result;
+    }
+
+    std::vector<Expr> condition_block(TokenKind keyword,
+                                      std::string_view description,
+                                      bool allow_empty) {
+        take(keyword, description);
+        take(TokenKind::left_brace, "after the clause name");
+        std::vector<Expr> result;
+        while (current_.kind != TokenKind::right_brace) {
+            result.push_back(expr());
+            take(TokenKind::semicolon, "after a condition");
+        }
+        if (!allow_empty && result.empty())
+            fail("the clause needs at least one condition");
+        take(TokenKind::right_brace, "to close the clause");
+        return result;
+    }
+
+    CheckDecl check_decl() {
+        Token first = take(TokenKind::check_kw);
+        Token name = take(TokenKind::identifier, "after `check`");
+        std::vector<Parameter> inputs = parameters();
+        take(TokenKind::left_brace, "before the check specification");
+        std::vector<Expr> assumes = condition_block(
+            TokenKind::assumes_kw, "as the first check clause", true);
+        std::vector<Expr> ensures = condition_block(
+            TokenKind::ensures_kw, "after `assumes`", false);
+        Token close = take(TokenKind::right_brace, "to close the check declaration");
+        return {joined(first.span, close.span), std::string(name.text),
+                std::move(inputs), std::move(assumes), std::move(ensures)};
+    }
+
+    CounterexampleDecl counterexample_decl() {
+        Token first = take(TokenKind::counterexample_kw);
+        Token name = take(TokenKind::identifier, "after `counterexample`");
+        take(TokenKind::left_brace, "before the assignments");
+        std::vector<CounterexampleEntry> entries;
+        while (current_.kind != TokenKind::right_brace) {
+            Token entry_name = take(TokenKind::identifier, "as an assignment name");
+            take(TokenKind::colon, "after the assignment name");
+            Type entry_type = type();
+            take(TokenKind::equal, "after the assignment type");
+            Expr entry_value = expr();
+            Token close = take(TokenKind::semicolon, "after the assignment");
+            entries.push_back({joined(entry_name.span, close.span),
+                               std::string(entry_name.text),
+                               std::move(entry_type), std::move(entry_value)});
+        }
+        Token close = take(TokenKind::right_brace, "to close the counterexample");
+        return {joined(first.span, close.span), std::string(name.text),
+                std::move(entries)};
     }
 
     Type type() {
@@ -472,6 +539,15 @@ private:
             result.kind = Expr::Kind::integer;
             result.span = value.span;
             result.integer_text = std::string(value.text);
+            return result;
+        }
+        if (current_.kind == TokenKind::minus) {
+            Token first = take(TokenKind::minus);
+            Token value = take(TokenKind::integer, "after unary `-`");
+            Expr result;
+            result.kind = Expr::Kind::integer;
+            result.span = joined(first.span, value.span);
+            result.integer_text = "-" + std::string(value.text);
             return result;
         }
         if (current_.kind == TokenKind::if_kw) {

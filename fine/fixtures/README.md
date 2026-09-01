@@ -58,6 +58,13 @@ body to the identical same-manager semantic AST.
 the first closes with one core term and no conditional, while the second has a
 renamed function and requires three core terms and nested conditionals.
 
+`check-counterexample.fine` refutes a false subtraction claim and returns the
+negative/positive assignment `a = -1, b = 1` as a parseable Fine
+`counterexample` witness. The negative value gates literal lifting rather than
+allowing the printer to smuggle SMT-LIB syntax into the source. `check-valid.fine`
+uses addition over mathematical integers to exercise the separate `unsat` / no
+counterexample path.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.

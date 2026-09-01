@@ -119,7 +119,30 @@ struct SynthDecl {
     std::vector<Expr> ensures;
 };
 
-using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, SynthDecl>;
+struct CheckDecl {
+    SourceSpan span;
+    std::string name;
+    std::vector<Parameter> parameters;
+    std::vector<Expr> assumes;
+    std::vector<Expr> ensures;
+};
+
+struct CounterexampleEntry {
+    SourceSpan span;
+    std::string name;
+    Type type;
+    Expr value;
+};
+
+// This is a returned, parseable witness form, not an executable assertion.
+struct CounterexampleDecl {
+    SourceSpan span;
+    std::string name;
+    std::vector<CounterexampleEntry> entries;
+};
+
+using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl,
+                                 SynthDecl, CheckDecl, CounterexampleDecl>;
 
 struct Document {
     SourceSpan span;

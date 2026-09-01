@@ -577,6 +577,203 @@ private:
         return 0;
     }
 
+    int execute_check(syntax::CheckDecl const& declaration) {
+        reserve_value_name(declaration.name, declaration.span);
+        if (declaration.parameters.empty())
+            reject(declaration.span, "a check needs at least one parameter");
+
+        struct CheckParameter {
+            std::string name;
+            TypePtr type;
+            z3::expr term;
+        };
+        ExpressionEnvironment environment;
+        std::vector<CheckParameter> parameters;
+        for (std::size_t i = 0; i < declaration.parameters.size(); ++i) {
+            syntax::Parameter const& parameter = declaration.parameters[i];
+            TypePtr type = resolve_type(parameter.type);
+            if (!same(type, int_type_) && !same(type, bool_type_))
+                reject(parameter.type.span,
+                       "the first check slice admits only Int and Bool parameters");
+            std::string internal = "Fine.check." + declaration.name + ".arg" +
+                                   std::to_string(i);
+            z3::expr term = context_.constant(internal.c_str(), type->sort);
+            if (!environment.emplace(parameter.name,
+                                     TypedExpression{type, term}).second)
+                reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
+            parameters.push_back({parameter.name, type, term});
+        }
+
+        auto conjunction = [&](std::vector<syntax::Expr> const& conditions,
+                               std::string_view role) {
+            z3::expr result = context_.bool_val(true);
+            for (syntax::Expr const& condition : conditions) {
+                TypedExpression elaborated =
+                    elaborate_expression(condition, environment);
+                if (!same(elaborated.type, bool_type_))
+                    reject(condition.span, std::string(role) +
+                                               " condition must have type Bool");
+                result = result && elaborated.expression;
+            }
+            return result;
+        };
+        z3::expr assumptions = conjunction(declaration.assumes, "assumed");
+        z3::expr guarantees = conjunction(declaration.ensures, "ensured");
+        z3::expr counterexample_query = assumptions && !guarantees;
+        std::string run_scope = "check:" + declaration.name;
+        std::string query = "query:0";
+
+        if (rainfall_) {
+            rainfall_->record(
+                "scope", "check.run.open", {run_scope}, "fine.check",
+                "Fine check elaboration, one public counterexample query, and optional source-witness round trip; excludes Z3-internal search",
+                {RainfallRecorder::string_field("declaration", declaration.name),
+                 RainfallRecorder::number_field("parameters", parameters.size())});
+            rainfall_->record(
+                "constraint", "check.counterexample.assert", {run_scope},
+                "fine.check",
+                "Conjunction of source assumptions and the negation of all source guarantees",
+                {RainfallRecorder::string_field(
+                     "assumptions", rainfall_->term(assumptions)),
+                 RainfallRecorder::string_field(
+                     "guarantees", rainfall_->term(guarantees)),
+                 RainfallRecorder::string_field(
+                     "assertion", rainfall_->term(counterexample_query))});
+            rainfall_->record(
+                "scope", "solver.query.open", {run_scope, query},
+                "fine.check", "Public solver assertion boundary",
+                {RainfallRecorder::string_field("id", query),
+                 RainfallRecorder::string_field(
+                     "purpose", "find a source-level counterexample"),
+                 RainfallRecorder::string_field(
+                     "assertion", rainfall_->term(counterexample_query)),
+                 RainfallRecorder::string_field(
+                     "polarity", "counterexample-exists")});
+        }
+
+        z3::solver solver(context_);
+        solver.add(counterexample_query);
+        z3::check_result result = solver.check();
+        if (rainfall_) {
+            char const* status = result == z3::sat
+                                     ? "sat"
+                                     : result == z3::unsat ? "unsat" : "unknown";
+            rainfall_->record(
+                "transition", "solver.query.result", {run_scope, query},
+                "z3.public-api",
+                "Final public check result only; no claim about solver search or internal cause",
+                {RainfallRecorder::string_field("query", query),
+                 RainfallRecorder::string_field("status", status),
+                 RainfallRecorder::string_field(
+                     "polarity", "counterexample-exists"),
+                 RainfallRecorder::string_field(
+                     "domain_outcome", result == z3::sat ? "refuted" :
+                                           result == z3::unsat ? "verified" :
+                                                               "unknown")});
+            rainfall_->record(
+                "scope", "solver.query.close", {run_scope, query},
+                "fine.check", "Public solver query lifetime",
+                {RainfallRecorder::string_field("id", query)});
+        }
+        if (result == z3::unknown)
+            reject(declaration.span,
+                   "counterexample query was unknown: " + solver.reason_unknown());
+        if (result == z3::unsat) {
+            if (rainfall_)
+                rainfall_->record(
+                    "scope", "check.run.close", {run_scope}, "fine.check",
+                    "Source check completed with no counterexample",
+                    {RainfallRecorder::string_field("status", "verified")});
+            output_ << "verified: " << declaration.name << '\n';
+            output_ << "counterexample: none\n";
+            return 0;
+        }
+
+        z3::model model = solver.get_model();
+        std::vector<z3::expr> values;
+        values.reserve(parameters.size());
+        std::ostringstream rendered;
+        rendered << "counterexample " << declaration.name << " {\n";
+        for (CheckParameter const& parameter : parameters) {
+            z3::expr value = model.eval(parameter.term, true);
+            syntax::Expr lifted = lift_expression(value, {});
+            values.push_back(value);
+            rendered << "  " << parameter.name << ": " << parameter.type->display
+                     << " = ";
+            print_expression(rendered, lifted);
+            rendered << ";\n";
+            if (rainfall_)
+                rainfall_->record(
+                    "derive", "model.eval-assignment", {run_scope},
+                    "z3.public-api",
+                    "Completed evaluation of one check parameter under the returned counterexample model",
+                    {RainfallRecorder::string_field("evidence_query", query),
+                     RainfallRecorder::string_field("parameter", parameter.name),
+                     RainfallRecorder::string_field(
+                         "term", rainfall_->term(parameter.term)),
+                     RainfallRecorder::string_field("value", rainfall_->term(value)),
+                     RainfallRecorder::boolean_field("model_completion", true),
+                     RainfallRecorder::string_field(
+                         "relation", "equality-under-this-model")});
+        }
+        rendered << "}\n";
+        std::string witness_source = rendered.str();
+
+        syntax::Document witness_document = syntax::parse(witness_source);
+        if (witness_document.declarations.size() != 1)
+            throw std::runtime_error("internal counterexample parser returned extra declarations");
+        auto const* witness = std::get_if<syntax::CounterexampleDecl>(
+            &witness_document.declarations.front());
+        if (!witness || witness->name != declaration.name ||
+            witness->entries.size() != parameters.size())
+            throw std::runtime_error("internal counterexample parser changed the witness");
+        ExpressionEnvironment empty_environment;
+        for (std::size_t i = 0; i < parameters.size(); ++i) {
+            syntax::CounterexampleEntry const& entry = witness->entries[i];
+            CheckParameter const& parameter = parameters[i];
+            if (entry.name != parameter.name)
+                throw std::runtime_error("counterexample parser changed a parameter name");
+            TypePtr parsed_type = resolve_type(entry.type);
+            TypedExpression roundtrip =
+                elaborate_expression(entry.value, empty_environment);
+            if (!same(parsed_type, parameter.type) ||
+                !same(roundtrip.type, parameter.type) ||
+                !Z3_is_eq_ast(context_, roundtrip.expression, values[i]))
+                reject(entry.span,
+                       "parse(print(lift(value))) violated exact AST identity");
+        }
+
+        if (rainfall_) {
+            rainfall_->record(
+                "object", "fine.counterexample-witness", {run_scope},
+                "fine.runtime",
+                "Lifted, printed, parsed, and elaborated primitive assignments with exact same-manager AST identity",
+                {RainfallRecorder::string_field("declaration", declaration.name),
+                 RainfallRecorder::string_field("source", witness_source),
+                 RainfallRecorder::boolean_field(
+                     "parse_reify_exact_identity", true)});
+            rainfall_->record(
+                "transition", "fine.witness.accept", {run_scope}, "fine.runtime",
+                "Satisfiable counterexample query plus Fine source round-trip identity check",
+                {RainfallRecorder::string_field("declaration", declaration.name),
+                 RainfallRecorder::string_field("evidence_query", query),
+                 RainfallRecorder::string_field(
+                     "status", "counterexample-witness"),
+                 RainfallRecorder::boolean_field(
+                     "source_roundtrip_exact_identity", true)});
+            rainfall_->record(
+                "scope", "check.run.close", {run_scope}, "fine.runtime",
+                "Source check completed with a returned counterexample",
+                {RainfallRecorder::string_field(
+                     "status", "counterexample-witness")});
+        }
+
+        output_ << "refuted: " << declaration.name << '\n';
+        output_ << witness_source;
+        output_ << "parse(print(lift(values))): exact ast identity\n";
+        return 0;
+    }
+
     static void expect_table(Binding const& binding, syntax::SourceSpan span,
                              std::string const& role) {
         if (binding.type->kind != RuntimeType::Kind::table)
@@ -1049,6 +1246,7 @@ private:
 int Runtime::execute(syntax::Document const& document) {
     syntax::ProofDecl const* proof = nullptr;
     syntax::SynthDecl const* synth = nullptr;
+    syntax::CheckDecl const* check = nullptr;
     syntax::ModelDecl const* model_hole = nullptr;
     for (syntax::Declaration const& declaration : document.declarations) {
         if (auto const* item = std::get_if<syntax::EnumDecl>(&declaration)) {
@@ -1064,19 +1262,30 @@ int Runtime::execute(syntax::Document const& document) {
                 model_hole = item;
             }
         } else if (auto const* item = std::get_if<syntax::ProofDecl>(&declaration)) {
-            if (proof || synth)
+            if (proof || synth || check)
                 reject(item->span,
                        "this source slice admits one executable declaration");
             proof = item;
         } else if (auto const* item = std::get_if<syntax::SynthDecl>(&declaration)) {
-            if (proof || synth)
+            if (proof || synth || check)
                 reject(item->span,
                        "this source slice admits one executable declaration");
             synth = item;
+        } else if (auto const* item = std::get_if<syntax::CheckDecl>(&declaration)) {
+            if (proof || synth || check)
+                reject(item->span,
+                       "this source slice admits one executable declaration");
+            check = item;
+        } else if (auto const* item =
+                       std::get_if<syntax::CounterexampleDecl>(&declaration)) {
+            reject(item->span,
+                   "a `counterexample` declaration is a returned witness, not an executable check");
         }
     }
     if (synth) return execute_synthesis(*synth);
-    if (!proof) reject(document.span, "expected one `proof` or `synth` declaration");
+    if (check) return execute_check(*check);
+    if (!proof)
+        reject(document.span, "expected one `proof`, `synth`, or `check` declaration");
     if (!model_hole)
         reject(document.span, "expected one model-shaped hole for the proof result");
     return execute_bisimulation(*proof);

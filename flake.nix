@@ -50,6 +50,17 @@
           grep -F "if (right >= left) { right } else { left }" <<<"$synthesized"
           grep -F "verification: no counterexample" <<<"$synthesized"
           grep -F "parse(print(lift(witness))): exact ast identity" <<<"$synthesized"
+          refuted="$($out/bin/fine run "$src/fine/fixtures/check-counterexample.fine")"
+          echo "$refuted"
+          grep -F "refuted: subtraction_preserves_left" <<<"$refuted"
+          grep -F "counterexample subtraction_preserves_left" <<<"$refuted"
+          grep -F "a: Int = -1;" <<<"$refuted"
+          grep -F "b: Int = 1;" <<<"$refuted"
+          grep -F "parse(print(lift(values))): exact ast identity" <<<"$refuted"
+          verified="$($out/bin/fine run "$src/fine/fixtures/check-valid.fine")"
+          echo "$verified"
+          grep -F "verified: addition_preserves_left" <<<"$verified"
+          grep -F "counterexample: none" <<<"$verified"
           projection="$($out/bin/fine run "$src/fine/fixtures/synth-projection.fine")"
           grep -F "source-program: synthesized keep from 1 ground instances; core kept 1" <<<"$projection"
           grep -Fx "value" <<<"$projection"
@@ -167,6 +178,45 @@
           terms = [event for event in events if event["operation"] == "term.declare"]
           handles = [event["data"]["identity"]["handle"] for event in terms]
           assert handles == list(range(len(handles)))
+          PY
+          check_rain="$($out/bin/fine rain "$src/fine/fixtures/check-counterexample.fine")"
+          echo "$check_rain"
+          RAIN="$check_rain" ${pkgs.python3}/bin/python - <<'PY'
+          import json, os
+          events = [json.loads(line) for line in os.environ["RAIN"].splitlines()]
+          assert [event["sequence"] for event in events] == list(range(len(events)))
+          operations = [event["operation"] for event in events]
+          required = [
+              "check.run.open",
+              "check.counterexample.assert",
+              "solver.query.open",
+              "solver.query.result",
+              "model.eval-assignment",
+              "fine.counterexample-witness",
+              "fine.witness.accept",
+              "check.run.close",
+          ]
+          positions = [operations.index(operation) for operation in required]
+          assert positions == sorted(positions), (required, positions)
+          queries = [event for event in events
+                     if event["operation"] == "solver.query.result"]
+          assert len(queries) == 1
+          assert queries[0]["data"]["status"] == "sat"
+          assert queries[0]["data"]["polarity"] == "counterexample-exists"
+          assert queries[0]["data"]["domain_outcome"] == "refuted"
+          assignments = [event for event in events
+                         if event["operation"] == "model.eval-assignment"]
+          assert [event["data"]["parameter"] for event in assignments] == ["a", "b"]
+          assert all(event["data"]["relation"] == "equality-under-this-model"
+                     for event in assignments)
+          witnesses = [event for event in events
+                       if event["operation"] == "fine.counterexample-witness"]
+          assert len(witnesses) == 1
+          assert witnesses[0]["data"]["parse_reify_exact_identity"] is True
+          assert "a: Int = -1;" in witnesses[0]["data"]["source"]
+          assert "b: Int = 1;" in witnesses[0]["data"]["source"]
+          assert "z3.theory-rewrite" not in operations
+          assert "z3.mbqi-instance" not in operations
           PY
           runHook postInstallCheck
         '';

@@ -121,6 +121,23 @@ to its Z3 meaning is a one-way compiler operation. See
 `research/synthesis-pressure-test.md` for the selected refutation-synthesis
 slice, result vocabulary, and provenance obligations.
 
+## Counterexample boundary
+
+`check name(parameters) { assumes { ... } ensures { ... } }` turns a source
+claim into one satisfiability query: the assumptions are conjoined with the
+negation of the guarantees. `unsat` means there is no counterexample in the
+admitted Int/Bool domain. `sat` is not collapsed to a diagnostic string: Fine
+completes every parameter under that returned model and emits a typed,
+parseable `counterexample name { ... }` declaration.
+
+The round-trip law applies separately to each primitive assignment. Lifting a
+Z3 integer numeral or Boolean produces ordinary Fine literal syntax, including
+negative integer literals; parsing and elaborating it in the same manager must
+recover the exact AST. The witness declaration itself is a source envelope and
+is deliberately not executable. This first check slice has no quantifiers,
+arrays, enums, shrinking, or claim that the returned model is a minimal
+counterexample.
+
 ## Rainfall identity and coverage
 
 Z3's numeric AST IDs are diagnostic labels, not durable identities. Z3 may
@@ -138,6 +155,12 @@ references explicitly. Each term declaration carries identity
 `(run, recorder, manager, handle)` and only
 `ast_id_at_observation` as a diagnostic. The recorder holds every registered
 `z3::expr` strongly until the run ends.
+
+For `check`, rainfall records the one source-level refutation assertion, the
+public query boundary and polarity, each completed parameter evaluation, and
+the checked source witness. Those model assignments are equality under the
+returned model. This producer exposes no arithmetic propagation, conflict
+analysis, model construction, or other solver-internal search.
 
 The bisimulation producer records all four public assertions, the one
 MBQI-only satisfiability boundary, the accepted quantifier instances described
