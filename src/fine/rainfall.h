@@ -33,6 +33,12 @@ namespace fine {
         // diagnostics and are not used to establish identity.
         std::string term(z3::expr const &expression, std::string_view representation = "semantic-z3");
 
+        // Reparse and exact-reify every term registered since the last call.
+        // Registration may occur inside a Z3 observer callback, where creating
+        // ASTs is forbidden; callers invoke this after the solver returns and
+        // before the terminal run-close event.
+        void validate_terms();
+
         // Declares a parse-local source object in the recorder's immutable source
         // snapshot. Repeated declarations of the same node return the same ID.
         std::string source_node(std::size_t parse_local_node_id, syntax::SourceSpan span, std::string_view syntax_kind);
@@ -70,6 +76,9 @@ namespace fine {
         std::string run_;
         SourceSnapshot const *snapshot_ = nullptr;
         std::vector<z3::expr> terms_;
+        std::vector<std::string> lifted_texts_;
+        std::vector<std::string> lifted_text_hashes_;
+        std::size_t validated_terms_ = 0;
         std::map<std::pair<std::string, std::string>, std::string>
             pending_quantifier_instances_;
         std::map<std::size_t, std::string> source_nodes_;

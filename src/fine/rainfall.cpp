@@ -1,4 +1,5 @@
 #include "rainfall.h"
+#include "rainfall_lift.h"
 
 #include <iomanip>
 #include <ostream>
@@ -139,16 +140,40 @@ namespace fine {
 
         std::size_t handle = terms_.size();
         terms_.push_back(expression);  // strong ref held until recorder destruction
+        RainfallLiftedTerm lifted = lift_rainfall_term(context_, expression, false);
+        lifted_texts_.push_back(lifted.text);
+        lifted_text_hashes_.push_back(exact_content_hash(lifted.text));
         std::string reference = "term:" + std::to_string(handle);
         std::ostringstream identity;
         identity << "{\"run\":" << quote(run_) << ",\"recorder\":\"recorder:0\",\"manager\":\"manager:0\""
                  << ",\"handle\":" << handle << ",\"ast_id_at_observation\":" << Z3_get_ast_id(context_, expression)
                  << '}';
         record("object", "term.declare", {}, "fine.ast-registry",
-               "Fine-owned Z3 terms observed through the public API; no internal rewrite coverage",
+               "Fine-owned live Z3 term with canonical generated Fine rendering; exact reparse/reification is "
+               "deferred outside observer callbacks and required before run closure",
                {string_field("id", reference), raw_field("identity", identity.str()),
-                string_field("representation", representation), string_field("text", expression.to_string())});
+                string_field("representation", "fine.generated-term.v1"), string_field("origin", representation),
+                string_field("text", lifted.text), string_field("rendering_hash", lifted_text_hashes_.back()),
+                string_field("z3_text_diagnostic", expression.to_string()),
+                raw_field("sort_bindings", lifted.sorts_json),
+                raw_field("declaration_bindings", lifted.declarations_json),
+                string_field("exact_reify_validation", "pending")});
         return reference;
+    }
+
+    void RainfallRecorder::validate_terms() {
+        while (validated_terms_ < terms_.size()) {
+            std::size_t handle = validated_terms_++;
+            RainfallLiftedTerm lifted = lift_rainfall_term(context_, terms_[handle], true);
+            if (lifted.text != lifted_texts_[handle])
+                throw std::runtime_error("Fine Rainfall lift rendering changed before exact validation");
+            record("derive", "term.lift.validate", {}, "fine.generated-term-parser",
+                   "Canonical generated Fine term reparsed against its exact manager-local sort and declaration "
+                   "bindings and reified to the identical live Z3 AST",
+                   {string_field("term", "term:" + std::to_string(handle)),
+                    string_field("rendering_hash", lifted_text_hashes_[handle]),
+                    boolean_field("parse_reify_exact_identity", true)});
+        }
     }
 
     std::string RainfallRecorder::source_node(std::size_t parse_local_node_id, syntax::SourceSpan span,

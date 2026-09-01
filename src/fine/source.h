@@ -6,6 +6,10 @@
 
 namespace fine {
 
+    // Stable content digest used to bind replay artifacts to the exact bytes
+    // that were validated in-process.
+    std::string exact_content_hash(std::string_view source);
+
     // A solver claim is bound to this exact immutable input. The document ID is
     // opaque and survives revisions in a future live host; a CLI invocation creates
     // a fresh document at revision zero.

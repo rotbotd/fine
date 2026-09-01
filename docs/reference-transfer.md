@@ -218,6 +218,8 @@ source, collaborative editor, incremental parser, or syntax-highlighting system.
   heuristic matching and call it identity.
 - Do not turn revision-transported decorations into current solver evidence.
 - Do not attach every Z3 term to the nearest enclosing Fine range. Generated
-  and internal terms are allowed to have no source representative.
+  and internal terms are allowed to have no source representative. They still
+  require an exact-lifted Fine rendering; provenance and renderability are
+  independent.
 - Do not make the viewer parse pretty-printed Rainfall terms to rediscover
   ownership. Ownership is compiler evidence or it is absent.

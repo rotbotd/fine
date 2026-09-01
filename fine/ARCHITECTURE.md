@@ -19,6 +19,24 @@ The first law is exact Z3 AST identity, not equivalence after simplification.
 It makes `normalize` idempotent. A Z3 rewrite `x -> x'` can therefore be shown
 as the Fine rewrite `lift(x) -> lift(x')` without parsing printed SMT-LIB.
 
+Rainfall applies this law to every term admitted by its registry, including
+post-preprocessing clause literals and proof hints. `fine.generated-term.v1` is
+the total, declaration-bound core rendering: applications name exact function
+declarations, numerals name their sorts, and quantifiers retain original binder
+symbols/sorts, weight, qid/skid, patterns, and no-patterns. The emitted text is
+parsed against the retained manager-local sort/declaration bindings and reified
+to exact AST identity. Creating ASTs inside Z3's observer callbacks can cancel a
+query, so callbacks only print and retain a strong term; `term.lift.validate`
+performs the exact round trip after the solver returns and before run closure.
+The validator requires exactly one such admission for every declared term.
+
+This generated core is Fine syntax but not a claim that an internal term was
+written by the user. `origin` independently records `semantic-z3`, clause
+literal, or proof-hint provenance, and only compiler-known correspondences get
+source edges. `z3_text_diagnostic` is retained for debugging but is neither an
+admitted rendering nor used by projection. Ordinary source resugaring and
+materialization sit above this exact layer.
+
 ## One universe of value types
 
 Fine v1 has no first-class functions and no compiler-owned arrow type. Every

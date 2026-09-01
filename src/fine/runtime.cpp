@@ -1062,9 +1062,10 @@ namespace fine {
                          RainfallRecorder::boolean_field("parse_reify_exact_identity", true)});
                     rainfall_->record("transition", "fine.witness.accept", {"synth:" + declaration.name},
                                       "fine.runtime", "Backend verification plus Fine source round-trip identity check",
-                                      {RainfallRecorder::string_field("declaration", declaration.name),
-                                       RainfallRecorder::string_field("status", "source-program"),
-                                       RainfallRecorder::boolean_field("verified", true)});
+                                       {RainfallRecorder::string_field("declaration", declaration.name),
+                                        RainfallRecorder::string_field("status", "source-program"),
+                                        RainfallRecorder::boolean_field("verified", true)});
+                    rainfall_->validate_terms();
                     rainfall_->record("scope", "synth.run.close", {"synth:" + declaration.name}, "fine.runtime",
                                       "Native synthesis plus Fine source witness round trip",
                                       {RainfallRecorder::string_field("status", "source-program")});
@@ -1251,6 +1252,8 @@ namespace fine {
                         solver, *rainfall_, std::vector<std::string>{run_scope, query});
                 }
                 z3::check_result result = solver.check();
+                quantifier_observer.reset();
+                clause_observer.reset();
                 if (rainfall_) {
                     char const *status = result == z3::sat ? "sat" : result == z3::unsat ? "unsat" : "unknown";
                     rainfall_->record(
@@ -1268,10 +1271,12 @@ namespace fine {
                 if (result == z3::unknown)
                     reject(declaration.span, "counterexample query was unknown: " + solver.reason_unknown());
                 if (result == z3::unsat) {
-                    if (rainfall_)
+                    if (rainfall_) {
+                        rainfall_->validate_terms();
                         rainfall_->record("scope", "check.run.close", {run_scope}, "fine.check",
                                           "Source check completed with no counterexample",
                                           {RainfallRecorder::string_field("status", "verified")});
+                    }
                     output_ << "verified: " << declaration.name << '\n';
                     if (declaration.induction_parameter)
                         output_ << "induction: direct-subterm on " << induction_parameter << '\n';
@@ -1333,10 +1338,11 @@ namespace fine {
                                        RainfallRecorder::boolean_field("parse_reify_exact_identity", true)});
                     rainfall_->record("transition", "fine.witness.accept", {run_scope}, "fine.runtime",
                                       "Satisfiable counterexample query plus Fine source round-trip identity check",
-                                      {RainfallRecorder::string_field("declaration", declaration.name),
-                                       RainfallRecorder::string_field("evidence_query", query),
-                                       RainfallRecorder::string_field("status", "counterexample-witness"),
-                                       RainfallRecorder::boolean_field("source_roundtrip_exact_identity", true)});
+                                       {RainfallRecorder::string_field("declaration", declaration.name),
+                                        RainfallRecorder::string_field("evidence_query", query),
+                                        RainfallRecorder::string_field("status", "counterexample-witness"),
+                                        RainfallRecorder::boolean_field("source_roundtrip_exact_identity", true)});
+                    rainfall_->validate_terms();
                     rainfall_->record("scope", "check.run.close", {run_scope}, "fine.runtime",
                                       "Source check completed with a returned counterexample",
                                       {RainfallRecorder::string_field("status", "counterexample-witness")});
@@ -1528,6 +1534,8 @@ namespace fine {
                         solver, *rainfall_, std::vector<std::string>{run_scope, query});
                 }
                 z3::check_result result = solver.check();
+                quantifier_observer.reset();
+                clause_observer.reset();
                 if (rainfall_) {
                     char const *status = result == z3::sat ? "sat" : result == z3::unsat ? "unsat" : "unknown";
                     rainfall_->record(
@@ -1619,10 +1627,11 @@ namespace fine {
                     rainfall_->record("transition", "fine.witness.accept", {run_scope}, "fine.runtime",
                                       "Satisfiable model query plus finite extensionalization and Fine source "
                                       "round-trip identity check",
-                                      {RainfallRecorder::string_field("declaration", inputs.at("relation")->name),
-                                       RainfallRecorder::string_field("evidence_query", query),
-                                       RainfallRecorder::string_field("status", "model-witness"),
-                                       RainfallRecorder::boolean_field("source_roundtrip_exact_identity", true)});
+                                       {RainfallRecorder::string_field("declaration", inputs.at("relation")->name),
+                                        RainfallRecorder::string_field("evidence_query", query),
+                                        RainfallRecorder::string_field("status", "model-witness"),
+                                        RainfallRecorder::boolean_field("source_roundtrip_exact_identity", true)});
+                    rainfall_->validate_terms();
                     rainfall_->record("scope", "bisim.run.close", {run_scope}, "fine.runtime",
                                       "Finite bisimulation model and Fine source witness round trip",
                                       {RainfallRecorder::string_field("status", "model-witness")});

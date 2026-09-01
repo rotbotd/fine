@@ -103,7 +103,12 @@ For every rain, the first objects bind the run to a fresh opaque document and an
 exact source snapshot (revision, SHA-256 hash, and byte length). Parsed declarations
 and expressions have snapshot-scoped source identities. The `check` elaborator
 emits explicit exact/desugared source-to-term evidence edges; generated witnesses
-and internal Z3 terms remain unowned by source. The installed
+and internal Z3 terms remain unowned by source. Every declared term nevertheless
+has a canonical `fine.generated-term.v1` rendering with explicit manager-local
+sort and declaration bindings. Fine reparses that rendering after the solver
+returns and requires exact same-manager AST identity; the raw Z3 printer is a
+labelled diagnostic only. Provenance and Fine renderability are deliberately
+independent. The installed
 `fine-rain-validate` command admits only a replay whose snapshot, source nodes,
 live term handles, manager, edge endpoints, chronology, and terminal state agree.
 

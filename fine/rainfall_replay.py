@@ -43,6 +43,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     parse_node_ids: set[int] = set()
     terms: dict[str, dict[str, Any]] = {}
     term_handles: set[int] = set()
+    term_lift_validations: set[str] = set()
     event_ids: set[str] = set()
     events_by_id: dict[str, dict[str, Any]] = {}
     evidence: list[dict[str, Any]] = []
@@ -132,10 +133,63 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             handle = identity.get("handle")
             _require(isinstance(handle, int) and handle >= 0 and handle not in term_handles,
                      f"event {sequence}: missing or reused live term handle")
-            _require(isinstance(data.get("text"), str),
-                     f"event {sequence}: malformed term text")
+            _require(data.get("representation") == "fine.generated-term.v1",
+                     f"event {sequence}: term has no canonical Fine rendering")
+            _require(isinstance(data.get("origin"), str) and data["origin"],
+                     f"event {sequence}: malformed term provenance")
+            _require(isinstance(data.get("text"), str) and data["text"],
+                     f"event {sequence}: malformed generated Fine term text")
+            actual_rendering_hash = ("sha256:" +
+                                     hashlib.sha256(data["text"].encode()).hexdigest())
+            _require(data.get("rendering_hash") == actual_rendering_hash,
+                     f"event {sequence}: generated Fine term hash disagrees with text")
+            _require(isinstance(data.get("z3_text_diagnostic"), str),
+                     f"event {sequence}: malformed diagnostic Z3 term text")
+            _require(data.get("exact_reify_validation") == "pending",
+                     f"event {sequence}: term declaration bypasses deferred exact validation")
+            sorts = data.get("sort_bindings")
+            declarations = data.get("declaration_bindings")
+            _require(isinstance(sorts, list) and isinstance(declarations, list),
+                     f"event {sequence}: malformed Fine lift bindings")
+            sort_names = [item.get("name") for item in sorts
+                          if isinstance(item, dict)]
+            _require(len(sort_names) == len(sorts) and
+                     all(isinstance(name, str) and name for name in sort_names) and
+                     len(set(sort_names)) == len(sort_names),
+                     f"event {sequence}: missing or reused Fine sort alias")
+            _require(all(isinstance(item.get("z3_text"), str) and
+                         isinstance(item.get("sort_kind"), int) and
+                         isinstance(item.get("ast_id_at_observation"), int)
+                         for item in sorts),
+                     f"event {sequence}: malformed Fine sort binding")
+            declaration_names = [item.get("name") for item in declarations
+                                 if isinstance(item, dict)]
+            _require(len(declaration_names) == len(declarations) and
+                     all(isinstance(name, str) and name for name in declaration_names) and
+                     len(set(declaration_names)) == len(declaration_names),
+                     f"event {sequence}: missing or reused Fine declaration alias")
+            _require(all(isinstance(item.get("z3_symbol"), str) and
+                         isinstance(item.get("z3_declaration_text"), str) and
+                         isinstance(item.get("decl_kind"), int) and
+                         isinstance(item.get("parameters"), list) and
+                         all(isinstance(value, str) for value in item["parameters"]) and
+                         isinstance(item.get("ast_id_at_observation"), int) and
+                         isinstance(item.get("domain"), list) and
+                         all(sort in sort_names for sort in item["domain"]) and
+                         item.get("range") in sort_names
+                         for item in declarations),
+                     f"event {sequence}: malformed Fine declaration binding")
             terms[term] = data
             term_handles.add(handle)
+        elif operation == "term.lift.validate":
+            term = data.get("term")
+            _require(term in terms and term not in term_lift_validations,
+                     f"event {sequence}: exact lift validates an unknown or repeated term")
+            _require(data.get("parse_reify_exact_identity") is True,
+                     f"event {sequence}: Fine lift lacks exact same-manager identity")
+            _require(data.get("rendering_hash") == terms[term].get("rendering_hash"),
+                     f"event {sequence}: exact lift validates a different rendering")
+            term_lift_validations.add(term)
         elif operation == "source.term.evidence":
             evidence.append(data)
         elif operation.startswith("z3.clause."):
@@ -181,6 +235,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     _require(len(snapshots) == 1, "replay must declare exactly one snapshot")
     _require(terminal_sequence == len(events) - 1,
              "replay has no terminal run close")
+    _require(term_lift_validations == set(terms),
+             "replay does not exact-validate every generated Fine term")
 
     allowed = {"exact", "desugared", "generated", "internal_z3"}
     for index, edge in enumerate(evidence):

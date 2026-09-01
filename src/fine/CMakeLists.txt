@@ -10,6 +10,7 @@ add_executable(fine-bin
   parser.cpp
   quantifier_observer.cpp
   rainfall.cpp
+  rainfall_lift.cpp
   runtime.cpp
   source.cpp
   synthesis.cpp

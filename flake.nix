@@ -151,6 +151,19 @@
           terms = [event for event in events if event["operation"] == "term.declare"]
           handles = [event["data"]["identity"]["handle"] for event in terms]
           assert handles == list(range(len(handles)))
+          assert all(event["data"]["representation"] ==
+                     "fine.generated-term.v1" for event in terms)
+          assert all(event["data"]["origin"] for event in terms)
+          assert all(event["data"]["text"] and
+                     event["data"]["z3_text_diagnostic"] is not None
+                     for event in terms)
+          validations = [event for event in events
+                         if event["operation"] == "term.lift.validate"]
+          assert {event["data"]["term"] for event in validations} == {
+              event["data"]["id"] for event in terms
+          }
+          assert all(event["data"]["parse_reify_exact_identity"] is True
+                     for event in validations)
           verify = [event for event in events
                     if event["operation"] == "solver.query.result"
                     and event["data"].get("polarity") == "counterexample-exists"]
@@ -267,6 +280,14 @@
           terms = [event for event in events if event["operation"] == "term.declare"]
           handles = [event["data"]["identity"]["handle"] for event in terms]
           assert handles == list(range(len(handles)))
+          assert all(event["data"]["representation"] ==
+                     "fine.generated-term.v1" for event in terms)
+          assert all(event["data"]["origin"] for event in terms)
+          validations = [event for event in events
+                         if event["operation"] == "term.lift.validate"]
+          assert {event["data"]["term"] for event in validations} == {
+              event["data"]["id"] for event in terms
+          }
           PY
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/two-state-bisim.fine" "$bisim_rain"
@@ -317,9 +338,9 @@
           clause_text = "\n".join(
               terms[reference]
               for event in clauses for reference in event["data"]["literals"])
-          assert "tail Fine.check.length_nonnegative.arg0" in clause_text
-          assert "case-def" in clause_text
-          assert "recfun-num-rounds" in clause_text
+          assert "_d_tail_tail_cons(_d_Fine_check_length_nonnegative_arg0)" in clause_text
+          assert "_d_case_def_0_length" in clause_text
+          assert "_d_recfun_num_rounds_0" in clause_text
           generated = [event for event in events
                        if event["operation"] == "source.term.evidence"
                        and event["data"]["correspondence"] == "generated"]
@@ -369,6 +390,8 @@
           assert all(instance["ground_bindings"] for instance in instances)
           assert "left-step-matched" in html
           assert "3 accepted instances, 3 admitted lemmas" in html
+          assert "_d_select" in html
+          assert "(select " not in html
           assert html.count('<tr class="current"') == 1
           PY
 
@@ -399,6 +422,22 @@
           (output / "wrong-instance-term.rain").write_text("".join(
               json.dumps(event, separators=(",", ":")) + "\n"
               for event in wrong_term))
+
+          false_lift = copy.deepcopy(events)
+          validation = next(event for event in false_lift
+                            if event["operation"] == "term.lift.validate")
+          validation["data"]["parse_reify_exact_identity"] = False
+          (output / "false-lift-identity.rain").write_text("".join(
+              json.dumps(event, separators=(",", ":")) + "\n"
+              for event in false_lift))
+
+          changed_rendering = copy.deepcopy(events)
+          declaration = next(event for event in changed_rendering
+                             if event["operation"] == "term.declare")
+          declaration["data"]["text"] += " "
+          (output / "changed-lift-rendering.rain").write_text("".join(
+              json.dumps(event, separators=(",", ":")) + "\n"
+              for event in changed_rendering))
           PY
           for hostile in "$bisim_hostile"/*.rain; do
             if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
@@ -919,7 +958,8 @@
           assert "mark: Mark = marked;" in witness["source"]
           terms = [event for event in events
                    if event["operation"] == "term.declare"]
-          assert any("node 7 leaf leaf" in event["data"]["text"]
+          assert any('_d_node_node(numeral("7",_s_Int),_d_leaf_leaf,_d_leaf_leaf)' in
+                     event["data"]["text"]
                      for event in terms)
           PY
           runHook postInstallCheck

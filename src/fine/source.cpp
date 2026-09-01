@@ -115,11 +115,15 @@ namespace fine {
 
     }  // namespace
 
+    std::string exact_content_hash(std::string_view source) {
+        return sha256(source);
+    }
+
     SourceSnapshot make_source_snapshot(std::string_view display_name, std::string_view source, std::size_t revision,
                                         std::string document_id) {
         if (document_id.empty())
             document_id = fresh_document_id();
-        return {std::move(document_id), revision, sha256(source), source.size(), std::string(display_name)};
+        return {std::move(document_id), revision, exact_content_hash(source), source.size(), std::string(display_name)};
     }
 
 }  // namespace fine
