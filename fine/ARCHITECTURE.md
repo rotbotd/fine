@@ -163,12 +163,13 @@ returned model. This producer exposes no arithmetic propagation, conflict
 analysis, model construction, or other solver-internal search.
 
 The bisimulation producer records all four public assertions, the one
-MBQI-only satisfiability boundary, the accepted quantifier instances described
-below, completed evaluation of every cell in the finite relation, deterministic
-extensionalization into an admitted array term, and the exact source round
-trip. A completed model value is labelled only as equality under that returned
-model. Accepted instances are evidence about formulas admitted to the search;
-they do not by themselves explain which later search steps caused `sat`.
+MBQI-only satisfiability boundary, the accepted quantifier instances and clause
+stream described below, completed evaluation of every cell in the finite
+relation, deterministic extensionalization into an admitted array term, and
+the exact source round trip. A completed model value is labelled only as
+equality under that returned model. Accepted instances and clauses are evidence
+about formulas admitted to the search; they do not by themselves explain which
+later search steps caused `sat`.
 
 The soft fork adds a synchronous optional observer to `th_rewriter`. Fine
 attaches it only to the ordinary theory rewriter used for native synthesis
@@ -205,3 +206,16 @@ Its MBQI attribution is a property of the query configuration—E-matching is
 disabled—not provenance carried by the callback itself. Fresh auxiliary solver
 contexts have different AST managers and deliberately do not enter the parent
 rainfall registry; only accepted instances reaching the parent `qi_queue` do.
+
+The same query also retains Z3's public `on_clause` registration for the exact
+solver lifetime. This callback exposes clauses after preprocessing when they
+are assumed by, inferred into, or deleted from CDCL(T). Rainfall classifies the
+dummy proof-hint heads `assumption` and `del` only as the public API specifies;
+every other hint is conservatively an inference and its uninterpreted head is
+preserved. Each literal and proof hint receives a strong recorder handle. The
+resulting `z3.clause.assume`, `z3.clause.infer`, and `z3.clause.delete` events
+cover this admitted clause stream, not rejected candidate clauses, assignments,
+decisions, watched-literal traffic, the auxiliary MBQI context, or the causal
+contribution of a clause to the final answer. Clause literals may be internal
+post-preprocessing Z3 terms, so their representation is labelled accordingly
+rather than falsely printing them as Fine source.

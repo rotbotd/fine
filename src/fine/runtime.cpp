@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "clause_observer.h"
 #include "quantifier_observer.h"
 #include "rainfall.h"
 #include "synthesis.h"
@@ -848,7 +849,7 @@ private:
         if (rainfall_) {
             rainfall_->record(
                 "scope", "bisim.run.open", {run_scope}, "fine.bisimulation",
-                "Fine's finite bisimulation elaboration, one public solver query, model extensionalization, and source round trip; excludes Z3-internal search",
+                "Fine's finite bisimulation elaboration, one public solver query, accepted MBQI bindings, the public post-preprocessing clause stream, model extensionalization, and source round trip; excludes every solver-internal boundary not named by a producer event",
                 {RainfallRecorder::string_field(
                      "relation", rainfall_->term(relation.value)),
                  RainfallRecorder::string_field(
@@ -951,7 +952,8 @@ private:
         if (rainfall_) {
             rainfall_->record(
                 "scope", "solver.query.open", {run_scope, query},
-                "fine.bisimulation", "Public solver assertion boundary",
+                "fine.bisimulation",
+                "Public solver assertion boundary with scoped read-only MBQI-binding and on-clause observers",
                 {RainfallRecorder::string_field("id", query),
                  RainfallRecorder::string_field(
                      "purpose", "find a finite bisimulation relation model"),
@@ -964,10 +966,14 @@ private:
         }
 
         std::unique_ptr<RainfallQuantifierObserver> quantifier_observer;
+        std::unique_ptr<RainfallClauseObserver> clause_observer;
         if (rainfall_) {
             quantifier_observer = std::make_unique<RainfallQuantifierObserver>(
                 solver, *rainfall_, std::vector<std::string>{run_scope, query},
                 false);
+            clause_observer = std::make_unique<RainfallClauseObserver>(
+                solver, *rainfall_,
+                std::vector<std::string>{run_scope, query});
         }
         z3::check_result result = solver.check();
         if (rainfall_) {

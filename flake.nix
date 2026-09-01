@@ -113,11 +113,12 @@
           assert all(event["data"]["relation"] == "equality-under-this-model"
                      for event in models)
           PY
-          bisim_rain="$($out/bin/fine rain "$src/fine/fixtures/two-state-bisim.fine")"
-          echo "$bisim_rain"
-          RAIN="$bisim_rain" ${pkgs.python3}/bin/python - <<'PY'
-          import json, os
-          events = [json.loads(line) for line in os.environ["RAIN"].splitlines()]
+          bisim_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/two-state-bisim.fine" > "$bisim_rain"
+          ${pkgs.python3}/bin/python - "$bisim_rain" <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as stream:
+              events = [json.loads(line) for line in stream]
           assert events
           assert [event["sequence"] for event in events] == list(range(len(events)))
           operations = [event["operation"] for event in events]
@@ -163,6 +164,28 @@
               "fine.bisim.left-step-matched",
               "fine.bisim.right-step-matched",
           }
+          clause_events = [event for event in events
+                           if event["operation"].startswith("z3.clause.")]
+          assert clause_events
+          assert all(event["sequence"] < queries[0]["sequence"]
+                     for event in clause_events)
+          assert all(event["producer"]["component"] == "z3.solver.on_clause"
+                     for event in clause_events)
+          assert {event["operation"] for event in clause_events} >= {
+              "z3.clause.assume", "z3.clause.infer", "z3.clause.delete"
+          }
+          assert {event["data"]["proof_hint_head"] for event in clause_events} >= {
+              "assumption", "inst", "del"
+          }
+          declared = {event["data"]["id"] for event in events
+                      if event["operation"] == "term.declare"}
+          assert all(reference in declared for event in clause_events
+                     for reference in event["data"]["literals"])
+          assert all(event["data"]["proof_hint"] in declared
+                     for event in clause_events)
+          assert all(event["data"]["literal_count"] ==
+                     len(event["data"]["literals"])
+                     for event in clause_events)
           cells = [event for event in events
                    if event["operation"] == "model.eval-cell"]
           assert len(cells) == 4
