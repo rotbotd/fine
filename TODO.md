@@ -119,6 +119,37 @@ of recursive `Step` premises through elaboration, induction, solver checking,
 exact Fine lift, and Rainfall projection. If that correspondence cannot close,
 do not broaden the feature to runtime GADTs or a general static type universe.
 
+## Later language test: an elementary topos without ceremony
+
+An elementary topos must be definable once and usable for generic theorems
+without manually unpacking its operations and laws at every proof site.
+
+- [ ] Add compile-time signatures with abstract native sorts, named first-order
+      functions/predicates, views, and laws. Signature instances and parameters
+      are explicit; do not add typeclass search or represent a signature as a
+      runtime record of solver declarations.
+- [ ] Represent `Arrow(A, B)` as a constrained view over one native `Hom` sort,
+      discharged by `dom`/`cod`, rather than generating one Z3 sort per hom-set.
+- [ ] Express category structure, chosen terminal objects and pullbacks, chosen
+      exponentials with eval/curry, and a chosen subobject classifier. Keep the
+      universal mediators named so ordinary use does not restart existential
+      search for structure already supplied by the signature.
+- [ ] Let a theorem take an explicit `E: ElementaryTopos` signature parameter;
+      elaborate its members to fixed many-sorted first-order symbols and make
+      the signature laws available as assumptions with Rainfall evidence.
+- [ ] First exit theorem: prove internally that every arrow which is both monic
+      and epic is an isomorphism, without restating or manually projecting the
+      topos laws in the theorem body.
+- [ ] Second pressure test, only after equality classes have an honest
+      representation: construct the Heyting algebra of subobjects of a fixed
+      object. Do not hide quotient/setoid obligations behind host-language
+      equality or postprocess raw representatives.
+
+The definition should read as the selected categorical structure and its
+universal laws, not as generated SMT plumbing. Judge compactness by repeated
+source ceremony, not line count: the solver trace may be large, but changing
+from one elementary topos parameter to another must not duplicate the proof.
+
 ## Later synthesis test, if retained: failure-directed lemmas
 
 Use Yang--Fedyukovich--Gupta's AdtInd mechanism as a test, not as a second proof

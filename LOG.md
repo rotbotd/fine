@@ -1208,3 +1208,22 @@ an identical formula, and Rainfall must identify the assumption or derived claus
 which discharged it. Views do not add general refinement subtyping, type
 quantification, method synthesis, or first-class functions. The cofinite `Step`
 constructor uses this mechanism only in its erased proof-function field.
+
+## 2026-09-01 — elementary-topos usability target
+
+h added a later language acceptance target: define an elementary topos and prove
+generic results about it without the definition or each use becoming ceremonial.
+The TODO fixes the required representation as explicit compile-time signatures,
+not typeclass search or runtime records of solver declarations. An `Arrow(A,B)`
+is a constrained view over one native `Hom` sort; category operations, selected
+finite limits, exponentials, the subobject classifier, and their laws are named
+signature members. Selected mediators prevent each theorem from reopening an
+existential search for already supplied structure.
+
+The first exit theorem is balancedness: a morphism which is monic and epic is an
+isomorphism, with the signature laws available through an explicit
+`ElementaryTopos` parameter rather than manually restated. A later subobject
+Heyting-algebra construction is retained as the quotient/setoid pressure test;
+it cannot identify raw mono representatives using host-language equality. This
+is a future language target after the indexed locally nameless `Step` slice, not
+a claim about the current parser or runtime.
