@@ -858,3 +858,80 @@ live-browser checks remain in the same clean build.
 
 Clean implementation artifact:
 `/nix/store/8a6wkr1ch7s1zffzfbqchk7k8dr2a08w-fine-0.0.1`.
+
+## 2026-09-01 — total generated-term lift for Rainfall (`bb131bffbb`)
+
+Closed the representation/provenance conflation in Rainfall. Every strong
+`z3::expr` admitted by the term registry now receives a canonical
+`fine.generated-term.v1` rendering irrespective of whether it came from the
+Fine elaborator, an accepted quantifier instance, a post-preprocessing clause
+literal, or a clause proof hint. Source ownership did not expand: only the
+existing compiler-known `exact`, `desugared`, and `generated` edges carry Fine
+source nodes. Internal origin remains separately visible through the term's
+first-observation `origin` and the observer event that uses its handle.
+
+The generated grammar is deliberately lower than ordinary source sugar. It has
+three disjoint namespaces (`_s_` sort aliases, `_d_` declaration aliases, and
+`_v_` bound variables), declaration applications, typed `numeral` forms, and
+`forall`/`exists`/`lambda` forms. Quantifiers preserve binder symbols and sorts,
+weight, qid, skid, patterns, and no-patterns. Each term declaration includes the
+exact live sort and function-declaration bindings used by its rendering, with
+Z3 symbols, declarations, kinds, parameters, domains, ranges, and diagnostic AST
+IDs. Common builtins receive readable generated names such as `_d_select`, while
+Z3-created recursive auxiliaries remain recognizable as
+`_d_case_def_0_length`, `_d_recfun_num_rounds_0`, and `_d_tail_tail_cons`.
+`z3_text_diagnostic` preserves the raw printer only for debugging; projection
+continues to consume `text`, so raw SMT-LIB is no longer an admitted display
+fallback.
+
+The first implementation reparsed and reified directly in `term()`. That method
+is also called inside Z3's quantifier and clause observer callbacks; constructing
+new ASTs there disturbed the active query and the bisimulation run was canceled.
+The retained design prints and takes a strong reference in the callback, resets
+the observers after `solver.check()` returns, then calls `validate_terms()`
+before the terminal run-close event. That pass regenerates the text, parses it
+against the same manager-local bindings, reifies it, and requires
+`Z3_is_eq_ast`. It emits exactly one `term.lift.validate` event per term. The
+rendering and validation event share a SHA-256 digest; the offline validator
+recomputes the declaration digest and requires the validating event to name the
+same digest. A hostile replay that changes the text and one that changes the
+exact-identity result are both rejected.
+
+Current installed traces cover every live term at all three observer boundaries:
+
+- `two-state-bisim`: 317 events, 41 source nodes, 97 terms, 97 exact validations,
+  four source-term edges, 520,460 bytes. First-observation origins are 28
+  semantic, 44 clause-literal, and 25 proof-hint terms.
+- `induction-length`: 169 events, 13 source nodes, 49 terms, 49 exact validations,
+  11 source-term edges, 182,155 bytes. Origins are 16 semantic, 31 clause-literal,
+  and two proof-hint terms.
+- synthesis, integer counterexample, datatype counterexample, and tuple
+  counterexample traces also validate through the same installed parser.
+
+The first two clean-install attempts exposed test assumptions rather than runtime
+failures. The first source snapshot omitted the newly edited `runtime.cpp`, so a
+generation/projection assertion observed an inconsistent staged tree. After
+staging the complete slice, the install check reached a datatype assertion that
+still expected raw Z3 text (`node 7 leaf leaf`); it now checks the generated form
+`_d_node_node(numeral("7",_s_Int),_d_leaf_leaf,_d_leaf_leaf)`. All old hostile
+snapshot, manager, handle, clause-instance, transport, generation, host-race,
+and browser-race cases remain in the same install check.
+
+Validation commands:
+
+```
+cmake --build build/fine --target fine-bin -j2
+./build/fine/fine rain fine/fixtures/two-state-bisim.fine > /tmp/bisim-new.rain
+python fine/rainfall_validate.py \
+  fine/fixtures/two-state-bisim.fine /tmp/bisim-new.rain
+./build/fine/fine rain fine/fixtures/induction-length.fine > /tmp/induction-new.rain
+python fine/rainfall_validate.py \
+  fine/fixtures/induction-length.fine /tmp/induction-new.rain
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+Clean artifact:
+`/nix/store/h659gridgfkszamw5nvd6vx3jass82vm-fine-0.0.1`.
+Ordinary user-surface resugaring and materializing a generated result into editable
+Fine source remain above this exact core; they may not replace or weaken it.
