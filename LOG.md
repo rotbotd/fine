@@ -703,3 +703,63 @@ nix build --no-link --print-out-paths
 
 The clean implementation artifact before this log-only commit was
 `/nix/store/nbiip8n8v6rm4p2shgq27ggp22q4i5ca-fine-0.0.1`.
+
+## 2026-09-01 — first live browser integration
+
+Closed the first editor-facing vertical slice without creating a second evidence
+owner. Added `fine-rain-live`, a Python-standard-library HTTP server and a dense
+local browser UI around the existing atomic `fine-rain-host`. It binds only
+`127.0.0.1`; the installed flake app is `nix run .#live -- HOST SOURCE` and finds
+the sibling installed `fine` executable unless a development `--fine` path is
+provided.
+
+The browser submits its complete textarea value for simplicity. The server finds
+the common Unicode prefix and suffix and turns the changed middle into exactly one
+UTF-8 byte-offset transaction before calling `advance`. Tests include a four-byte
+emoji replacement (`a😀c` to `a😺c`) whose edit is exactly bytes `[1,5)`. The
+server serializes display edits, but each named Fine generation runs on a daemon
+thread outside that edit lock. It polls only the locked authoritative host state;
+it owns no revision, generation, admission, or annotation state of its own.
+
+The evidence pane groups edges by source node, shows the current display range and
+source excerpt, and exposes bisimulation role counts plus collapsed accepted
+instance bodies. During a run the old annotations remain visibly `transported` or
+`unplaced`; solver failure remains visible and does not erase the old claim state;
+only ordinary host admission replaces them with `current` annotations. A 220 ms
+textarea debounce is request-rate policy only and never upgrades evidence.
+
+The HTTP edit boundary requires `application/json`, rejects a browser `Origin`
+whose hostname is not loopback, applies a 2 MiB UTF-8 source limit, disables
+caching and MIME sniffing, and sends a CSP forbidding framing and all nonlocal
+connects. It does not claim IME transaction fidelity, incremental parsing,
+collaboration, syntax highlighting, or remote service safety.
+
+The install check now starts the actual threaded HTTP server around a deliberately
+slow Fine wrapper, fetches the UI and state API, rejects hostile-origin and
+non-JSON edits, observes transported evidence after the first edit, submits a
+second UTF-8 edit before the first solver finishes, and requires the predecessor
+generation to become `discarded`, the newest to become `admitted`, and the final
+annotations to be wholly current. The existing lower-level slow-run/edit race
+remains separate.
+
+During the first clean build, `/tmp` filled (`tmpfs`, 3.2 GiB) because an older
+`/tmp/fine-install.tNz2lj` tree and the current failed install prefix together
+occupied about 2.6 GiB; CMake reported `No space left on device` while copying the
+static binary. Removed only Lynn-owned temporary Fine artifacts, restoring 3.1
+GiB, and the pending Nix build then completed. The final validation sequence is:
+
+```
+python -m py_compile fine/rainfall_live.py fine/rainfall_live_cli.py
+nix flake check
+nix build --no-link --print-out-paths
+nix run --no-write-lock-file .#live -- HOST \
+  fine/fixtures/check-valid.fine --port 0 --document document:nix-live-smoke
+```
+
+The pre-final clean artifact was
+`/nix/store/0f4b21ira69sxpzdgsmg6qlkinw2v8pn-fine-0.0.1`; a final rebuild after
+loopback-only CLI and CSP tightening follows this log entry.
+
+Implementation commit: `56299c727`. The final dirty-tree validation artifact
+before this log-only commit was
+`/nix/store/ld8xnxwqqscqs21b18b7ri1x41nnv415-fine-0.0.1`.
