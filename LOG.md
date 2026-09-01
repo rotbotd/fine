@@ -935,3 +935,107 @@ Clean artifact:
 `/nix/store/h659gridgfkszamw5nvd6vx3jass82vm-fine-0.0.1`.
 Ordinary user-surface resugaring and materializing a generated result into editable
 Fine source remain above this exact core; they may not replace or weaken it.
+
+## 2026-09-01 — one typed match hole becomes source (`53b2feb42`)
+
+Closed the first witness-to-source slice of Fine's interruptible-search
+principle. `synth` may now contain one exhaustive declaration-level match whose
+arms mix ordinary Fine expressions with whole-arm named holes such as
+`?payload`. The parser gives each hole its ordinary parse-local node and exact
+byte span. At Rainfall time `synth.hole.declare` combines that source node with
+`snapshot:0`, expected type `Int`, grammar `fine.qf-lia-int.v1`, and strong term
+handles for precisely the integer values available to the arm: unmatched
+integer parameters and integer constructor fields. Duplicate hole names,
+nested holes, non-exhaustive or repeated constructors, bad binding arity,
+shadowing, non-datatype scrutinees, table parameters, and non-Int results are
+rejected at the boundary.
+
+Each open arm is instantiated at its constructor using fresh same-manager field
+terms and run through the existing counterexample-guided refutation synthesizer
+inside a named `synth-arm:<declaration>.<hole>` scope. Candidate grammar inputs
+are now distinct from the complete semantic parameter vector, so non-Int values
+may constrain the arm without entering the QF-LIA term grammar. The selected
+witness is lifted with the arm's source names, printed, parsed as an ordinary
+Fine expression, elaborated in the arm environment, and required to recover the
+exact Z3 AST. The arm close records that verified body and term. After fresh
+field terms are replaced with accessors of the original scrutinee, completed and
+synthesized arms are assembled by datatype recognizers into one `ite` term. A
+fresh public `query:match-verify` solver contains only the negation of the whole
+completed specification; its open/result/close boundary is explicit in
+Rainfall. This avoids turning a `verified: true` field into the evidence for the
+claim.
+
+`fine.match-witness` binds each open hole to one ordered, nonoverlapping exact
+source range and the body from its verified arm close. Offline replay requires a
+unique match witness for every match-synthesis run, one unique arm close for
+every hole, known grammar terms, exact hole ranges, and byte-for-byte agreement
+between each replacement and its verified arm body. Hostile traces moving the
+range or changing `value` to `fallback` are rejected. The filled match still
+emits a match witness with zero open arms so its whole-match verification remains
+visible, but it has no hole, candidate-selection, or arm-synthesis events.
+
+`fine-rain-host materialize` is the only write path for these results. It accepts
+only the current admitted generation, reloads and validates the retained trace
+against the current displayed bytes, checks that the admitted ranges still
+contain holes, removes the trace-only `hole` keys, and passes all replacements
+to the existing locked edit transaction. This advances the revision, transports
+old annotations, durably issues a new immutable request/source pair, and leaves
+the new source unadmitted until that generation completes. It does not edit a
+file behind the host or reuse predecessor evidence.
+
+The fixture begins as:
+
+```fine
+synth unwrap(input: MaybeInt, fallback: Int): Int {
+  match input {
+    none => fallback,
+    some(value) => ?payload,
+  }
+  ensures {
+    (input == none && result == fallback) || input == some(result);
+  }
+}
+```
+
+The arm grammar selects `value`; the CLI prints the completed match after two
+ground instances and one core member. The open trace validates with 90 events,
+17 source nodes, 17 strong terms, and one source-term edge. The host applies the
+single `[156,164)` replacement, producing revision one and byte length 253. Its
+new admitted trace has 35 events: one whole-match verification query and no
+`synth.hole.declare` or `synth.candidate.select`. The checked-in
+`synth-match-materialized.fine` separately exercises the same zero-enumeration
+path.
+
+The first manual host probe accidentally invoked `rainfall_host.py` directly;
+it is an importable implementation module and therefore did nothing. Repeating
+it through `rainfall_host_cli.py`, the same entry point installed as
+`fine-rain-host`, completed the full init/run/materialize/run transaction. A
+prospective call to `load_edits` with the trace replacement objects would also
+have carried the extra evidence-only `hole` key; materialization deliberately
+projects only `from`, `to`, and `insert` before loading the transaction.
+
+Validation commands:
+
+```
+python -m py_compile fine/rainfall_host.py fine/rainfall_replay.py
+cmake --build build/fine -j2
+./build/fine/fine run fine/fixtures/synth-match-open.fine
+./build/fine/fine run fine/fixtures/synth-match-materialized.fine
+./build/fine/fine rain fine/fixtures/synth-match-open.fine > /tmp/match.rain
+python fine/rainfall_validate.py \
+  fine/fixtures/synth-match-open.fine /tmp/match.rain
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The clean install check includes both direct runs, replay admission, two hostile
+replacement mutations, the actual atomic host transaction, admission of the new
+generation, and the absence of grammar enumeration on rerun. All prior model,
+synthesis, counterexample, induction, observer, projection, generation, host
+race, and browser race checks remain in that same build.
+
+Clean artifact:
+`/nix/store/6lgbp02kzxiwpfn02vfm0dns8q66kk91-fine-0.0.1`.
+The remaining match-slice edge is deliberately not papered over: arms run
+sequentially inside one source generation. Per-arm cancellation and projection
+of a live residual onto each hole still require a finer host/query boundary.
