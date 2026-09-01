@@ -68,8 +68,20 @@ The compiler owns the strictly-positive inductive interpretation and the
 indexed elimination/induction rule. It may lower a proof family internally to
 an inductive predicate or constrained Horn clauses, but Fine exposes neither a
 raw Horn-clause language nor an arbitrary user-defined object-language
-semantics. Universally quantified constructor fields elaborate through the same
-proof-family mechanism; a cofinite field is not a separate backend primitive.
+semantics. This lowering is valid for ordinary first-order recursive premises
+because the least relation excludes index pairs produced by no constructor.
+Constructor introduction implications asserted to the ordinary SMT solver do
+not have that property and are not an admissible replacement.
+
+A universally quantified constructor field stays explicit in the proof-family
+IR. In particular, putting the bound name only in a Horn rule body turns
+`forall fresh names` into a search for one working name. Fine must not perform
+that translation. The initial family slice rejects such fields; the locally
+nameless slice must instead elaborate cofinite quantification to an
+arbitrary-fresh branch and retain the freshness/equivariance obligation that
+makes that branch sound. This is an elaboration of the general family mechanism,
+not a primitive `cofinite` solver operation. The executable countertests are in
+`fine/spikes/indexed-proof`.
 
 Erasure occurs only at the value/model boundary. Rainfall must first retain the
 constructor branch, exact native index terms, recursive premise, and induction

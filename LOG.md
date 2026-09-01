@@ -1148,3 +1148,47 @@ abstraction-congruence constructor has a cofinite dependent proof field, and
 Rainfall must retain the chosen constructor, opened native `Tm` indices, fresh
 name, recursive `Step` premise, and induction hypothesis. Documentation only;
 no implementation or clean artifact claim changed.
+
+## 2026-09-01 — executable indexed-relation boundary probe
+
+Inspected the actual Fine implementation before attempting indexed syntax. The
+current parser has value datatypes and declaration-level `proof`, but no proof
+family AST. The checker translates `inducts(xs)` to one ordinary quantified
+direct-subterm hypothesis over a native datatype and asks the SMT solver to
+refute that step with MBQI disabled. It has no inductive-relation manager to
+which a `Step` family could honestly be elaborated.
+
+Added the independent nested flake `fine/spikes/indexed-proof` to settle that
+solver boundary first. Its three SMT problems establish:
+
+- A recursively defined `Step : Tm × Tm` over a native `Tm` datatype has the
+  required least-relation behavior under Horn fixedpoint semantics: a two-rule
+  constructor path is reachable, while `Step(z,z)` is `unsat` because no rule
+  produces it. There is no universal term carrier and no proof-witness sort.
+- The superficially similar ordinary-SMT encoding, an uninterpreted Bool
+  function plus constructor introduction axioms, accepts `Step(z,z)`. It cannot
+  justify indexed inversion or induction because constructor junk remains legal.
+- A name appearing only in a Horn body is an existential search variable for
+  deriving the head. In the finite countermodel, `a` is fresh and its body step
+  succeeds, so the abstraction head is derived, while another fresh name `b`
+  simultaneously witnesses body-step failure. This concretely refutes the
+  tempting translation of a cofinite `forall` premise to an ordinary rule body.
+
+The architecture and TODO now stage the implementation honestly. The first
+source slice admits only base and first-order recursive proof constructors and
+rejects universal premises. The locally nameless slice must keep the universal
+premise explicit until Fine elaborates an arbitrary-fresh branch together with
+the freshness/equivariance obligation that makes representative choice sound.
+First-order lambda lifting alone does not repair the quantifier polarity.
+
+Validation:
+
+```
+cd fine/spikes/indexed-proof
+nix run .
+nix flake check
+```
+
+The run prints `sat`, `unsat` for the least relation, `sat` for the junk-admitting
+ordinary encoding, and `sat`, `sat` for the simultaneously derived binder head
+and cofinite counterexample, then reports that all boundary tests passed.

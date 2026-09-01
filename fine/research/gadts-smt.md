@@ -174,8 +174,14 @@ and an ordinary SMT solver discharges the resulting background-theory obligation
 This is unusually close to Fine's intended Rainfall loop. The important limitation
 for the locally nameless test is syntactic: a constructor premise of the form
 `forall x outside L, Step(open b x, open b' x)` is not an ordinary finite Horn
-body. It needs lambda lifting/defunctionalization or a source proof elaboration
-before it reaches the CHC layer.
+body. A name variable occurring only in the body is chosen existentially while
+deriving the head; it does not mean that the body holds at every fresh name.
+First-order lambda lifting merely renames this problem. Fine therefore needs a
+source proof elaboration to an arbitrary-fresh branch plus the
+freshness/equivariance obligation that validates representative choice (or a
+genuinely stronger logic) before it reaches the CHC layer. The three executable
+countertests in `../spikes/indexed-proof` check leastness, intro-axiom junk, and
+this quantifier-polarity failure.
 
 Two erasure papers explain how much native datatype structure can survive. Brady,
 McBride, and McKinna's

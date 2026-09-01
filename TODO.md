@@ -90,9 +90,16 @@ carriers.
 
 - [ ] Keep object `Tm`, `Ty`, `Env`, and `Name` as separate native Z3 sorts.
 - [ ] Parse and elaborate a strictly-positive indexed `proof` family whose
-      constructor-specific result indices are native Fine terms.
-- [ ] Admit a universally quantified constructor field and closure-convert its
-      proof function without exposing a raw Horn-clause surface.
+      constructor-specific result indices are native Fine terms. The first
+      accepted constructors have only base and first-order recursive premises;
+      reject a universal premise rather than miscompile it.
+- [x] Demonstrate executably that a least native-sort Horn relation excludes
+      constructor junk, intro-only SMT axioms admit junk, and a fresh variable
+      present only in a Horn body means one working name rather than all fresh
+      names (`fine/spikes/indexed-proof`).
+- [ ] Admit a universally quantified constructor field by elaborating an
+      arbitrary-fresh branch plus its explicit freshness/equivariance
+      obligation, without exposing a raw Horn-clause surface.
 - [ ] Generate indexed pattern refinement and induction on a proof derivation,
       rather than structural induction on the indexed `Tm` value.
 - [ ] Preserve the selected rule, opened bodies, arbitrary fresh name,
