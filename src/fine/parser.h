@@ -138,6 +138,7 @@ namespace fine::syntax {
         std::vector<Parameter> parameters;
         Type carrier;
         std::vector<Expr> requirements;
+        std::optional<Expr> witness;
         std::size_t node_id = 0;
     };
 

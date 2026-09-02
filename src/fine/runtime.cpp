@@ -83,6 +83,7 @@ namespace fine {
                 z3::expr requirement;
                 std::vector<z3::expr> premise_terms;
                 std::vector<std::vector<z3::expr>> recursive_premise_indices;
+                std::optional<z3::expr> availability_witness;
 
                 explicit ArbitraryField(z3::context &context)
                     : binder_term(context), requirement(context) {}
@@ -112,6 +113,7 @@ namespace fine {
             std::vector<TypePtr> parameter_types;
             TypePtr carrier;
             std::vector<syntax::Expr> requirements;
+            std::optional<syntax::Expr> witness;
         };
 
         struct Binding {
@@ -284,6 +286,8 @@ namespace fine {
                             else if constexpr (std::is_same_v<T, syntax::ViewDecl>) {
                                 for (syntax::Expr const &requirement : item.requirements)
                                     declare_expression_sources(requirement);
+                                if (item.witness)
+                                    declare_expression_sources(*item.witness);
                             }
                             else if constexpr (std::is_same_v<T, syntax::ProofFamilyDecl>) {
                                 for (syntax::ProofConstructor const &constructor : item.constructors) {
@@ -668,6 +672,7 @@ namespace fine {
                     reject(declaration.carrier.span,
                            "a constrained view must keep one existing native Fine carrier");
                 info.requirements = declaration.requirements;
+                info.witness = declaration.witness;
 
                 ExpressionEnvironment environment;
                 std::set<std::string> names;
@@ -686,6 +691,7 @@ namespace fine {
                     info.parameter_names.push_back(parameter.name);
                     info.parameter_types.push_back(type);
                 }
+                ExpressionEnvironment witness_environment = environment;
                 z3::expr value = context_.constant(("Fine.view." + declaration.name + ".value").c_str(),
                                                    info.carrier->sort);
                 environment.emplace("value", TypedExpression{info.carrier, value});
@@ -701,6 +707,14 @@ namespace fine {
                         reject(requirement.span, "a constrained-view requirement must have type Bool");
                     requirements = requirements && elaborated.expression;
                 }
+                std::optional<z3::expr> witness;
+                if (declaration.witness) {
+                    TypedExpression elaborated = elaborate_expression(*declaration.witness, witness_environment);
+                    if (!same(elaborated.type, info.carrier))
+                        reject(declaration.witness->span,
+                               "a constrained-view witness must have carrier type `" + info.carrier->display + "`");
+                    witness = elaborated.expression;
+                }
                 capture_source_edges_ = previous_capture;
                 source_edge_within_ = std::move(previous_within);
 
@@ -712,6 +726,8 @@ namespace fine {
                         {RainfallRecorder::string_field("view", declaration.name),
                          RainfallRecorder::string_field("carrier", views_.at(declaration.name).carrier->display),
                          RainfallRecorder::string_field("requirements", rainfall_->term(requirements)),
+                         RainfallRecorder::string_field("availability", witness ? "declared-witness" : "solver-exists"),
+                         RainfallRecorder::string_field("witness", witness ? rainfall_->term(*witness) : ""),
                          RainfallRecorder::number_field("parameters", declaration.parameters.size()),
                          RainfallRecorder::boolean_field("wrapper_sort", false)});
             }
@@ -1158,6 +1174,7 @@ namespace fine {
                         ExpressionEnvironment requirement_environment;
                         for (std::size_t i = 0; i < view.parameter_names.size(); ++i)
                             requirement_environment.emplace(view.parameter_names[i], view_arguments[i]);
+                        ExpressionEnvironment witness_environment = requirement_environment;
                         requirement_environment.emplace(
                             "value", TypedExpression{view.carrier, retained_field.binder_term});
 
@@ -1167,6 +1184,12 @@ namespace fine {
                             if (!same(elaborated.type, bool_type_))
                                 throw std::runtime_error("validated view requirement changed type");
                             retained_field.requirement = retained_field.requirement && elaborated.expression;
+                        }
+                        if (view.witness) {
+                            TypedExpression witness = elaborate_expression(*view.witness, witness_environment);
+                            if (!same(witness.type, view.carrier))
+                                throw std::runtime_error("validated view witness changed type");
+                            retained_field.availability_witness = witness.expression;
                         }
 
                         for (syntax::Expr const &scoped_premise : field.premises) {
@@ -1204,6 +1227,11 @@ namespace fine {
                                  RainfallRecorder::string_field("binder_term", rainfall_->term(retained_field.binder_term)),
                                  RainfallRecorder::string_field("view", field.view_name),
                                  RainfallRecorder::string_field("requirement", rainfall_->term(retained_field.requirement)),
+                                 RainfallRecorder::string_field(
+                                     "availability_witness",
+                                     retained_field.availability_witness
+                                         ? rainfall_->term(*retained_field.availability_witness)
+                                         : ""),
                                  RainfallRecorder::number_field("recursive_premises", retained_field.premise_terms.size()),
                                  RainfallRecorder::boolean_field("lowered_to_horn", false)});
                         retained_constructor.arbitrary_fields.push_back(std::move(retained_field));
@@ -2040,9 +2068,19 @@ namespace fine {
                         ProofConstructorInfo::ArbitraryField const &field =
                             constructor.arbitrary_fields[field_ordinal];
 
-                        z3::expr_vector binders(context_);
-                        binders.push_back(field.binder_term);
-                        z3::expr availability = z3::exists(binders, field.requirement);
+                        z3::expr availability = field.requirement;
+                        if (field.availability_witness) {
+                            z3::expr_vector source(context_);
+                            z3::expr_vector destination(context_);
+                            source.push_back(field.binder_term);
+                            destination.push_back(*field.availability_witness);
+                            availability = availability.substitute(source, destination);
+                        }
+                        else {
+                            z3::expr_vector binders(context_);
+                            binders.push_back(field.binder_term);
+                            availability = z3::exists(binders, availability);
+                        }
                         if (!constructor.parameters.empty()) {
                             z3::expr_vector constructor_parameters(context_);
                             for (z3::expr const &parameter : constructor.parameters)
@@ -2067,13 +2105,30 @@ namespace fine {
                                  RainfallRecorder::string_field("binder", field.binder),
                                  RainfallRecorder::string_field("view", field.view_name),
                                  RainfallRecorder::string_field("requirement", rainfall_->term(field.requirement)),
+                                 RainfallRecorder::string_field(
+                                     "availability_mode",
+                                     field.availability_witness ? "declared-witness" : "solver-exists"),
+                                 RainfallRecorder::string_field(
+                                     "availability_witness",
+                                     field.availability_witness
+                                         ? rainfall_->term(*field.availability_witness)
+                                         : ""),
                                  RainfallRecorder::string_field("obligation", rainfall_->term(availability)),
                                  RainfallRecorder::string_field("status", available ? "unsat" : "sat"),
-                                 RainfallRecorder::string_field("domain_outcome", available ? "available" : "empty")});
-                        if (!available)
+                                 RainfallRecorder::string_field(
+                                     "domain_outcome",
+                                     available ? "available"
+                                               : (field.availability_witness ? "invalid-witness" : "empty"))});
+                        if (!available) {
+                            if (field.availability_witness)
+                                reject(target.span,
+                                       "declared witness for constrained view `" + field.view_name +
+                                           "` fails its requirement for some parameters of `" + constructor.name +
+                                           "`");
                             reject(target.span,
                                    "constrained view `" + field.view_name + "` is empty for some parameters of `" +
                                        constructor.name + "`; arbitrary-fresh induction would be vacuous");
+                        }
 
                         hypotheses = hypotheses && field.requirement;
                         for (std::size_t i = 0; i < field.recursive_premise_indices.size(); ++i) {

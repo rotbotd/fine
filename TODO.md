@@ -180,6 +180,17 @@ the proxy `opened` constructor is replaced by actual locally nameless open/suppo
 operations and the freshness/equivariance argument is retained rather than
 assumed by naming the view.
 
+Finite cofinite support is no longer a one-name toy.
+`proof-family-cofinite-support-induction.fine` represents names by Peano
+constructors and a finite exclusion set by its greatest-name cutoff. The
+`FreshFor` view requires a name strictly above that cutoff and declares
+`fresh_after(support)` as a candidate. Fine checks the candidate's instantiated
+requirement universally, keeps it distinct from the arbitrary branch name, and
+rejects the predecessor-valued control. This closes fresh-name availability for
+the cutoff representation. It still does not define locally nameless `open`,
+compute a term's support cutoff, or prove the equivariance lemma connecting
+different choices above the cutoff.
+
 ## Later language test: an elementary topos without ceremony
 
 An elementary topos must be definable once and usable for generic theorems

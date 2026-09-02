@@ -1752,3 +1752,103 @@ nix build --no-link --print-out-paths
 
 The pre-commit tree realized as
 `/nix/store/zv7h07qqzi7a48lmvcavn6hv4c66sai2-fine-0.0.1`.
+
+## 2026-09-02 — constructive availability for finite cofinite support
+
+Replaced the singleton-exclusion availability toy with an actual finite-support
+representation before touching locally nameless opening. The first attempted
+shape used an ordinary recursive `Names` list and
+
+```
+forall support. exists fresh. !contains(support, fresh)
+```
+
+as the existing arbitrary-field availability formula. A 20-second local control
+produced no answer. That is a theorem about recursive finite support, not a model
+query Z3 should be expected to invent a witness for. Retain the timeout: adding
+fuel or accepting `unknown` would merely hide the missing construction.
+
+The chosen representation uses Peano names and a cutoff:
+
+```fine
+enum Name { zero, succ(previous: Name) }
+enum Support { below(limit: Name) }
+```
+
+`below(limit)` denotes the finite initial segment through `limit`; every finite
+set of Peano names is contained in one such segment. `above(candidate, limit)`
+is a structurally recursive Fine function, `outside(candidate, support)` unwraps
+the cutoff, and `fresh_after(support)` returns the successor of its limit. The
+view now states both the proposition and the proposed inhabitant:
+
+```fine
+view FreshFor(support: Support) over Name {
+  requires { outside(value, support); }
+  witness fresh_after(support);
+}
+```
+
+This extends views with one optional carrier-valued witness expression over the
+view parameters. The declaration elaborates and typechecks the witness but does
+not trust it. At an arbitrary field, Fine instantiates the witness with the exact
+constructor arguments, substitutes it for the view's carrier `value`, and asks
+Z3 to refute
+
+```
+not (forall constructor_parameters.
+       instantiated_requirement(instantiated_witness))
+```
+
+Only an unsatisfiable result admits the field. Without a declared witness the
+previous direct `forall parameters. exists value. requirement` path remains.
+The witness is solely availability evidence: the induction branch still uses a
+separate free arbitrary carrier term, and its recursive premise and IH retain
+that arbitrary term rather than the witness. This distinction is explicit in
+Rainfall through `availability_mode`, `availability_witness`, `binder_term`, and
+the separate availability and arbitrary-hypothesis events.
+
+`proof-family-cofinite-support-induction.fine` promotes the Peano/cutoff
+construction. Its two branches verify, and Rainfall validates with 230 events,
+64 source nodes, 47 strong terms, and 53 source-term edges. The view declaration,
+constructor field, and availability event retain the declared/instantiated
+witness; the field binder is a different term and is the one shared by the
+opened recursive premise and IH. The existing witness-free `FreshApart` fixture
+still verifies through the direct existential mode.
+
+`reject-invalid-view-witness.fine` changes `fresh_after(below(limit))` from
+`succ(limit)` to `limit`. Fine proves neither folklore nor intent: the universal
+requirement has a counterexample and the check is rejected with
+`declared witness for constrained view FreshFor fails its requirement`. The
+branch solver is never asked to launder the invalid availability evidence.
+
+Local commands:
+
+```
+timeout 20 .build/fine run /tmp/proof-family-finite-support.fine
+# status 124: direct recursive-list availability search retained as a null
+cmake --build .build -j2
+.build/fine run fine/fixtures/proof-family-cofinite-support-induction.fine
+.build/fine rain fine/fixtures/proof-family-cofinite-support-induction.fine \
+  > /tmp/proof-family-cofinite-support-induction.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/proof-family-cofinite-support-induction.fine \
+  /tmp/proof-family-cofinite-support-induction.rain
+.build/fine run fine/fixtures/reject-invalid-view-witness.fine
+```
+
+This closes actual finite cofinite availability for the cutoff representation,
+not term support or opening. The remaining semantic edge is to define real
+locally nameless `open`, compute or carry a cutoff containing a term's finite
+support, and retain the equivariance/injectivity argument relating arbitrary
+choices above it. A chosen fresh name is never allowed to replace the arbitrary
+branch binder.
+
+Declarative validation passed:
+
+```
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The pre-commit tree realized as
+`/nix/store/qywg8909bkxrpzpg3hsqjjvmm6yn5jbb-fine-0.0.1`.

@@ -195,6 +195,40 @@
           fi
           grep -F "has an arbitrary-fresh constructor retained outside Horn lowering" \
             "$partial_membership"
+          cofinite_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-family-cofinite-support-induction.fine" \
+            > "$cofinite_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-family-cofinite-support-induction.fine" "$cofinite_rain"
+          ${pkgs.python3}/bin/python - "$cofinite_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          one = lambda operation: next(event for event in events if event["operation"] == operation)
+          view = one("fine.view.declare")
+          assert view["data"]["view"] == "FreshFor"
+          assert view["data"]["availability"] == "declared-witness"
+          assert view["data"]["witness"]
+          field = one("fine.proof-constructor.arbitrary-field")
+          assert field["data"]["availability_witness"]
+          assert field["data"]["availability_witness"] != field["data"]["binder_term"]
+          availability = one("proof-induction.arbitrary.availability")
+          assert availability["data"]["availability_mode"] == "declared-witness"
+          assert availability["data"]["availability_witness"] == field["data"]["availability_witness"]
+          assert availability["data"]["domain_outcome"] == "available"
+          hypothesis = one("proof-induction.arbitrary-hypothesis")
+          assert hypothesis["data"]["binder_term"] == field["data"]["binder_term"]
+          assert hypothesis["data"]["binder_term"] != field["data"]["availability_witness"]
+          assert hypothesis["data"]["recursive_premise"]
+          assert hypothesis["data"]["induction_hypothesis"]
+          PY
+          invalid_witness="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-invalid-view-witness.fine" \
+            >"$invalid_witness" 2>&1; then
+            echo "expected an invalid constrained-view witness to be rejected" >&2
+            exit 1
+          fi
+          grep -F 'declared witness for constrained view `FreshFor` fails its requirement' \
+            "$invalid_witness"
           rejected_universal="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-proof-family-universal.fine" \
             >"$rejected_universal" 2>&1; then

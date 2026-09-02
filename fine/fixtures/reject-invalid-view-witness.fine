@@ -1,0 +1,67 @@
+enum Name {
+  zero,
+  succ(previous: Name),
+}
+
+enum Support {
+  below(limit: Name),
+}
+
+enum Tm {
+  left,
+  right,
+  opened(body: Tm, fresh: Name),
+  abs(body: Tm),
+}
+
+function above(candidate: Name, limit: Name): Bool {
+  match candidate {
+    zero => false,
+    succ(previous) => if previous == limit { true } else { above(previous, limit) },
+  }
+}
+
+function outside(candidate: Name, support: Support): Bool {
+  match support {
+    below(limit) => above(candidate, limit),
+  }
+}
+
+function fresh_after(support: Support): Name {
+  match support {
+    below(limit) => limit,
+  }
+}
+
+view FreshFor(support: Support) over Name {
+  requires {
+    outside(value, support);
+  }
+  witness fresh_after(support);
+}
+
+proof family Step(before: Tm, after: Tm, support: Support) {
+  constructor root(support: Support) {
+    takes {}
+    gives Step(left, right, support);
+  }
+
+  constructor under_abs(before: Tm, after: Tm, support: Support) {
+    takes {
+      arbitrary fresh: FreshFor(support) {
+        Step(opened(before, fresh), opened(after, fresh), support);
+      }
+    }
+    gives Step(abs(before), abs(after), support);
+  }
+}
+
+check distinct_indices(before: Tm, after: Tm, support: Support) {
+  inducts(Step(before, after, support));
+  assumes {
+    Step(before, after, support);
+  }
+  ensures {
+    (before == after) == false;
+  }
+}

@@ -21,6 +21,7 @@ namespace fine::syntax {
             arbitrary_kw,
             over_kw,
             requires_kw,
+            witness_kw,
             function_kw,
             synth_kw,
             check_kw,
@@ -80,6 +81,7 @@ namespace fine::syntax {
             case TokenKind::arbitrary_kw: return "`arbitrary`";
             case TokenKind::over_kw: return "`over`";
             case TokenKind::requires_kw: return "`requires`";
+            case TokenKind::witness_kw: return "`witness`";
             case TokenKind::function_kw: return "`function`";
             case TokenKind::synth_kw: return "`synth`";
             case TokenKind::check_kw: return "`check`";
@@ -242,6 +244,8 @@ namespace fine::syntax {
                     return TokenKind::over_kw;
                 if (text == "requires")
                     return TokenKind::requires_kw;
+                if (text == "witness")
+                    return TokenKind::witness_kw;
                 if (text == "function")
                     return TokenKind::function_kw;
                 if (text == "synth")
@@ -448,9 +452,14 @@ namespace fine::syntax {
                 take(TokenKind::left_brace, "after the view carrier");
                 std::vector<Expr> requirements =
                     condition_block(TokenKind::requires_kw, "as the view proposition", false);
+                std::optional<Expr> witness;
+                if (accept(TokenKind::witness_kw)) {
+                    witness = expr();
+                    take(TokenKind::semicolon, "after the view witness");
+                }
                 Token close = take(TokenKind::right_brace, "to close the view declaration");
                 return {joined(first.span, close.span), std::string(name.text), std::move(parameters),
-                        std::move(carrier), std::move(requirements)};
+                        std::move(carrier), std::move(requirements), std::move(witness)};
             }
 
             ProofFamilyDecl proof_family_decl(Token first) {

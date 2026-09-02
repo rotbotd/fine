@@ -135,6 +135,15 @@ family's other constructors are registered with fixedpoint either. Full locally
 nameless opening/support and its
 freshness/equivariance proof remain the next test.
 
+For recursive finite support, a view may include a declared carrier witness.
+`proof-family-cofinite-support-induction.fine` uses Peano `Name`s and a
+`Support` cutoff: the excluded names form a finite initial segment and
+`fresh_after(support)` is its successor. Fine proves the view requirement at
+that witness for every support before checking the branch, while the scoped
+recursive premise continues to use a separate arbitrary name. The invalid
+witness control is rejected. This establishes actual cofinite availability,
+not yet the semantics of opening a locally nameless term.
+
 The first interruptible synthesis fixture fixes an exhaustive datatype match
 while leaving one whole arm as `?payload`. Rainfall gives that source node a
 snapshot-scoped typed grammar, records the independently verified lifted arm,

@@ -117,10 +117,14 @@ An arbitrary constrained field has the source form
 the Horn body. During induction, `x` is a distinct free same-manager carrier
 term scoped to that field, the instantiated view proposition is an assumption,
 and every scoped recursive atom yields its own exact induction hypothesis. Fine
-also separately verifies `forall constructor_parameters. exists x.
-View(arguments, x)`; otherwise the branch would close vacuously. This is a
-compiler-owned induction rule, not a fixedpoint interpretation of the arbitrary
-field.
+also separately verifies that the view is inhabited for every constructor
+parameter assignment; otherwise the branch would close vacuously. Without a
+declared view witness this is the direct `forall parameters. exists x.
+View(arguments, x)` obligation. With one, Fine checks `forall parameters.
+View(arguments, witness(arguments))`, which constructively entails availability.
+The arbitrary branch still uses its independent free `x`, never the witness.
+This is a compiler-owned induction rule, not a fixedpoint interpretation of the
+arbitrary field.
 
 The proof witness erases after branch construction rather than becoming a
 runtime GADT. Rainfall retains the constructor result, result-specialized query,
@@ -157,6 +161,7 @@ view FreshFor(left: Tm, right: Tm) over Name {
   requires {
     fresh(value, support(left, right));
   }
+  witness fresh_after(support(left, right));
 }
 ```
 
@@ -171,6 +176,13 @@ obligation. The first implemented use site is the proof-only
 induction-branch resource only after Fine proves the view is inhabited for every
 constructor-parameter assignment. Ordinary function parameters with view types
 and caller-side entailment discharge remain unimplemented.
+
+A view may name one carrier-valued `witness` expression over its parameters.
+This does not select the value used by an arbitrary branch. It only replaces a
+difficult quantified availability search with a concrete, separately checked
+inhabitant. Rainfall retains the declared and instantiated witness, the
+requirement it must satisfy, and the later arbitrary binder as distinct terms.
+An invalid witness rejects the proof branch rather than weakening the view.
 
 Views are deliberately weaker than a general dependent type universe. They
 refine one existing native carrier with named erased propositions; they do not
