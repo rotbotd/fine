@@ -366,6 +366,16 @@ admitted value domain. `sat` is not collapsed to a diagnostic string: Fine
 completes every parameter under that returned model and emits a typed,
 parseable `counterexample name { ... }` declaration.
 
+`lemma` uses the same syntax and verification path as `check`, including
+constructor/direct-field induction. On an unsatisfiable counterexample query,
+Fine universally closes the original source theorem—not its generated induction
+step—and retains it under a stable `fine.lemma.<name>` qid. Only then may later
+ordinary solver and proof-induction branch queries assert it. Source order is
+semantic: lemmas must precede proof-family and executable declarations, and a
+refuted lemma terminates execution rather than leaving a missing assumption for
+later code. Rainfall records admission separately from each use. Fixedpoint
+relations never acquire these theorems as unowned background axioms.
+
 The round-trip law applies separately to each assignment. Ints, Bools, finite
 enums, binary tuples, and monomorphic algebraic datatypes lift to ordinary Fine
 syntax; parsing and elaborating the result in the same manager must recover the

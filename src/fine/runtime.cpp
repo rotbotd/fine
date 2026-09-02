@@ -93,7 +93,7 @@ namespace fine {
                         else if constexpr (std::is_same_v<T, syntax::SynthDecl>)
                             kind = "decl.synth";
                         else if constexpr (std::is_same_v<T, syntax::CheckDecl>)
-                            kind = "decl.check";
+                            kind = item.reusable ? "decl.lemma" : "decl.check";
                         else if constexpr (std::is_same_v<T, syntax::CounterexampleDecl>)
                             kind = "decl.counterexample";
                         rainfall_->source_node(item.node_id, item.span, kind);
@@ -990,6 +990,10 @@ namespace fine {
         }
 
         int Runtime::execute_check(syntax::CheckDecl const &declaration) {
+            if (declaration.reusable && !proof_families_.empty())
+                reject(declaration.span,
+                       "a reusable lemma must precede proof-family declarations; it is admitted only to later SMT "
+                       "queries, never retrofitted into a fixedpoint relation");
             if (!proof_families_.empty())
                 return execute_proof_family_check(declaration);
             if (declaration.proof_induction)
@@ -1028,10 +1032,11 @@ namespace fine {
                 }
                 return result;
             };
-            std::string run_scope = "check:" + declaration.name;
+            std::string run_scope = std::string(declaration.reusable ? "lemma:" : "check:") + declaration.name;
             std::string query = "query:0";
             if (rainfall_)
-                rainfall_->record("scope", "check.run.open", {run_scope}, "fine.check",
+                rainfall_->record("scope", declaration.reusable ? "lemma.run.open" : "check.run.open", {run_scope},
+                                  "fine.check",
                                   "Fine check elaboration, one public counterexample query, and optional "
                                   "source-witness round trip; induction checks additionally expose the public "
                                   "qi_queue binding and on-clause boundaries, not the rest of Z3 search",
@@ -1140,7 +1145,8 @@ namespace fine {
                 induction_hypothesis = all_hypotheses;
                 induction_step = all_branches;
                 if (rainfall_) {
-                    rainfall_->source_term(declaration.node_id, declaration.span, "decl.check", induction_step,
+                    rainfall_->source_term(declaration.node_id, declaration.span,
+                                           declaration.reusable ? "decl.lemma" : "decl.check", induction_step,
                                            "generated", {run_scope});
                     rainfall_->record(
                         "transform", "check.induction.translate", {run_scope}, "fine.elaborator",
@@ -1197,6 +1203,16 @@ namespace fine {
                 parameters.set("rewriter.enable_der", false);
                 solver.set(parameters);
             }
+            for (AdmittedLemma const &lemma : admitted_lemmas_) {
+                solver.add(lemma.theorem);
+                if (rainfall_)
+                    rainfall_->record(
+                        "constraint", "lemma.use", {run_scope, query}, "fine.check",
+                        "Previously verified source lemma admitted as a universally quantified SMT assumption",
+                        {RainfallRecorder::string_field("lemma", lemma.name),
+                         RainfallRecorder::string_field("theorem", rainfall_->term(lemma.theorem)),
+                         RainfallRecorder::string_field("consumer", declaration.name)});
+            }
             solver.add(counterexample_query);
             std::unique_ptr<RainfallQuantifierObserver> quantifier_observer;
             std::unique_ptr<RainfallClauseObserver> clause_observer;
@@ -1225,13 +1241,35 @@ namespace fine {
             if (result == z3::unknown)
                 reject(declaration.span, "counterexample query was unknown: " + solver.reason_unknown());
             if (result == z3::unsat) {
+                if (declaration.reusable) {
+                    std::vector<Z3_app> bound;
+                    bound.reserve(parameters.size());
+                    for (CheckParameter const &parameter : parameters)
+                        bound.push_back(reinterpret_cast<Z3_app>(static_cast<Z3_ast>(parameter.term)));
+                    std::string qid = "fine.lemma." + declaration.name;
+                    Z3_ast quantified = Z3_mk_quantifier_const_ex(
+                        context_, true, 0, context_.str_symbol(qid.c_str()), context_.str_symbol(""),
+                        static_cast<unsigned>(bound.size()), bound.data(), 0, nullptr, 0, nullptr, theorem);
+                    context_.check_error();
+                    z3::expr admitted(context_, quantified);
+                    admitted_lemmas_.push_back({declaration.name, admitted});
+                    if (rainfall_)
+                        rainfall_->record(
+                            "transition", "lemma.admit", {run_scope}, "fine.check",
+                            "Only an unsatisfiable counterexample query permits universal closure and later reuse",
+                            {RainfallRecorder::string_field("lemma", declaration.name),
+                             RainfallRecorder::string_field("theorem", rainfall_->term(admitted)),
+                             RainfallRecorder::string_field("qid", qid),
+                             RainfallRecorder::boolean_field("verified_before_admission", true)});
+                }
                 if (rainfall_) {
                     rainfall_->validate_terms();
-                    rainfall_->record("scope", "check.run.close", {run_scope}, "fine.check",
+                    rainfall_->record("scope", declaration.reusable ? "lemma.run.close" : "check.run.close",
+                                      {run_scope}, "fine.check",
                                       "Source check completed with no counterexample",
                                       {RainfallRecorder::string_field("status", "verified")});
                 }
-                output_ << "verified: " << declaration.name << '\n';
+                output_ << (declaration.reusable ? "verified-lemma: " : "verified: ") << declaration.name << '\n';
                 if (declaration.induction_parameter)
                     output_ << "induction: direct-subterm on " << induction_parameter << '\n';
                 output_ << "counterexample: none\n";
@@ -1297,17 +1335,18 @@ namespace fine {
                                    RainfallRecorder::string_field("status", "counterexample-witness"),
                                    RainfallRecorder::boolean_field("source_roundtrip_exact_identity", true)});
                 rainfall_->validate_terms();
-                rainfall_->record("scope", "check.run.close", {run_scope}, "fine.runtime",
+                rainfall_->record("scope", declaration.reusable ? "lemma.run.close" : "check.run.close",
+                                  {run_scope}, "fine.runtime",
                                   "Source check completed with a returned counterexample",
                                   {RainfallRecorder::string_field("status", "counterexample-witness")});
             }
 
-            output_ << "refuted: " << declaration.name << '\n';
+            output_ << (declaration.reusable ? "refuted-lemma: " : "refuted: ") << declaration.name << '\n';
             if (declaration.induction_parameter)
                 output_ << "induction: direct-subterm on " << induction_parameter << '\n';
             output_ << witness_source;
             output_ << "parse(print(lift(values))): exact ast identity\n";
-            return 0;
+            return declaration.reusable ? 1 : 0;
         }
 
         int Runtime::execute(syntax::Document const &document) {
@@ -1351,6 +1390,14 @@ namespace fine {
                     synth = item;
                 }
                 else if (auto const *item = std::get_if<syntax::CheckDecl>(&declaration)) {
+                    if (item->reusable) {
+                        if (proof || synth || check)
+                            reject(item->span, "a reusable lemma must precede the executable declaration");
+                        int result = execute_check(*item);
+                        if (result != 0)
+                            return result;
+                        continue;
+                    }
                     if (proof || synth || check)
                         reject(item->span, "this source slice admits one executable declaration");
                     check = item;

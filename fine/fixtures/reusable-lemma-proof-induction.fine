@@ -1,0 +1,66 @@
+enum Tm {
+  bound(index: Int),
+  free(name: Int),
+  app(fn: Tm, argument: Tm),
+  abs(body: Tm),
+}
+
+function open_at(term: Tm, depth: Int, fresh: Int): Tm {
+  match term {
+    bound(index) => if index == depth { free(fresh) } else { bound(index) },
+    free(name) => free(name),
+    app(fn, argument) => app(open_at(fn, depth, fresh), open_at(argument, depth, fresh)),
+    abs(body) => abs(open_at(body, depth + 1, fresh)),
+  }
+}
+
+function support_cutoff(term: Tm): Int {
+  match term {
+    bound(_) => 0,
+    free(name) => name,
+    app(fn, argument) => if support_cutoff(fn) >= support_cutoff(argument) {
+      support_cutoff(fn)
+    } else {
+      support_cutoff(argument)
+    },
+    abs(body) => support_cutoff(body),
+  }
+}
+
+
+function rename(term: Tm, source: Int, target: Int): Tm {
+  match term {
+    bound(index) => bound(index),
+    free(name) => if name == source { free(target) } else { free(name) },
+    app(fn, argument) => app(rename(fn, source, target), rename(argument, source, target)),
+    abs(body) => abs(rename(body, source, target)),
+  }
+}
+
+lemma opening_equivariant(term: Tm, depth: Int, fresh: Int, other: Int) {
+  inducts(term);
+  assumes {
+    fresh >= support_cutoff(term) + 1;
+    other >= support_cutoff(term) + 1;
+  }
+  ensures {
+    rename(open_at(term, depth, fresh), fresh, other) == open_at(term, depth, other);
+  }
+}
+
+proof family SafeOpening(term: Tm, depth: Int, fresh: Int, other: Int) {
+  constructor generated(term: Tm, depth: Int) {
+    takes {}
+    gives SafeOpening(term, depth, support_cutoff(term) + 1, support_cutoff(term) + 2);
+  }
+}
+
+check safe_opening(term: Tm, depth: Int, fresh: Int, other: Int) {
+  inducts(SafeOpening(term, depth, fresh, other));
+  assumes {
+    SafeOpening(term, depth, fresh, other);
+  }
+  ensures {
+    rename(open_at(term, depth, fresh), fresh, other) == open_at(term, depth, other);
+  }
+}

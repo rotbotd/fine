@@ -2055,3 +2055,60 @@ nix build --no-link --print-out-paths
 
 The complete declarative suite passed. The clean pre-commit realization was
 `/nix/store/vfgj3afy5j548hy2gh7ds9nk8nwkq3b1-fine-0.0.1`.
+
+## 2026-09-02 — verified reusable lemmas before the full STLC consumer
+
+The opening-equivariance theorem had become an executable check, but the later
+proof-family induction could not consume it. Re-running the same recursive
+opening equality inside a constructor branch without structural induction still
+exceeded a two-second control. This was the first justified consumer for a
+source lemma boundary: it is required by the locally nameless target, unlike the
+paused arithmetic synthesis demonstration.
+
+Fine now parses `lemma` with the same parameters, `inducts`, `assumes`, and
+`ensures` surface as `check`. Execution is source-ordered. A lemma runs its own
+ordinary counterexample query immediately and is reusable only when that query
+is `unsat`; a satisfiable lemma returns the usual typed, reparsed, exact-identity
+counterexample, exits with status 1, and never runs the later executable
+declaration. Successful admission universally closes the original theorem over
+its source parameters with qid `fine.lemma.<name>`. It deliberately closes the
+theorem, not Fine's generated constructor induction step. A lemma must occur
+before proof-family declarations, because this slice admits the result only to
+later ordinary SMT solvers, proof-induction branch solvers, and arbitrary-field
+availability solvers. It does not silently add arbitrary background axioms to a
+previously registered Spacer relation.
+
+`Runtime` retains each admitted theorem as a strong same-manager `z3::expr`.
+Rainfall gives the lemma declaration its own `decl.lemma` source kind, records
+`lemma.admit` only after verification, and records each `lemma.use` with the exact
+retained theorem and consumer/constructor (plus availability phase when
+applicable). Thus source verification, universal closure, and later use remain
+three distinct claims; query chronology alone is not treated as provenance.
+
+The executable fixture `fine/fixtures/reusable-lemma-proof-induction.fine`
+contains the actual locally nameless `Tm`, `open_at`, `support_cutoff`, and
+`rename`. It first proves `opening_equivariant` by the new
+constructor/direct-field structural induction. It then defines a native-index
+`SafeOpening` proof family whose `generated` constructor fixes two names above
+the term's computed support. The later derivation induction discharges its
+opening equality from the admitted lemma. The full run reports one verified
+lemma and one verified proof constructor. Its validated Rainfall trace contains
+exactly one admission and one branch use. Deleting the lemma makes the symbolic
+recursive opening branch exceed two seconds. A separate false integer lemma
+returns `x = 0`, exits nonzero, and proves the following check never ran.
+
+Commands during the slice:
+
+```
+cmake --build .build -j2
+.build/fine run /tmp/reusable.fine
+.build/fine rain /tmp/reusable.fine > /tmp/reusable.rain
+.build/fine run fine/fixtures/reusable-lemma-proof-induction.fine
+# control after deleting lemma:
+timeout 5 .build/fine run /tmp/no-lemma.fine  # status 124
+.build/fine run /tmp/false-lemma.fine         # status 1
+```
+
+The next semantic work is not “more lemma infrastructure.” It is the full STLC
+fixture whose beta and abstraction branches determine which substitution,
+opening, and typing lemmas are actually necessary.

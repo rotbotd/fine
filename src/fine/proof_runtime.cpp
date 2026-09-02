@@ -468,6 +468,18 @@ namespace fine::runtime_detail {
                     availability = z3::forall(constructor_parameters, availability);
                 }
                 z3::solver availability_solver(context_);
+                for (AdmittedLemma const &lemma : admitted_lemmas_) {
+                    availability_solver.add(lemma.theorem);
+                    if (rainfall_)
+                        rainfall_->record(
+                            "constraint", "lemma.use", {run_scope, branch_scope}, "fine.induction",
+                            "Previously verified source lemma admitted to the arbitrary-field availability query",
+                            {RainfallRecorder::string_field("lemma", lemma.name),
+                             RainfallRecorder::string_field("theorem", rainfall_->term(lemma.theorem)),
+                             RainfallRecorder::string_field("consumer", declaration.name),
+                             RainfallRecorder::string_field("constructor", constructor.name),
+                             RainfallRecorder::string_field("phase", "arbitrary-availability")});
+                }
                 availability_solver.add(!availability);
                 z3::check_result availability_result = availability_solver.check();
                 if (availability_result == z3::unknown)
@@ -546,6 +558,18 @@ namespace fine::runtime_detail {
             }
 
             z3::solver solver(context_);
+            for (AdmittedLemma const &lemma : admitted_lemmas_) {
+                solver.add(lemma.theorem);
+                if (rainfall_)
+                    rainfall_->record(
+                        "constraint", "lemma.use", {run_scope, branch_scope}, "fine.induction",
+                        "Previously verified source lemma admitted to this constructor branch as a universal SMT "
+                        "assumption",
+                        {RainfallRecorder::string_field("lemma", lemma.name),
+                         RainfallRecorder::string_field("theorem", rainfall_->term(lemma.theorem)),
+                         RainfallRecorder::string_field("consumer", declaration.name),
+                         RainfallRecorder::string_field("constructor", constructor.name)});
+            }
             solver.add(branch_query);
             z3::check_result result = solver.check();
             if (result == z3::unknown)

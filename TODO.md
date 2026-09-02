@@ -188,10 +188,17 @@ over only 64 distinct terms and more than 480,000 admitted/inferred clauses.
 Fine now generates one branch per datatype constructor and one exact IH per
 direct recursive field, generalized over the remaining check parameters. The
 promoted `induction-open-equivariance.fine` verifies with three field-owned IHs
-and 16 accepted instances instead of unbounded selector growth. The field does
-not yet import that theorem as source evidence: full locally nameless
-preservation still needs the typing/reduction families that consume it and an
-explicit connection from their abstraction constructor to this result.
+and 16 accepted instances instead of unbounded selector growth. The field can
+now import that theorem through a deliberately small reusable-lemma boundary.
+`reusable-lemma-proof-induction.fine` verifies the opening-equivariance source
+lemma by constructor/direct-field induction, universally closes it only after
+the counterexample query is unsatisfiable, and uses it to discharge a later
+proof-family constructor branch. Removing the lemma makes the unassisted
+recursive opening branch exceed the two-second control. Rainfall keeps one
+exact admission edge and one exact branch-use edge. Full locally nameless
+preservation still needs the actual typing/reduction families and the beta/opening
+lemmas they force; the generic mechanism is no substitute for that
+object-language work.
 
 ## Later language test: an elementary topos without ceremony
 

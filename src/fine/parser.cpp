@@ -24,6 +24,7 @@ namespace fine::syntax {
             witness_kw,
             function_kw,
             synth_kw,
+            lemma_kw,
             check_kw,
             counterexample_kw,
             match_kw,
@@ -84,6 +85,7 @@ namespace fine::syntax {
             case TokenKind::witness_kw: return "`witness`";
             case TokenKind::function_kw: return "`function`";
             case TokenKind::synth_kw: return "`synth`";
+            case TokenKind::lemma_kw: return "`lemma`";
             case TokenKind::check_kw: return "`check`";
             case TokenKind::counterexample_kw: return "`counterexample`";
             case TokenKind::match_kw: return "`match`";
@@ -250,6 +252,8 @@ namespace fine::syntax {
                     return TokenKind::function_kw;
                 if (text == "synth")
                     return TokenKind::synth_kw;
+                if (text == "lemma")
+                    return TokenKind::lemma_kw;
                 if (text == "check")
                     return TokenKind::check_kw;
                 if (text == "counterexample")
@@ -300,7 +304,8 @@ namespace fine::syntax {
                     case TokenKind::view_kw: result.declarations.emplace_back(view_decl()); break;
                     case TokenKind::function_kw: result.declarations.emplace_back(function_decl()); break;
                     case TokenKind::synth_kw: result.declarations.emplace_back(synth_decl()); break;
-                    case TokenKind::check_kw: result.declarations.emplace_back(check_decl()); break;
+                    case TokenKind::lemma_kw: result.declarations.emplace_back(check_decl(true)); break;
+                    case TokenKind::check_kw: result.declarations.emplace_back(check_decl(false)); break;
                     case TokenKind::counterexample_kw: result.declarations.emplace_back(counterexample_decl()); break;
                     default: fail("expected a Fine declaration");
                     }
@@ -655,9 +660,9 @@ namespace fine::syntax {
                 return result;
             }
 
-            CheckDecl check_decl() {
-                Token first = take(TokenKind::check_kw);
-                Token name = take(TokenKind::identifier, "after `check`");
+            CheckDecl check_decl(bool reusable) {
+                Token first = take(reusable ? TokenKind::lemma_kw : TokenKind::check_kw);
+                Token name = take(TokenKind::identifier, reusable ? "after `lemma`" : "after `check`");
                 std::vector<Parameter> inputs = parameters();
                 take(TokenKind::left_brace, "before the check specification");
                 std::optional<std::string> induction_parameter;
@@ -681,7 +686,7 @@ namespace fine::syntax {
                 std::vector<Expr> assumes = condition_block(TokenKind::assumes_kw, "as the first check clause", true);
                 std::vector<Expr> ensures = condition_block(TokenKind::ensures_kw, "after `assumes`", false);
                 Token close = take(TokenKind::right_brace, "to close the check declaration");
-                return {joined(first.span, close.span), std::string(name.text), std::move(inputs),
+                return {joined(first.span, close.span), reusable, std::string(name.text), std::move(inputs),
                         std::move(induction_parameter), std::move(induction_span), std::move(proof_induction),
                         std::move(assumes), std::move(ensures)};
             }

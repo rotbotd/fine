@@ -95,14 +95,28 @@ The first induction slice deliberately translates rather than modifies Z3. A
 structurally recursive `function` uses Latte's exhaustive `match` surface and is
 registered through `Z3_add_rec_def`; Fine rejects a self-call unless the matched
 argument is a direct recursive pattern field. `inducts(xs);` on a `check`
-replaces its theorem with the weak direct-subterm induction step and gives the
-ordinary quantified result to an otherwise untouched solver. The length fixture
+replaces its theorem by one compiler-owned branch per constructor and one exact
+induction hypothesis per direct recursive field. Each hypothesis is generalized
+over every non-induction check parameter before it is admitted to the branch.
+This avoids a guarded quantifier over arbitrary datatype terms: Rainfall caught
+that older encoding repeatedly matching recursive selector chains. The length fixture
 is not provable by merely removing `inducts`: that control query remains in
 Z3's recursive unfolding search past the install check's two-second boundary.
 Rainfall labels the induction scheme as compiler-generated, then separately
 records the E-matching-only query's admitted clauses and any accepted instances;
 query scope never substitutes for a causal link. The translation, papers, and
 remaining STLC boundary are in `research/induction-translation.md`.
+
+A verified result can cross a source declaration boundary without becoming an
+axiom by fiat. `lemma name(parameters) { ... }` has the same obligation and
+optional `inducts` clause as `check`. Fine first runs its counterexample query;
+only `unsat` permits universal closure under the qid `fine.lemma.name`. The
+closed theorem is then an assumption in later ordinary SMT checks,
+proof-constructor branches, and arbitrary-field availability queries in the
+same document. A refuted lemma returns its typed counterexample and stops the
+document before any later declaration runs. Rainfall retains separate
+`lemma.admit` and `lemma.use` events and the exact same-manager theorem; this
+does not inject arbitrary lemmas into Spacer's least-relation rules.
 
 Proof-family induction is a separate first-order path. Given an erased least
 relation such as `Step(before, after)`, a check writes

@@ -210,6 +210,10 @@ namespace fine::syntax {
 
     struct CheckDecl {
         SourceSpan span;
+        // A lemma is checked exactly like an ordinary check, but a successful
+        // result is universally closed and made available to later SMT
+        // queries in the same source document.
+        bool reusable = false;
         std::string name;
         std::vector<Parameter> parameters;
         std::optional<std::string> induction_parameter;

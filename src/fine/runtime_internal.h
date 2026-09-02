@@ -149,6 +149,11 @@ namespace fine::runtime_detail {
         std::vector<SurfaceEntry> entries;
     };
 
+    struct AdmittedLemma {
+        std::string name;
+        z3::expr theorem;
+    };
+
     [[noreturn]] void reject(syntax::SourceSpan span, std::string message);
 
     class Runtime {
@@ -174,6 +179,7 @@ namespace fine::runtime_detail {
         std::map<std::string, ViewInfo> views_;
         std::map<std::string, std::unique_ptr<ProofFamilyInfo>> proof_families_;
         std::map<std::string, Binding> bindings_;
+        std::vector<AdmittedLemma> admitted_lemmas_;
         std::map<std::string, TypePtr> compound_types_;
         std::set<std::string> value_names_;
         unsigned tuple_sequence_ = 0;
