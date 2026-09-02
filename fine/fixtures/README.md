@@ -118,6 +118,15 @@ those three resources distinct. `predicate-preservation-false.fine` asks for an
 odd marked result and fails at `root`; it also guards against reintroducing the
 unbounded recursive constructor-axiom matching loop.
 
+`predicate-arbitrary-preservation.fine` replaces `Marked.grow`'s ordinary
+premise with an arbitrary constrained field. Its singleton `At(value)` view
+makes the total field `forall token. token == value -> Marked(token)`, so the
+recursive premise visibly depends on the binder. Fine verifies view
+availability, retains that universal field inside both one-layer inversion and
+construction, and proves the same Step preservation theorem without Horn
+lowering `Marked`. The false fixture fails at `root`; the invalid-witness fixture
+is rejected before an unavailable field can make a branch vacuous.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.

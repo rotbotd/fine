@@ -2487,3 +2487,122 @@ contains an arbitrary cofinite field. The current inversion is intentionally
 limited to Horn-complete predicates, so it cannot yet eliminate precisely that
 mixed first-order/arbitrary typing evidence. Broadening formula syntax before
 that source-semantic rule is fixed would only obscure the boundary.
+
+## 2026-09-02 — one-layer inversion of a total constrained field
+
+The Horn-complete preservation slice left exactly the abstraction-shaped case
+out: a secondary predicate used as an assumption or goal could not contain an
+`arbitrary x: View(args) { recursive premises }` constructor field. Rejecting it
+was safe, but it also prevented typing inversion at the locally nameless
+boundary. Reusing the first-order one-layer formula without representing the
+field would have been an incomplete second predicate wearing the source name.
+
+The retained field already contained every required object: its free
+same-manager binder template, instantiated view requirement, optional declared
+availability witness, scoped recursive premise terms, and constructor
+parameters. Its one-layer constructor alternative now has the exact first-order
+shape
+
+```
+exists constructor_parameters.
+  requested_indices == constructor_result_indices
+  && ordinary_premises
+  && availability
+  && forall binder. requirement -> conjunction(scoped_recursive_premises)
+```
+
+`availability` is the view requirement instantiated at a declared witness when
+one exists, otherwise `exists binder. requirement`. Before the predicate is used
+for inversion or construction, Fine separately closes this formula over all
+constructor parameters and refutes its negation. Previously admitted source
+proofs are available to that check and get their own `proof.use` event. An
+unknown or satisfiable availability query rejects the use rather than making the
+constructor alternative false and quietly proving from an empty field. The
+availability formula remains inside the alternative as well: it is part of the
+exact source field evidence, not merely a compiler side condition.
+
+The universal half is not a Horn body and is never reduced to one chosen name.
+Its binder scopes both the requirement and every recursive premise. Constructor
+parameters are quantified outside it, so a result-index match selects one top
+constructor and then retains its total erased proof function. This is used in
+both directions: an auxiliary atom keeps its original relation application plus
+the one-layer inversion; a sole positive predicate goal must establish the same
+one-layer formula. The secondary predicate remains `horn_complete = false` and
+`least_relation = false`; no fixedpoint rule is registered for any of its
+constructors.
+
+The first scratch discriminator used a view whose requirement was merely true
+and a recursive premise independent of its binder. It verified, but it did not
+distinguish a total field from a decorative quantifier, so it was discarded.
+The promoted fixture `predicate-arbitrary-preservation.fine` instead uses the
+singleton constrained view
+
+```
+view At(expected: Nat) over Nat {
+  requires { value == expected; }
+  witness expected;
+}
+```
+
+and gives `Marked.grow(value)` the field
+
+```
+arbitrary token: At(value) { Marked(token); }
+```
+
+with result `Marked(succ(succ(value)))`. Consequently the retained field is
+literally `forall token. token == value -> Marked(token)`: the recursive premise
+mentions the bound name and cannot be replaced by a single existential witness.
+The existing even-step relation preserves `Marked`. Its root and recursive
+branches both need the total field on the assumption side and again on the goal
+side. The theorem verifies; the odd-result control refutes at `root`.
+
+The invalid-witness control changes the declared witness to `succ(expected)`.
+Fine rejects it before constructing either branch:
+
+```
+constrained field `Marked.grow.token` is unavailable; one-layer predicate use
+would be vacuous
+```
+
+Rainfall adds one
+`predicate-induction.one-layer.availability` transition for the unique Marked
+field. For each Step branch it then records a
+`predicate-induction.goal.arbitrary-field` and a corresponding assumption event.
+Every field event owns the secondary predicate and constructor, consumer Step
+constructor, binder and view, exact requirement, exact availability, exact
+premise conjunction, total universal field, witness mode, and recursive-premise
+count. The enclosing construction/inversion terms retain the outer existential
+constructor parameter around that universal. The install check requires the
+four `(root/under) x (goal/assumption)` uses, a non-Horn Marked relation, the
+nested `exists`/`forall` renderings, the one successful availability result, two
+unsatisfiable true branches, the false root result, and the invalid-witness
+rejection.
+
+Commands and results:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/predicate-arbitrary-preservation.fine
+# verified-predicate-induction: marked_preservation
+.build/fine run fine/fixtures/predicate-arbitrary-preservation-false.fine
+# refuted-predicate-induction: odd_mark_preservation; failed-constructor: root
+.build/fine run \
+  fine/fixtures/predicate-arbitrary-preservation-invalid-witness.fine
+# error: constrained field `Marked.grow.token` is unavailable
+.build/fine rain fine/fixtures/predicate-arbitrary-preservation.fine \
+  > /tmp/predicate-arbitrary-preservation.rain
+python3 fine/rainfall_replay.py schemas/rainfall-v2.schema.json \
+  schemas/rainfall-v2-semantics.schema.json \
+  /tmp/predicate-arbitrary-preservation.rain
+nix flake check
+nix build --no-link --print-out-paths
+# /nix/store/y3x5bnybs49jgpp68bvw5rk2gsrc7swc-fine-0.0.1
+```
+
+This closes the generic non-Horn secondary-predicate field, not locally nameless
+preservation. In the actual abstraction branch, Step owns one arbitrary fresh
+name while typing inversion/construction owns another total field binder. The
+next executable theorem must show how opening equivariance lets the branch use
+the Step IH at the name demanded by the typing field without identifying the two
+binders or replacing either by the availability witness.

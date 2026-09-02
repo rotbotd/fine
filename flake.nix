@@ -206,6 +206,80 @@
                      if event["operation"] == "predicate-induction.branch.result"]
           assert all(event["data"]["status"] == "unsat" for event in results)
           PY
+          arbitrary_preservation="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-arbitrary-preservation.fine")"
+          echo "$arbitrary_preservation"
+          grep -F "verified-predicate-induction: marked_preservation" <<<"$arbitrary_preservation"
+          arbitrary_preservation_false="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-arbitrary-preservation-false.fine")"
+          echo "$arbitrary_preservation_false"
+          grep -F "refuted-predicate-induction: odd_mark_preservation" \
+            <<<"$arbitrary_preservation_false"
+          grep -F "failed-constructor: root" <<<"$arbitrary_preservation_false"
+          arbitrary_invalid="$(mktemp)"
+          if $out/bin/fine run \
+            "$src/fine/fixtures/predicate-arbitrary-preservation-invalid-witness.fine" \
+            >"$arbitrary_invalid" 2>&1; then
+            echo "invalid one-layer constrained-field witness unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'constrained field `Marked.grow.token` is unavailable' "$arbitrary_invalid"
+          arbitrary_preservation_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/predicate-arbitrary-preservation.fine" \
+            > "$arbitrary_preservation_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/predicate-arbitrary-preservation.fine" \
+            "$arbitrary_preservation_rain"
+          ${pkgs.python3}/bin/python - "$arbitrary_preservation_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          terms = {event["data"]["id"]: event["data"]["text"]
+                   for event in events if event["operation"] == "term.declare"}
+          relations = {event["data"]["predicate"]: event
+                       for event in events if event["operation"] == "fine.predicate.relation"}
+          assert relations["Step"]["data"]["horn_complete"] is True
+          assert relations["Marked"]["data"]["horn_complete"] is False
+          assert relations["Marked"]["data"]["least_relation"] is False
+          availability = [event for event in events
+                          if event["operation"] == "predicate-induction.one-layer.availability"]
+          assert len(availability) == 1
+          assert availability[0]["data"]["predicate"] == "Marked"
+          assert availability[0]["data"]["constructor"] == "grow"
+          assert availability[0]["data"]["availability_mode"] == "declared-witness"
+          assert availability[0]["data"]["domain_outcome"] == "available"
+          fields = [event for event in events
+                    if event["operation"] in {
+                        "predicate-induction.goal.arbitrary-field",
+                        "predicate-induction.assumption.arbitrary-field"}]
+          assert [(event["data"]["consumer_constructor"], event["data"]["use"])
+                  for event in fields] == [
+                      ("root", "goal"), ("root", "assumption"),
+                      ("under", "goal"), ("under", "assumption")]
+          assert all(event["data"]["predicate"] == "Marked" for event in fields)
+          assert all(event["data"]["predicate_constructor"] == "grow" for event in fields)
+          assert all(event["data"]["binder"] == "token" for event in fields)
+          assert all(event["data"]["view"] == "At" for event in fields)
+          assert all(event["data"]["recursive_premises"] == 1 for event in fields)
+          assert len({fields[0]["data"][key]
+                      for key in ("requirement", "availability", "premises", "total_field")}) == 4
+          total = terms[fields[0]["data"]["total_field"]]
+          assert "forall[" in total
+          assert "_d_implies" in total
+          assert "_d_Marked(_v_0" in total
+          under_goal = next(event for event in events
+                            if event["operation"] == "predicate-induction.goal.construct"
+                            and event["data"]["constructor"] == "under")
+          under_assumption = next(event for event in events
+                                  if event["operation"] == "predicate-induction.assumption.invert"
+                                  and event["data"]["constructor"] == "under")
+          assert "exists[" in terms[under_goal["data"]["construction"]]
+          assert "forall[" in terms[under_goal["data"]["construction"]]
+          assert "exists[" in terms[under_assumption["data"]["inversion"]]
+          assert "forall[" in terms[under_assumption["data"]["inversion"]]
+          results = [event for event in events
+                     if event["operation"] == "predicate-induction.branch.result"]
+          assert all(event["data"]["status"] == "unsat" for event in results)
+          PY
           predicate_induction_rain="$(mktemp)"
           $out/bin/fine rain "$src/fine/fixtures/predicate-induction-two-premises.fine" \
             > "$predicate_induction_rain"

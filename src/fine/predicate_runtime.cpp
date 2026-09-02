@@ -396,10 +396,6 @@ namespace fine::runtime_detail {
             if (!item && contains_predicate(condition))
                 reject(condition.span,
                        "a predicate-induction context may use predicate evidence only as a direct assumed atom");
-            if (item && !item->horn_complete)
-                reject(condition.span,
-                       "predicate-induction inversion needs a Horn-complete constructor predicate; `" + item->name +
-                           "` has an arbitrary field");
             auxiliary_predicates.push_back(item);
         }
 
@@ -410,10 +406,6 @@ namespace fine::runtime_detail {
             if (declaration.ensures.size() != 1 || !(goal_predicate = direct_predicate(condition)))
                 reject(condition.span,
                        "predicate induction admits a predicate guarantee only as its one direct ensured atom");
-            if (!goal_predicate->horn_complete)
-                reject(condition.span,
-                       "predicate-induction construction needs a Horn-complete constructor predicate; `" +
-                           goal_predicate->name + "` has an arbitrary field");
         }
 
         std::string run_scope = "predicate-induction:" + declaration.name;
@@ -503,7 +495,102 @@ namespace fine::runtime_detail {
             return z3::expr(context_, quantified);
         };
 
-        auto inversion = [&](PredicateInfo const &item, z3::expr const &atom) {
+        auto field_availability = [&](PredicateConstructorInfo const &constructor,
+                                      PredicateConstructorInfo::ArbitraryField const &field,
+                                      bool close_constructor_parameters) {
+            z3::expr availability = field.requirement;
+            if (field.availability_witness) {
+                z3::expr_vector source(context_);
+                z3::expr_vector destination(context_);
+                source.push_back(field.binder_term);
+                destination.push_back(*field.availability_witness);
+                availability = availability.substitute(source, destination);
+            }
+            else {
+                z3::expr_vector binder(context_);
+                binder.push_back(field.binder_term);
+                availability = z3::exists(binder, availability);
+            }
+            if (close_constructor_parameters && !constructor.parameters.empty()) {
+                z3::expr_vector parameters(context_);
+                for (z3::expr const &parameter : constructor.parameters)
+                    parameters.push_back(parameter);
+                availability = z3::forall(parameters, availability);
+            }
+            return availability;
+        };
+
+        std::vector<PredicateInfo const *> one_layer_predicates;
+        for (PredicateInfo const *item : auxiliary_predicates) {
+            if (item && std::find(one_layer_predicates.begin(), one_layer_predicates.end(), item) ==
+                            one_layer_predicates.end())
+                one_layer_predicates.push_back(item);
+        }
+        if (goal_predicate && std::find(one_layer_predicates.begin(), one_layer_predicates.end(), goal_predicate) ==
+                                  one_layer_predicates.end())
+            one_layer_predicates.push_back(goal_predicate);
+        for (PredicateInfo const *item : one_layer_predicates) {
+            for (PredicateConstructorInfo const &constructor : item->constructors) {
+                for (std::size_t field_ordinal = 0; field_ordinal < constructor.arbitrary_fields.size();
+                     ++field_ordinal) {
+                    PredicateConstructorInfo::ArbitraryField const &field =
+                        constructor.arbitrary_fields[field_ordinal];
+                    z3::expr obligation = field_availability(constructor, field, true);
+                    z3::solver solver(context_);
+                    for (AdmittedProof const &proof : admitted_proofs_) {
+                        solver.add(proof.theorem);
+                        if (rainfall_)
+                            rainfall_->record(
+                                "constraint", "proof.use", {run_scope}, "fine.induction",
+                                "Previously verified source proof admitted to a secondary predicate field's "
+                                "availability query",
+                                {RainfallRecorder::string_field("proof", proof.name),
+                                 RainfallRecorder::string_field("theorem", rainfall_->term(proof.theorem)),
+                                 RainfallRecorder::string_field("consumer", declaration.name),
+                                 RainfallRecorder::string_field("predicate", item->name),
+                                 RainfallRecorder::string_field("constructor", constructor.name),
+                                 RainfallRecorder::string_field("phase", "one-layer-availability")});
+                    }
+                    solver.add(!obligation);
+                    z3::check_result result = solver.check();
+                    if (result == z3::unknown)
+                        reject(target.span, "constrained-field availability for `" + item->name + "." +
+                                                constructor.name + "` was unknown: " + solver.reason_unknown());
+                    bool available = result == z3::unsat;
+                    if (rainfall_)
+                        rainfall_->record(
+                            "transition", "predicate-induction.one-layer.availability", {run_scope},
+                            "z3.public-api",
+                            "Availability of one total constrained field before its predicate is used for "
+                            "one-layer inversion or construction",
+                            {RainfallRecorder::string_field("predicate", item->name),
+                             RainfallRecorder::string_field("constructor", constructor.name),
+                             RainfallRecorder::number_field("field_ordinal", field_ordinal),
+                             RainfallRecorder::string_field("binder", field.binder),
+                             RainfallRecorder::string_field("view", field.view_name),
+                             RainfallRecorder::string_field(
+                                 "availability_mode",
+                                 field.availability_witness ? "declared-witness" : "solver-exists"),
+                             RainfallRecorder::string_field(
+                                 "availability_witness",
+                                 field.availability_witness ? rainfall_->term(*field.availability_witness) : ""),
+                             RainfallRecorder::string_field("obligation", rainfall_->term(obligation)),
+                             RainfallRecorder::string_field("status", available ? "unsat" : "sat"),
+                             RainfallRecorder::string_field(
+                                 "domain_outcome",
+                                 available ? "available"
+                                           : (field.availability_witness ? "invalid-witness" : "empty"))});
+                    if (!available)
+                        reject(target.span, "constrained field `" + item->name + "." + constructor.name + "." +
+                                                field.binder +
+                                                "` is unavailable; one-layer predicate use would be vacuous");
+                }
+            }
+        }
+
+        auto one_layer = [&](PredicateInfo const &item, z3::expr const &atom,
+                             std::string const &consumer_constructor, std::string const &use,
+                             std::size_t assumption_ordinal) {
             if (!atom.is_app() || atom.num_args() != item.index_types.size())
                 throw std::runtime_error("internal predicate inversion arity mismatch");
             z3::expr alternatives = context_.bool_val(false);
@@ -513,6 +600,48 @@ namespace fine::runtime_detail {
                     branch = branch && atom.arg(i) == constructor.result_indices[i];
                 for (z3::expr const &premise : constructor.premise_terms)
                     branch = branch && premise;
+                for (std::size_t field_ordinal = 0; field_ordinal < constructor.arbitrary_fields.size();
+                     ++field_ordinal) {
+                    PredicateConstructorInfo::ArbitraryField const &field =
+                        constructor.arbitrary_fields[field_ordinal];
+                    z3::expr field_premises = context_.bool_val(true);
+                    for (z3::expr const &premise : field.premise_terms)
+                        field_premises = field_premises && premise;
+                    z3::expr_vector binder(context_);
+                    binder.push_back(field.binder_term);
+                    z3::expr availability = field_availability(constructor, field, false);
+                    z3::expr total_field = z3::forall(binder, z3::implies(field.requirement, field_premises));
+                    branch = branch && availability && total_field;
+                    if (rainfall_) {
+                        std::vector<RainfallField> data{
+                            RainfallRecorder::string_field("consumer_constructor", consumer_constructor),
+                            RainfallRecorder::string_field("use", use),
+                            RainfallRecorder::string_field("predicate", item.name),
+                            RainfallRecorder::string_field("predicate_constructor", constructor.name),
+                            RainfallRecorder::number_field("field_ordinal", field_ordinal),
+                            RainfallRecorder::string_field("binder", field.binder),
+                            RainfallRecorder::string_field("binder_term", rainfall_->term(field.binder_term)),
+                            RainfallRecorder::string_field("view", field.view_name),
+                            RainfallRecorder::string_field("requirement", rainfall_->term(field.requirement)),
+                            RainfallRecorder::string_field(
+                                "availability_mode", field.availability_witness ? "declared-witness" : "solver-exists"),
+                            RainfallRecorder::string_field(
+                                "availability_witness",
+                                field.availability_witness ? rainfall_->term(*field.availability_witness) : ""),
+                            RainfallRecorder::string_field("availability", rainfall_->term(availability)),
+                            RainfallRecorder::string_field("premises", rainfall_->term(field_premises)),
+                            RainfallRecorder::string_field("total_field", rainfall_->term(total_field)),
+                            RainfallRecorder::number_field("recursive_premises", field.premise_terms.size())};
+                        if (use == "assumption")
+                            data.push_back(RainfallRecorder::number_field("assumption_ordinal", assumption_ordinal));
+                        rainfall_->record(
+                            "derive", "predicate-induction." + use + ".arbitrary-field",
+                            {run_scope, "branch:" + consumer_constructor}, "fine.induction",
+                            "Compiler-owned total constrained field in one predicate-constructor alternative; "
+                            "availability and the universally scoped recursive premises remain separate exact terms",
+                            data);
+                    }
+                }
                 if (!constructor.parameters.empty()) {
                     z3::expr_vector parameters(context_);
                     for (z3::expr const &parameter : constructor.parameters)
@@ -535,8 +664,10 @@ namespace fine::runtime_detail {
             z3::expr branch_goal = instantiate(guarantees, constructor.result_indices);
             z3::expr branch_goal_atom =
                 goal_predicate ? instantiate(*predicate_goal_atom, constructor.result_indices) : branch_goal;
-            z3::expr branch_goal_resource =
-                goal_predicate ? inversion(*goal_predicate, branch_goal_atom) : branch_goal;
+            z3::expr branch_goal_resource = goal_predicate
+                                                ? one_layer(*goal_predicate, branch_goal_atom, constructor.name,
+                                                            "goal", 0)
+                                                : branch_goal;
             if (goal_predicate && rainfall_)
                 rainfall_->record(
                     "derive", "predicate-induction.goal.construct", {run_scope, branch_scope}, "fine.induction",
@@ -554,7 +685,8 @@ namespace fine::runtime_detail {
                 z3::expr specialized = instantiate(auxiliary_terms[i], constructor.result_indices);
                 z3::expr resource = specialized;
                 if (PredicateInfo const *assumption_predicate = auxiliary_predicates[i]) {
-                    z3::expr unfolded = inversion(*assumption_predicate, specialized);
+                    z3::expr unfolded =
+                        one_layer(*assumption_predicate, specialized, constructor.name, "assumption", i);
                     resource = specialized && unfolded;
                     ++inverted_assumptions;
                     if (rainfall_)

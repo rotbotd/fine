@@ -120,7 +120,7 @@ were outside this first contextual slice.
 
 The next preservation slice admits a predicate resource only in two syntactic
 positions: a direct auxiliary assumed atom, or the sole direct ensured atom.
-For a Horn-complete constructor-generated predicate `P(indices)`, Fine expands
+For a constructor-generated predicate `P(indices)`, Fine expands
 one source-semantic layer as a disjunction over retained constructors. Each
 alternative existentially binds that constructor's parameters, equates its
 result indices with `indices`, and includes every retained premise. On the left,
@@ -137,9 +137,24 @@ control triggered an unbounded E-matching chain through
 recursive axioms in an induction branch. Rainfall records assumption inversion,
 goal construction, original atoms, resources, and constructor alternative
 counts as distinct compiler-owned evidence. This is not a source derivation
-witness or general predicate elimination: arbitrary-field predicates, nested or
-negative atoms, multiple predicate goals, and a user-facing inversion form are
-still rejected.
+witness or general predicate elimination.
+
+If a secondary predicate constructor has an arbitrary constrained field, the
+same alternative retains the erased function-field meaning rather than forcing
+it into Horn. Fine separately validates
+`forall constructor_parameters. exists binder. requirement`; a declared view
+witness replaces the inner search with its instantiated requirement. The
+alternative then includes both that availability formula and
+`forall binder. requirement -> conjunction(recursive premises)`. The outer
+constructor parameters remain existential, so the generated shape is exactly
+an available total constrained field owned by one selected top constructor.
+Rainfall records the availability result and the binder, requirement, premise
+conjunction, universal field, and enclosing inversion/construction as different
+same-manager terms. The singleton-view fixture forces the recursive premise to
+mention the bound value and its invalid-witness control is rejected before the
+field can close a branch vacuously. Nested or negative atoms, multiple predicate
+goals, multiple arbitrary fields, and a user-facing inversion form remain
+rejected.
 
 An arbitrary constrained field has the source form
 `arbitrary x: View(arguments) { recursive_atoms; }` inside a constructor's

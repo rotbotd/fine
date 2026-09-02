@@ -59,8 +59,8 @@ Fine currently has:
   unsatisfiable;
 - recursive functions and compiler-owned constructor/direct-field induction;
 - constructor-generated indexed predicates, least-relation membership and
-  invariant checks, direct predicate-preservation induction, and erased
-  constrained views;
+  invariant checks, direct predicate-preservation induction including total
+  constrained fields, and erased constrained views;
 - an editor-neutral Rainfall transaction protocol and a small loopback browser
   client which discards late solver runs after edits;
 - an interruptible QF-LIA synthesis backend retained as a regression harness,

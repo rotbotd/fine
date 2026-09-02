@@ -132,16 +132,28 @@ requires the IH at `ceiling - 1`. Each branch remains a separate ordinary SMT
 refutation query. A direct auxiliary predicate atom is now kept together with
 its compiler-owned one-constructor inversion, and a sole direct predicate goal
 is checked through the corresponding one-constructor construction formula.
-Both predicates must be Horn-complete. The preservation fixture needs the
+The Horn-complete preservation fixture needs the
 inverted `Marked` premise, the `Step` IH, and the `Marked` construction in that
 order. Fine deliberately does not install recursive universal introduction
 axioms: the first implementation made the false control generate an unbounded
 `Marked(succ(succ(...)))` matching chain. Rainfall keeps the original atom,
 inversion or construction resource, specialized context, and every
 premise/hypothesis pair separately before the derivation witness erases; it does
-not reconstruct branches from Spacer's projected learned lemmas. Nested or
-negative predicate formulas, multiple predicate goals, and inversion of
-predicates with arbitrary fields remain outside this slice.
+not reconstruct branches from Spacer's projected learned lemmas.
+
+A secondary predicate may also contain the explicit arbitrary constrained field
+described below. Its constructor alternative contains two separate formulas:
+availability of a view inhabitant, using the declared witness when present, and
+`forall binder. requirement -> recursive premises`. Constructor parameters
+remain existentially scoped outside that total field. Fine verifies availability
+before using the expansion and never registers the predicate with fixedpoint.
+`predicate-arbitrary-preservation.fine` uses a singleton `At(value)` view, so
+the retained recursive `Marked(token)` premise genuinely depends on the bound
+token rather than merely sitting beside a decorative quantifier. Rainfall keeps
+the binder, requirement, availability, premise conjunction, total field, and
+enclosing one-layer formula separately. Nested or negative predicate formulas,
+multiple predicate goals, multiple arbitrary fields in one constructor, and
+typed derivation witnesses remain outside this slice.
 
 The first non-Horn derivation field is explicit rather than smuggled through a body
 variable:

@@ -112,6 +112,9 @@ carriers.
       construction formulas. Preserve both exact resources in Rainfall and keep
       the recursive universal introduction-axiom matching loop as a rejected
       experiment.
+- [x] Preserve an arbitrary constrained field inside those one-layer formulas as
+      separately checked availability plus `forall binder. requirement ->
+      recursive premises`; never turn the total field into one Horn witness.
 - [x] Preserve the selected rule, opened bodies, arbitrary fresh name,
       recursive premise, and induction hypothesis as exact Rainfall evidence
       before erasing derivation witnesses from value/model construction.
@@ -194,8 +197,22 @@ implementation using universal constructor introduction axioms verified the
 theorem but made the false control grow a recursive matching chain indefinitely;
 the bounded formula replaces it rather than increasing fuel. This is the
 preservation mechanism, not the full STLC theorem: typing/reduction predicates,
-environment lookup, beta substitution/opening lemmas, and inversion of a typing
-predicate containing an arbitrary cofinite field remain unresolved.
+environment lookup, and beta substitution/opening lemmas remain unresolved.
+
+The non-Horn secondary-predicate sub-slice is closed by
+`predicate-arbitrary-preservation.fine`. Its `Marked.grow` constructor owns an
+erased function field from the singleton view `At(value)` to
+`Marked(token)`. One-layer inversion and construction retain the constructor's
+existential `value` outside a separately available, universally bound `token`;
+the premise therefore depends on the binder and cannot be replaced by a single
+witness. The Step preservation theorem verifies, the odd-result control fails
+at `root`, and the successor-witness control is rejected as unavailable before
+vacuity can enter a branch. Rainfall retains one availability result and four
+field-use events across the two Step branches. This supplies the general shape
+needed to invert a typing predicate with a cofinite abstraction constructor. It
+does not align that typing field's bound name with the independently arbitrary
+name in the actual Step abstraction branch; the locally nameless preservation
+fixture and the opening/equivariance use that forces the alignment remain next.
 
 The arbitrary-field mechanism now has a real locally nameless consumer at the
 evidence boundary. `predicate-cofinite-support-induction.fine` represents
