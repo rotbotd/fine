@@ -3,7 +3,7 @@ enum Name {
   b,
 }
 
-proof family Cofinite(body: Name) {
+predicate Cofinite(body: Name) {
   constructor under(name: Name, body: Name) {
     takes {
       Cofinite(name);

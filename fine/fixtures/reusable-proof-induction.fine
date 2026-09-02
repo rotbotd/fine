@@ -48,7 +48,7 @@ proof opening_equivariant(term: Tm, depth: Int, fresh: Int, other: Int) {
   }
 }
 
-proof family SafeOpening(term: Tm, depth: Int, fresh: Int, other: Int) {
+predicate SafeOpening(term: Tm, depth: Int, fresh: Int, other: Int) {
   constructor generated(term: Tm, depth: Int) {
     takes {}
     gives SafeOpening(term, depth, support_cutoff(term) + 1, support_cutoff(term) + 2);

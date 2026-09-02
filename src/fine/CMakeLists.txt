@@ -11,7 +11,7 @@ add_executable(fine-bin
   main.cpp
   parser.cpp
   quantifier_observer.cpp
-  proof_runtime.cpp
+  predicate_runtime.cpp
   rainfall.cpp
   rainfall_lift.cpp
   runtime.cpp

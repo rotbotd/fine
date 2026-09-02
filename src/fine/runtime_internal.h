@@ -76,7 +76,7 @@ namespace fine::runtime_detail {
         explicit FunctionInfo(z3::context &context) : declaration(context) {}
     };
 
-    struct ProofConstructorInfo {
+    struct PredicateConstructorInfo {
         struct ArbitraryField {
             std::string binder;
             std::string view_name;
@@ -97,14 +97,14 @@ namespace fine::runtime_detail {
         std::size_t premise_count = 0;
     };
 
-    struct ProofFamilyInfo {
+    struct PredicateInfo {
         std::string name;
         std::vector<TypePtr> index_types;
         z3::func_decl relation;
-        std::vector<ProofConstructorInfo> constructors;
+        std::vector<PredicateConstructorInfo> constructors;
         bool horn_complete = true;
 
-        explicit ProofFamilyInfo(z3::context &context) : relation(context) {}
+        explicit PredicateInfo(z3::context &context) : relation(context) {}
     };
 
     struct ViewInfo {
@@ -177,7 +177,7 @@ namespace fine::runtime_detail {
         std::map<std::string, std::pair<DatatypeInfo *, unsigned>> constructors_;
         std::map<std::string, std::unique_ptr<FunctionInfo>> functions_;
         std::map<std::string, ViewInfo> views_;
-        std::map<std::string, std::unique_ptr<ProofFamilyInfo>> proof_families_;
+        std::map<std::string, std::unique_ptr<PredicateInfo>> predicates_;
         std::map<std::string, Binding> bindings_;
         std::vector<AdmittedProof> admitted_proofs_;
         std::map<std::string, TypePtr> compound_types_;
@@ -230,7 +230,7 @@ namespace fine::runtime_detail {
 
         TypedExpression elaborate_expression(syntax::Expr const &expression, ExpressionEnvironment const &environment);
 
-        void declare_proof_family(syntax::ProofFamilyDecl const &declaration);
+        void declare_predicate(syntax::PredicateDecl const &declaration);
 
         syntax::Expr lift_expression(z3::expr const &expression,
                                      std::vector<std::pair<std::string, z3::expr>> const &parameters) const;
@@ -245,11 +245,11 @@ namespace fine::runtime_detail {
 
         int execute_synthesis(syntax::SynthDecl const &declaration);
 
-        int execute_proof_family_check(syntax::CheckDecl const &declaration);
+        int execute_predicate_check(syntax::CheckDecl const &declaration);
 
-        int execute_proof_family_induction(syntax::CheckDecl const &declaration);
+        int execute_predicate_induction(syntax::CheckDecl const &declaration);
 
-        int execute_proof_family_invariant(syntax::CheckDecl const &declaration);
+        int execute_predicate_invariant(syntax::CheckDecl const &declaration);
 
         int execute_check(syntax::CheckDecl const &declaration);
 

@@ -4,7 +4,7 @@ enum Tm {
   wrap(body: Tm),
 }
 
-proof family Step(before: Tm, after: Tm) {
+predicate Step(before: Tm, after: Tm) {
   constructor root() {
     takes {}
     gives Step(atom, mark);

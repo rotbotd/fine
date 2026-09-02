@@ -39,7 +39,7 @@ view FreshFor(before: Tm, after: Tm) over Int {
   };
 }
 
-proof family Step(before: Tm, after: Tm) {
+predicate Step(before: Tm, after: Tm) {
   constructor root() {
     takes {}
     gives Step(bound(0), free(0));

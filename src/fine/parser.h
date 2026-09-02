@@ -151,7 +151,7 @@ namespace fine::syntax {
         std::size_t node_id = 0;
     };
 
-    struct ProofConstructor {
+    struct PredicateConstructor {
         SourceSpan span;
         std::string name;
         std::vector<Parameter> parameters;
@@ -160,14 +160,14 @@ namespace fine::syntax {
         Expr result;
     };
 
-    // A proof family is an indexed proposition over ordinary Fine values. Its
-    // constructors become rules of a least Z3 relation; there is deliberately
-    // no runtime datatype of proof witnesses in this first erased slice.
-    struct ProofFamilyDecl {
+    // A predicate is an indexed proposition over ordinary Fine values. Its
+    // constructors generate the least Z3 relation satisfying their rules;
+    // there is deliberately no runtime datatype of derivation witnesses.
+    struct PredicateDecl {
         SourceSpan span;
         std::string name;
         std::vector<Parameter> indices;
-        std::vector<ProofConstructor> constructors;
+        std::vector<PredicateConstructor> constructors;
         std::size_t node_id = 0;
     };
 
@@ -218,7 +218,7 @@ namespace fine::syntax {
         std::vector<Parameter> parameters;
         std::optional<std::string> induction_parameter;
         std::optional<SourceSpan> induction_span;
-        std::optional<Expr> proof_induction;
+        std::optional<Expr> predicate_induction;
         std::vector<Expr> assumes;
         std::vector<Expr> ensures;
         std::size_t node_id = 0;
@@ -239,7 +239,7 @@ namespace fine::syntax {
         std::size_t node_id = 0;
     };
 
-    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, SolveDecl, ViewDecl, ProofFamilyDecl,
+    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, SolveDecl, ViewDecl, PredicateDecl,
                                      FunctionDecl, SynthDecl, CheckDecl, CounterexampleDecl>;
 
     struct Document {

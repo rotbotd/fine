@@ -112,20 +112,20 @@ axiom by fiat. `proof name(parameters) { ... }` has the same obligation and
 optional `inducts` clause as `check`. Fine first runs its counterexample query;
 only `unsat` permits universal closure under the qid `fine.proof.name`. The
 closed theorem is then an assumption in later ordinary SMT checks,
-proof-constructor branches, and arbitrary-field availability queries in the
+predicate-constructor branches, and arbitrary-field availability queries in the
 same document. A refuted proof returns its typed counterexample and stops the
 document before any later declaration runs. Rainfall retains separate
 `proof.admit` and `proof.use` events and the exact same-manager theorem; this
 does not inject arbitrary theorems into Spacer's least-relation rules.
 
-Proof-family induction is a separate first-order path. Given an erased least
+Predicate induction is a separate first-order path. Given an erased least
 relation such as `Step(before, after)`, a check writes
 `inducts(Step(before, after));` and repeats that exact atom in `assumes`. Fine
-enumerates its retained proof constructors, substitutes each constructor's
+enumerates its retained predicate constructors, substitutes each constructor's
 result indices into the guarantee, and supplies one induction hypothesis at the
 exact indices of every recursive premise. Each resulting branch is a separate
 ordinary SMT refutation query. Rainfall keeps the constructor result and every
-premise/hypothesis pair before the proof witness erases; it does not reconstruct
+premise/hypothesis pair before the derivation witness erases; it does not reconstruct
 branches from Spacer's projected learned lemmas. This slice excludes explicit
 proof matches, existential constructor fields, and typed branch counterexamples.
 
@@ -144,13 +144,13 @@ recursive atom, and resulting induction hypothesis as separate terms. It checks
 that the view is inhabited for every constructor-parameter assignment before
 using the requirement as a branch assumption, preventing an empty view from
 proving anything. The field is never lowered to Horn; consequently membership
-and fixedpoint-invariant queries reject a family containing it, and none of the
-family's other constructors are registered with fixedpoint either. Full locally
+and fixedpoint-invariant queries reject a predicate containing it, and none of the
+predicate's other constructors are registered with fixedpoint either. Full locally
 nameless opening/support and its
 freshness/equivariance proof remain the next test.
 
 For recursive finite support, a view may include a declared carrier witness.
-`proof-family-cofinite-support-induction.fine` uses Peano `Name`s and a
+`predicate-cofinite-support-induction.fine` uses Peano `Name`s and a
 `Support` cutoff: the excluded names form a finite initial segment and
 `fresh_after(support)` is its successor. Fine proves the view requirement at
 that witness for every support before checking the branch, while the scoped

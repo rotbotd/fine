@@ -84,12 +84,12 @@ them; deriving `max` or filling an arithmetic match arm does not.
 
 ## Next language test: locally nameless indexed `Step`
 
-Add one ATS-style ghost indexed proof family without adding a universal
+Add one ATS-style ghost indexed predicate without adding a universal
 `Term`/`HasType` encoding or changing ordinary Fine values into type-coded raw
 carriers.
 
 - [ ] Keep object `Tm`, `Ty`, `Env`, and `Name` as separate native Z3 sorts.
-- [x] Parse and elaborate a strictly-positive indexed `proof` family whose
+- [x] Parse and elaborate a strictly-positive constructor-generated indexed `predicate` whose
       constructor-specific result indices are native Fine terms. The first
       accepted constructors have only base and first-order recursive premises;
       reject a universal premise rather than miscompile it.
@@ -109,22 +109,22 @@ carriers.
       rather than structural induction on the indexed `Tm` value.
 - [x] Preserve the selected rule, opened bodies, arbitrary fresh name,
       recursive premise, and induction hypothesis as exact Rainfall evidence
-      before erasing proof witnesses from value/model construction.
+      before erasing derivation witnesses from value/model construction.
 - [ ] Verify preservation for full locally nameless reduction under
       abstractions, then rerun the admitted source without synthesis or hidden
       proof search.
 
-Exit test: the abstraction-congruence constructor carries its cofinite family
+Exit test: the abstraction-congruence constructor carries its arbitrary-name field
 of recursive `Step` premises through elaboration, induction, solver checking,
 exact Fine lift, and Rainfall projection. If that correspondence cannot close,
 do not broaden the feature to runtime GADTs or a general static type universe.
 
-The first-order sub-slice is closed by `proof-family-step.fine`: `proof family`
+The first-order sub-slice is closed by `predicate-step.fine`: `predicate`
 constructors become rules of a registered Z3 least relation over the native
 `Tm` datatype. A parameterless, assumption-free `check` can ask one ground
 membership question. The contextual step is derived, `Step(atom, atom)` is not,
 and Rainfall retains the relation, each constructor rule, exact query, public
-fixedpoint answer, and erasure boundary. `reject-proof-family-universal.fine`
+fixedpoint answer, and erasure boundary. `reject-predicate-universal.fine`
 rejects a constructor parameter absent from the result rather than treating a
 body-only Horn variable as a universal field. This query form remains membership
 only; derivation induction now has its own explicit `inducts(F(indices))` form.
@@ -132,11 +132,11 @@ Source proof construction, general constrained-view parameters, and inversion
 remain later pieces.
 
 The first open consumer is also closed. A parameterized `check` may assume
-exactly one family atom and state ordinary Fine guarantees. Fine adds a fresh
-counterexample relation and the rule `family(indices) && !guarantees -> Bad`,
-then asks Spacer whether `Bad` is reachable. `proof-family-invariant.fine`
+exactly one predicate atom and state ordinary Fine guarantees. Fine adds a fresh
+counterexample relation and the rule `predicate(indices) && !guarantees -> Bad`,
+then asks Spacer whether `Bad` is reachable. `predicate-invariant.fine`
 proves that every contextual `Step` has unequal indices;
-`proof-family-invariant-false.fine` refutes equality. This is least-relation
+`predicate-invariant-false.fine` refutes equality. This is least-relation
 invariant checking, not source proof elimination: a satisfiable query retains
 Spacer's exact answer but does not yet lift a typed counterexample tuple.
 Rainfall observes the public Spacer lemma-export, predecessor, and unfold
@@ -144,7 +144,7 @@ callbacks without assigning them source ownership or causal force. Explicit
 constructor branches, refined indices, recursive hypotheses, and source proof
 witnesses remain required before checking off derivation induction.
 
-`proof-family-two-premises.fine` pressure-tests one constructor whose body
+`predicate-two-premises.fine` pressure-tests one constructor whose body
 requires two recursive `Step` atoms. Fine and Spacer verify the invariant, and
 Rainfall retains the exact joined Horn rule with premise counts `2/2`. The
 public lemma callback does not retain that join: Spacer currently exports the
@@ -154,7 +154,7 @@ compiler-owned constructor branch and its two recursive evidence edges when
 derivation induction is added.
 
 The first-order derivation-induction sub-slice is closed by
-`proof-family-induction.fine`. `inducts(Step(before, after))` requires the exact
+`predicate-induction.fine`. `inducts(Step(before, after))` requires the exact
 same atom as the sole `assumes` clause. Fine makes one compiler-owned branch per
 retained constructor, substitutes that constructor's result indices into the
 guarantee, and supplies one guarantee-shaped induction hypothesis at each
@@ -166,7 +166,7 @@ lemmas. It still has no explicit source match body, proof-term value,
 existential constructor field, cofinite branch, or lifted branch counterexample.
 
 The arbitrary-field mechanism now has a real locally nameless consumer at the
-evidence boundary. `proof-family-cofinite-support-induction.fine` represents
+evidence boundary. `predicate-cofinite-support-induction.fine` represents
 terms by bound indices, free integer names, application, and abstraction.
 `open_at` increments depth below abstractions and replaces the selected bound
 index by a free name; `support_cutoff` recursively computes a maximum containing
@@ -193,10 +193,10 @@ now import that theorem through a deliberately small reusable-proof boundary.
 `reusable-proof-induction.fine` verifies the opening-equivariance source proof
 by constructor/direct-field induction, universally closes it only after
 the counterexample query is unsatisfiable, and uses it to discharge a later
-proof-family constructor branch. Removing the proof makes the unassisted
+predicate constructor branch. Removing the proof makes the unassisted
 recursive opening branch exceed the two-second control. Rainfall keeps one
 exact admission edge and one exact branch-use edge. Full locally nameless
-preservation still needs the actual typing/reduction families and the beta/opening
+preservation still needs the actual typing/reduction predicates and the beta/opening
 lemmas they force; the generic mechanism is no substitute for that
 object-language work.
 

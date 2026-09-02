@@ -53,19 +53,19 @@ sort and `HasType` axioms recover their distinctions. An object-language
 datatype named `Tm` or `Ty` remains a literal, separate native Z3 datatype
 sort. `Ty` is object data, not a code for Fine's own type universe.
 
-## Indexed proof families
+## Constructor-generated predicates
 
-The first indexed-family feature is proof-only, following ATS's separation of
-static indexed proofs from program values. A declaration such as
-`Step(before: Tm, after: Tm)` may construct, assume, and eliminate total proof
-witnesses during checking, but introduces no Z3 value sort for those witnesses.
-Its indices are values of existing native Fine/Z3 sorts; constructor result
-indices elaborate to equalities over those sorts. Proof erasure therefore does
-not erase or box `Tm`, `Ty`, names, environments, integers, or other ordinary
-values.
+The first indexed-predicate feature is derivation-erased, following ATS's
+separation of static evidence from program values. A declaration such as
+`Step(before: Tm, after: Tm)` defines which tuples have finite constructor
+derivations and permits assumptions and elimination during checking, but it
+introduces no Fine or Z3 value sort for derivation witnesses. Its indices are
+values of existing native Fine/Z3 sorts; constructor result indices elaborate
+over those sorts. Erasure therefore does not erase or box `Tm`, `Ty`, names,
+environments, integers, or other ordinary values.
 
 The compiler owns the strictly-positive inductive interpretation and the
-indexed elimination/induction rule. It may lower a proof family internally to
+indexed elimination/induction rule. It may lower a predicate internally to
 an inductive predicate or constrained Horn clauses, but Fine exposes neither a
 raw Horn-clause language nor an arbitrary user-defined object-language
 semantics. This lowering is valid for ordinary first-order recursive premises
@@ -73,43 +73,43 @@ because the least relation excludes index pairs produced by no constructor.
 Constructor introduction implications asserted to the ordinary SMT solver do
 not have that property and are not an admissible replacement.
 
-The implemented Horn-complete surface is `proof family F(indices) { constructor
-C(parameters) { takes { atoms; } gives F(result_indices); } }`. Each family is
+The implemented Horn-complete surface is `predicate F(indices) { constructor
+C(parameters) { takes { atoms; } gives F(result_indices); } }`. Each predicate is
 registered as a Z3 fixedpoint relation over the native index sorts and each
 first-order constructor becomes one universally closed Horn rule. Constructor parameters
 must occur in the result indices; this deliberately excludes premise-only
 variables. A parameterless, assumption-free `check` containing exactly one
-ground family atom is a public least-relation membership query. It reports
+ground predicate atom is a public least-relation membership query. It reports
 `derived` or `not-derived`; it is not routed through the ordinary counterexample
-solver and produces no runtime proof value. Family atoms nested inside ordinary
+solver and produces no runtime proof value. Predicate atoms nested inside ordinary
 formulas, open membership queries, proof elimination, and derivation induction
 outside the explicit `inducts` form are not admitted yet.
-Ground membership and fixedpoint invariant queries are rejected for a family
+Ground membership and fixedpoint invariant queries are rejected for a predicate
 with any compiler-owned arbitrary field. Fine does not register any of that
-family's constructors with fixedpoint: an incomplete least relation would be a
-different object from the source family even if public queries were blocked.
+predicate's constructors with fixedpoint: an incomplete least relation would be a
+different object from the source predicate even if public queries were blocked.
 
 A second, still proof-erased consumer admits a parameterized `check` with
-exactly one assumed family atom and ordinary Fine guarantees. The compiler
+exactly one assumed predicate atom and ordinary Fine guarantees. The compiler
 registers a fresh nullary counterexample relation and adds the universally
-closed rule `family(indices) && !guarantees -> counterexample`; reachability is
+closed rule `predicate(indices) && !guarantees -> counterexample`; reachability is
 refutation and unreachability verifies the invariant over the least relation.
-This is not an ordinary-SMT implication, and it does not turn the family into an
+This is not an ordinary-SMT implication, and it does not turn the predicate into an
 uninterpreted predicate. It also is not source derivation induction: there are
 no constructor branches, refined indices, recursive proof hypotheses, or lifted
-proof witnesses. A satisfiable answer is retained exactly by Rainfall but is
+derivation witnesses. A satisfiable answer is retained exactly by Rainfall but is
 reported only as fixedpoint reachability until its concrete index tuple can be
 lifted honestly.
 
 Explicit first-order derivation induction uses
-`inducts(F(index_parameters))`. The target must be identical to the sole family
-atom in `assumes`, with one check parameter per family index in declaration
+`inducts(F(index_parameters))`. The target must be identical to the sole predicate
+atom in `assumes`, with one check parameter per predicate index in declaration
 order. Fine enumerates the retained constructors. For each branch it substitutes
 the exact result indices into the guarantee, makes one guarantee-shaped induction
 hypothesis at every recursive premise's indices, and asks ordinary SMT whether
 the conjunction of those hypotheses with the negated branch goal is satisfiable.
 Every constructor branch must be unsatisfiable; constructors with premises from
-another family are rejected by this first slice.
+another predicate are rejected by this first slice.
 
 An arbitrary constrained field has the source form
 `arbitrary x: View(arguments) { recursive_atoms; }` inside a constructor's
@@ -126,14 +126,14 @@ The arbitrary branch still uses its independent free `x`, never the witness.
 This is a compiler-owned induction rule, not a fixedpoint interpretation of the
 arbitrary field.
 
-The proof witness erases after branch construction rather than becoming a
+The derivation witness erases after branch construction rather than becoming a
 runtime GADT. Rainfall retains the constructor result, result-specialized query,
 and each exact recursive-premise/induction-hypothesis pair as compiler-owned
 evidence. This does not yet provide an explicit source match body, existential
 constructor fields, a full locally nameless cofinite/equivariance proof, or a
 typed branch counterexample.
 
-A universally quantified constructor field stays explicit in the proof-family
+A universally quantified constructor field stays explicit in the predicate
 IR. In particular, putting the bound name only in a Horn rule body turns
 `forall fresh names` into a search for one working name. Fine must not perform
 that translation. Fine now retains the arbitrary carrier, its constrained-view
@@ -141,7 +141,7 @@ requirement, scoped recursive premise, availability obligation, and induction
 hypothesis without Horn lowering. The remaining locally nameless slice must put
 the real opening and support operations into those objects and retain the
 freshness/equivariance argument that makes the source cofinite constructor
-sound. This is an elaboration of the general family mechanism, not a primitive
+sound. This is an elaboration of the general predicate mechanism, not a primitive
 `cofinite` solver operation. The polarity countertests remain in
 `fine/spikes/indexed-proof`.
 
@@ -370,8 +370,8 @@ parseable `counterexample name { ... }` declaration.
 constructor/direct-field induction. On an unsatisfiable counterexample query,
 Fine universally closes the original source theorem—not its generated induction
 step—and retains it under a stable `fine.proof.<name>` qid. Only then may later
-ordinary solver and proof-induction branch queries assert it. Source order is
-semantic: reusable proofs must precede proof-family and executable declarations,
+ordinary solver and predicate-induction branch queries assert it. Source order is
+semantic: reusable proofs must precede predicate and executable declarations,
 and a refuted proof terminates execution rather than leaving a missing assumption for
 later code. Rainfall records admission separately from each use. Fixedpoint
 relations never acquire these theorems as unowned background axioms.
@@ -433,8 +433,8 @@ every source edge, and a terminal run close. It rejects cross-snapshot edges,
 unknown or reused handles, manager substitution, source-bearing `internal_z3`
 edges, and events arriving after the run closed. This validator does not transport
 evidence across edits; a viewer may move a stale decoration separately.
-The recognized terminal runs include ordinary checks, proof-family membership
-and induction checks, synthesis, and bisimulation. A proof-family trace records
+The recognized terminal runs include ordinary checks, predicate membership
+and induction checks, synthesis, and bisimulation. A predicate trace records
 compiler-owned relation/rule declarations and the public fixedpoint query/result, while making
 no claim about Spacer's internal rule search.
 
@@ -445,7 +445,7 @@ lemma encountered again and never establishes that the lemma caused the final
 answer. `z3.spacer.predecessor` and `z3.spacer.unfold` are payload-free boundary
 crossings with ordinals only. They do not identify a source constructor, matched
 rule, relation, obligation, success, or failure. All three operations remain
-independent internal provenance; only compiler-generated family and
+independent internal provenance; only compiler-generated predicate and
 counterexample rules receive source correspondence edges.
 
 The two-recursive-premise fixture fixes one additional coverage boundary. The

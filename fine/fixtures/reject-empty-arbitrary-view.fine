@@ -16,7 +16,7 @@ view FreshApart(excluded: Name) over Name {
   }
 }
 
-proof family Step(before: Tm, after: Tm, excluded: Name) {
+predicate Step(before: Tm, after: Tm, excluded: Name) {
   constructor root(excluded: Name) {
     takes {}
     gives Step(left, right, excluded);

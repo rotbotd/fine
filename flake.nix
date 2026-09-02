@@ -61,83 +61,83 @@
           echo "$verified"
           grep -F "verified: addition_preserves_left" <<<"$verified"
           grep -F "counterexample: none" <<<"$verified"
-          proof_family="$($out/bin/fine run "$src/fine/fixtures/proof-family-step.fine")"
-          echo "$proof_family"
-          grep -F "derived: under_once" <<<"$proof_family"
-          grep -F "proof-family: Step" <<<"$proof_family"
-          grep -F "proof-witness: erased" <<<"$proof_family"
-          proof_junk="$($out/bin/fine run "$src/fine/fixtures/proof-family-junk.fine")"
-          echo "$proof_junk"
-          grep -F "not-derived: constructor_junk" <<<"$proof_junk"
-          proof_family_rain="$(mktemp)"
-          $out/bin/fine rain "$src/fine/fixtures/proof-family-step.fine" > "$proof_family_rain"
+          predicate_result="$($out/bin/fine run "$src/fine/fixtures/predicate-step.fine")"
+          echo "$predicate_result"
+          grep -F "derived: under_once" <<<"$predicate_result"
+          grep -F "predicate: Step" <<<"$predicate_result"
+          grep -F "derivation-witness: erased" <<<"$predicate_result"
+          predicate_junk="$($out/bin/fine run "$src/fine/fixtures/predicate-junk.fine")"
+          echo "$predicate_junk"
+          grep -F "not-derived: constructor_junk" <<<"$predicate_junk"
+          predicate_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/predicate-step.fine" > "$predicate_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
-            "$src/fine/fixtures/proof-family-step.fine" "$proof_family_rain"
-          invariant="$($out/bin/fine run "$src/fine/fixtures/proof-family-invariant.fine")"
+            "$src/fine/fixtures/predicate-step.fine" "$predicate_rain"
+          invariant="$($out/bin/fine run "$src/fine/fixtures/predicate-invariant.fine")"
           echo "$invariant"
-          grep -F "verified-family-invariant: distinct_indices" <<<"$invariant"
+          grep -F "verified-predicate-invariant: distinct_indices" <<<"$invariant"
           grep -F "counterexample: none" <<<"$invariant"
-          false_invariant="$($out/bin/fine run "$src/fine/fixtures/proof-family-invariant-false.fine")"
+          false_invariant="$($out/bin/fine run "$src/fine/fixtures/predicate-invariant-false.fine")"
           echo "$false_invariant"
-          grep -F "refuted-family-invariant: equal_indices" <<<"$false_invariant"
+          grep -F "refuted-predicate-invariant: equal_indices" <<<"$false_invariant"
           grep -F "counterexample: fixedpoint reachability only" <<<"$false_invariant"
           invariant_rain="$(mktemp)"
-          $out/bin/fine rain "$src/fine/fixtures/proof-family-invariant.fine" > "$invariant_rain"
+          $out/bin/fine rain "$src/fine/fixtures/predicate-invariant.fine" > "$invariant_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
-            "$src/fine/fixtures/proof-family-invariant.fine" "$invariant_rain"
+            "$src/fine/fixtures/predicate-invariant.fine" "$invariant_rain"
           grep -F '"operation":"z3.spacer.lemma-export"' "$invariant_rain"
           grep -F '"operation":"z3.spacer.predecessor"' "$invariant_rain"
           grep -F '"operation":"z3.spacer.unfold"' "$invariant_rain"
-          two_premises="$($out/bin/fine run "$src/fine/fixtures/proof-family-two-premises.fine")"
+          two_premises="$($out/bin/fine run "$src/fine/fixtures/predicate-two-premises.fine")"
           echo "$two_premises"
-          grep -F "verified-family-invariant: distinct_indices" <<<"$two_premises"
+          grep -F "verified-predicate-invariant: distinct_indices" <<<"$two_premises"
           two_premises_rain="$(mktemp)"
-          $out/bin/fine rain "$src/fine/fixtures/proof-family-two-premises.fine" > "$two_premises_rain"
+          $out/bin/fine rain "$src/fine/fixtures/predicate-two-premises.fine" > "$two_premises_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
-            "$src/fine/fixtures/proof-family-two-premises.fine" "$two_premises_rain"
+            "$src/fine/fixtures/predicate-two-premises.fine" "$two_premises_rain"
           ${pkgs.python3}/bin/python - "$two_premises_rain" <<'PY'
           import json, pathlib, sys
           events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
           rule = next(event for event in events
-                      if event["operation"] == "fine.proof-constructor.rule"
+                      if event["operation"] == "fine.predicate-constructor.rule"
                       and event["data"]["constructor"] == "pairwise")
           assert rule["data"]["premises"] == 2
           assert rule["data"]["recursive_premises"] == 2
           assert any(event["operation"] == "z3.spacer.lemma-export" for event in events)
           PY
-          proof_induction="$($out/bin/fine run "$src/fine/fixtures/proof-family-induction.fine")"
-          echo "$proof_induction"
-          grep -F "verified-proof-induction: distinct_indices" <<<"$proof_induction"
-          grep -F "constructor-branches: 2 verified" <<<"$proof_induction"
-          false_proof_induction="$($out/bin/fine run "$src/fine/fixtures/proof-family-induction-false.fine")"
-          echo "$false_proof_induction"
-          grep -F "refuted-proof-induction: equal_indices" <<<"$false_proof_induction"
-          grep -F "failed-constructor: root" <<<"$false_proof_induction"
-          proof_induction_rain="$(mktemp)"
-          $out/bin/fine rain "$src/fine/fixtures/proof-family-induction-two-premises.fine" \
-            > "$proof_induction_rain"
+          predicate_induction="$($out/bin/fine run "$src/fine/fixtures/predicate-induction.fine")"
+          echo "$predicate_induction"
+          grep -F "verified-predicate-induction: distinct_indices" <<<"$predicate_induction"
+          grep -F "constructor-branches: 2 verified" <<<"$predicate_induction"
+          false_predicate_induction="$($out/bin/fine run "$src/fine/fixtures/predicate-induction-false.fine")"
+          echo "$false_predicate_induction"
+          grep -F "refuted-predicate-induction: equal_indices" <<<"$false_predicate_induction"
+          grep -F "failed-constructor: root" <<<"$false_predicate_induction"
+          predicate_induction_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/predicate-induction-two-premises.fine" \
+            > "$predicate_induction_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
-            "$src/fine/fixtures/proof-family-induction-two-premises.fine" "$proof_induction_rain"
-          ${pkgs.python3}/bin/python - "$proof_induction_rain" <<'PY'
+            "$src/fine/fixtures/predicate-induction-two-premises.fine" "$predicate_induction_rain"
+          ${pkgs.python3}/bin/python - "$predicate_induction_rain" <<'PY'
           import json, pathlib, sys
           events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
           results = [event for event in events
-                     if event["operation"] == "proof-induction.branch.result"]
+                     if event["operation"] == "predicate-induction.branch.result"]
           assert [event["data"]["constructor"] for event in results] == [
               "swap_left", "swap_right", "pairwise"]
           assert all(event["data"]["status"] == "unsat" for event in results)
           hypotheses = [event for event in events
-                        if event["operation"] == "proof-induction.hypothesis"
+                        if event["operation"] == "predicate-induction.hypothesis"
                         and event["data"]["constructor"] == "pairwise"]
           assert [event["data"]["premise_ordinal"] for event in hypotheses] == [0, 1]
           assert len({event["data"]["recursive_premise"] for event in hypotheses}) == 2
           assert len({event["data"]["induction_hypothesis"] for event in hypotheses}) == 2
           PY
           arbitrary_rain="$(mktemp)"
-          $out/bin/fine rain "$src/fine/fixtures/proof-family-arbitrary-fresh-induction.fine" \
+          $out/bin/fine rain "$src/fine/fixtures/predicate-arbitrary-fresh-induction.fine" \
             > "$arbitrary_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
-            "$src/fine/fixtures/proof-family-arbitrary-fresh-induction.fine" "$arbitrary_rain"
+            "$src/fine/fixtures/predicate-arbitrary-fresh-induction.fine" "$arbitrary_rain"
           ${pkgs.python3}/bin/python - "$arbitrary_rain" <<'PY'
           import json, pathlib, sys
           events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
@@ -146,14 +146,14 @@
           assert view["data"]["view"] == "FreshApart"
           assert view["data"]["carrier"] == "Name"
           assert view["data"]["wrapper_sort"] is False
-          relation = one("fine.proof-family.relation")
+          relation = one("fine.predicate.relation")
           assert relation["data"]["horn_complete"] is False
           assert relation["data"]["least_relation"] is False
-          retained = one("fine.proof-constructor.branch")
+          retained = one("fine.predicate-constructor.branch")
           assert retained["data"]["constructor"] == "root"
           assert retained["data"]["lowered_to_horn"] is False
-          assert not any(event["operation"] == "fine.proof-constructor.rule" for event in events)
-          field = one("fine.proof-constructor.arbitrary-field")
+          assert not any(event["operation"] == "fine.predicate-constructor.rule" for event in events)
+          field = one("fine.predicate-constructor.arbitrary-field")
           assert field["data"]["constructor"] == "under_abs"
           assert field["data"]["lowered_to_horn"] is False
           binder_edges = [event for event in events
@@ -163,20 +163,20 @@
               event["data"]["id"]: event["data"]["syntax_kind"]
               for event in events if event["operation"] == "source.node.declare"}
           arbitrary_edges = [event for event in binder_edges
-                             if source_kinds[event["data"]["source"]] == "proof.arbitrary-field"]
+                             if source_kinds[event["data"]["source"]] == "predicate.arbitrary-field"]
           assert len(arbitrary_edges) == 1
-          availability = one("proof-induction.arbitrary.availability")
+          availability = one("predicate-induction.arbitrary.availability")
           assert availability["data"]["domain_outcome"] == "available"
-          hypothesis = one("proof-induction.arbitrary-hypothesis")
+          hypothesis = one("predicate-induction.arbitrary-hypothesis")
           assert hypothesis["data"]["binder_term"] == field["data"]["binder_term"]
           assert hypothesis["data"]["requirement"] == field["data"]["requirement"]
           branch = next(event for event in events
-                        if event["operation"] == "proof-induction.branch.open"
+                        if event["operation"] == "predicate-induction.branch.open"
                         and event["data"]["constructor"] == "under_abs")
           assert branch["data"]["arbitrary_fields"] == 1
           assert branch["data"]["recursive_hypotheses"] == 1
           result = next(event for event in events
-                        if event["operation"] == "proof-induction.branch.result"
+                        if event["operation"] == "predicate-induction.branch.result"
                         and event["data"]["constructor"] == "under_abs")
           assert result["data"]["status"] == "unsat"
           PY
@@ -196,10 +196,10 @@
           grep -F "has an arbitrary-fresh constructor retained outside Horn lowering" \
             "$partial_membership"
           cofinite_rain="$(mktemp)"
-          $out/bin/fine rain "$src/fine/fixtures/proof-family-cofinite-support-induction.fine" \
+          $out/bin/fine rain "$src/fine/fixtures/predicate-cofinite-support-induction.fine" \
             > "$cofinite_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
-            "$src/fine/fixtures/proof-family-cofinite-support-induction.fine" "$cofinite_rain"
+            "$src/fine/fixtures/predicate-cofinite-support-induction.fine" "$cofinite_rain"
           ${pkgs.python3}/bin/python - "$cofinite_rain" <<'PY'
           import json, pathlib, sys
           events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
@@ -214,14 +214,14 @@
           assert view["data"]["view"] == "FreshFor"
           assert view["data"]["availability"] == "declared-witness"
           assert view["data"]["witness"]
-          field = one("fine.proof-constructor.arbitrary-field")
+          field = one("fine.predicate-constructor.arbitrary-field")
           assert field["data"]["availability_witness"]
           assert field["data"]["availability_witness"] != field["data"]["binder_term"]
-          availability = one("proof-induction.arbitrary.availability")
+          availability = one("predicate-induction.arbitrary.availability")
           assert availability["data"]["availability_mode"] == "declared-witness"
           assert availability["data"]["availability_witness"] == field["data"]["availability_witness"]
           assert availability["data"]["domain_outcome"] == "available"
-          hypothesis = one("proof-induction.arbitrary-hypothesis")
+          hypothesis = one("predicate-induction.arbitrary-hypothesis")
           assert hypothesis["data"]["binder_term"] == field["data"]["binder_term"]
           assert hypothesis["data"]["binder_term"] != field["data"]["availability_witness"]
           assert hypothesis["data"]["recursive_premise"]
@@ -242,12 +242,12 @@
           grep -F 'declared witness for constrained view `FreshFor` fails its requirement' \
             "$invalid_witness"
           rejected_universal="$(mktemp)"
-          if $out/bin/fine run "$src/fine/fixtures/reject-proof-family-universal.fine" \
+          if $out/bin/fine run "$src/fine/fixtures/reject-predicate-universal.fine" \
             >"$rejected_universal" 2>&1; then
-            echo "accepted a premise-only proof constructor parameter" >&2
+            echo "accepted a premise-only predicate constructor parameter" >&2
             exit 1
           fi
-          grep -F 'would be one-witness search, not a universal proof field' "$rejected_universal"
+          grep -F 'would be one-witness search, not a universal constructor field' "$rejected_universal"
           induction="$($out/bin/fine run "$src/fine/fixtures/induction-length.fine")"
           echo "$induction"
           grep -F "verified: length_nonnegative" <<<"$induction"
@@ -263,7 +263,7 @@
             "$src/fine/fixtures/reusable-proof-induction.fine")"
           echo "$reusable_proof"
           grep -F "verified-proof: opening_equivariant" <<<"$reusable_proof"
-          grep -F "verified-proof-induction: safe_opening" <<<"$reusable_proof"
+          grep -F "verified-predicate-induction: safe_opening" <<<"$reusable_proof"
           grep -F "constructor-branches: 1 verified" <<<"$reusable_proof"
           append_proof="$($out/bin/fine run \
             "$src/fine/fixtures/proof-append-length.fine")"
@@ -278,6 +278,14 @@
             exit 1
           fi
           grep -F "expected a Fine declaration" "$old_lemma.out"
+          old_proof_family="$(mktemp)"
+          sed 's/^predicate Step/proof family Step/' \
+            "$src/fine/fixtures/predicate-step.fine" >"$old_proof_family"
+          if $out/bin/fine run "$old_proof_family" >"$old_proof_family.out" 2>&1; then
+            echo "accepted the removed proof-family syntax" >&2
+            exit 1
+          fi
+          grep -F 'expected `(`' "$old_proof_family.out"
           false_proof="$(mktemp)"
           cat >"$false_proof" <<'EOF'
           proof impossible(x: Int) {
@@ -326,7 +334,7 @@
           import pathlib, sys
           source = pathlib.Path(sys.argv[1]).read_text()
           start = source.index("proof opening_equivariant")
-          end = source.index("\nproof family SafeOpening")
+          end = source.index("\npredicate SafeOpening")
           pathlib.Path(sys.argv[2]).write_text(source[:start] + source[end + 1:])
           PY
           set +e

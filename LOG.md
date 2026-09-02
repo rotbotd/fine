@@ -2167,3 +2167,92 @@ python3 fine/rainfall_validate.py \
 .build/fine rain fine/fixtures/two-state-bisim.fine > /tmp/solve.rain
 python3 fine/rainfall_validate.py fine/fixtures/two-state-bisim.fine /tmp/solve.rain
 ```
+
+## 2026-09-02 — constructor-generated propositions are `predicate`, not proof values
+
+The preceding vocabulary unification left one semantic lie: `proof family`
+suggested a family of inhabitable Fine proof values, while the implementation
+has always erased every derivation before value/model construction. h proposed
+making the constructors the distinguishing feature instead. The surface is now:
+
+```fine
+predicate Step(before: Tm, after: Tm) {
+  constructor root() {
+    takes {}
+    gives Step(atom, mark);
+  }
+
+  constructor under(before: Tm, after: Tm) {
+    takes { Step(before, after); }
+    gives Step(wrap(before), wrap(after));
+  }
+}
+```
+
+`predicate` is not an arbitrary formula declaration. Its `constructor` blocks
+generate the smallest set of index tuples closed under those constructors.
+This keeps the property that the ordinary SMT implications alone lacked:
+`Step(atom, atom)` is excluded when no finite constructor derivation produces
+it. Horn-complete predicates are registered as native-sort Z3 fixedpoint
+relations. Predicates with an arbitrary constrained field retain their complete
+compiler-owned constructor table for induction and remain wholly outside
+fixedpoint rather than receiving an incomplete relation. `Step(...)` is still a
+Bool expression at membership and assumption sites, while
+`inducts(Step(...))` invokes Fine's retained constructor branches.
+
+The parser now has three honest, disjoint declaration forms:
+
+```
+proof theorem(parameters) { assumes { ... } ensures { ... } }
+predicate Relation(indices) { constructor ... }
+solve model_query { takes(...); gives(model_hole); }
+```
+
+There is no `family` keyword or compatibility alias. `proof family Step` is
+rejected by an install-check control. Internally the old `ProofFamilyDecl`,
+`ProofFamilyInfo`, proof-family runtime, maps, and induction target were renamed
+to `PredicateDecl`, `PredicateInfo`, `predicate_runtime.cpp`, predicate maps,
+and predicate induction. This was deliberately more than a lexer alias: error
+messages, output labels, fixture names, documentation, and Rainfall vocabulary
+all changed with it.
+
+Rainfall now owns the constructor-generated objects under
+`decl.predicate`, `fine.predicate.relation`,
+`fine.predicate-constructor.{rule,branch,arbitrary-field}`, and
+`predicate-induction.*`. Data fields say `predicate`; the erasure claim is
+`derivation_witness_erased`. Public output says `predicate: Step`,
+`derivation-witness: erased`, `verified-predicate-induction`, and
+`verified-predicate-invariant`. The replay validator recognizes
+`predicate-check.run.close` and `predicate-induction.run.close`. Z3's own
+`z3.spacer.lemma-export` remains unchanged because it names an actual Spacer
+callback rather than Fine surface syntax. Reusable source theorems likewise
+remain `proof`, with `proof.admit` and `proof.use` unchanged.
+
+All former `proof-family-*.fine` fixtures are now `predicate-*.fine`; the
+locally nameless theorem-reuse fixture remains
+`reusable-proof-induction.fine` because its defining test is a named source
+`proof` consumed by a later predicate branch. Representative runs preserve the
+same semantics:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/predicate-step.fine
+.build/fine run fine/fixtures/predicate-induction.fine
+.build/fine run fine/fixtures/predicate-cofinite-support-induction.fine
+.build/fine run fine/fixtures/reusable-proof-induction.fine
+.build/fine run fine/fixtures/proof-append-length.fine
+.build/fine run fine/fixtures/two-state-bisim.fine
+.build/fine rain fine/fixtures/predicate-induction-two-premises.fine > /tmp/predicate.rain
+python3 fine/rainfall_replay.py \
+  fine/fixtures/predicate-induction-two-premises.fine /tmp/predicate.rain
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The dirty-tree Nix build, including the renamed executable fixtures, old-syntax
+rejection, exact Rainfall assertions, live-host tests, and existing controls,
+produced `/nix/store/bhy6dss02pzskbcfxhw07dbvayq4xz1d-fine-0.0.1`.
+The remaining semantic boundary is unchanged: these predicates have no source
+proof-term values, general inversion form, existential constructor fields, or
+typed branch counterexamples. If Fine later acquires actual first-class proof
+values, `proof family` remains available for that genuinely different feature.

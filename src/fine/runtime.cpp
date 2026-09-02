@@ -86,8 +86,8 @@ namespace fine {
                             kind = "decl.solve";
                         else if constexpr (std::is_same_v<T, syntax::ViewDecl>)
                             kind = "decl.view";
-                        else if constexpr (std::is_same_v<T, syntax::ProofFamilyDecl>)
-                            kind = "decl.proof-family";
+                        else if constexpr (std::is_same_v<T, syntax::PredicateDecl>)
+                            kind = "decl.predicate";
                         else if constexpr (std::is_same_v<T, syntax::FunctionDecl>)
                             kind = "decl.function";
                         else if constexpr (std::is_same_v<T, syntax::SynthDecl>)
@@ -116,12 +116,12 @@ namespace fine {
                             if (item.witness)
                                 declare_expression_sources(*item.witness);
                         }
-                        else if constexpr (std::is_same_v<T, syntax::ProofFamilyDecl>) {
-                            for (syntax::ProofConstructor const &constructor : item.constructors) {
+                        else if constexpr (std::is_same_v<T, syntax::PredicateDecl>) {
+                            for (syntax::PredicateConstructor const &constructor : item.constructors) {
                                 for (syntax::Expr const &premise : constructor.premises)
                                     declare_expression_sources(premise);
                                 for (syntax::ArbitraryPremise const &field : constructor.arbitrary_premises) {
-                                    rainfall_->source_node(field.node_id, field.span, "proof.arbitrary-field");
+                                    rainfall_->source_node(field.node_id, field.span, "predicate.arbitrary-field");
                                     for (syntax::Expr const &argument : field.view_arguments)
                                         declare_expression_sources(argument);
                                     for (syntax::Expr const &premise : field.premises)
@@ -144,8 +144,8 @@ namespace fine {
                                 declare_expression_sources(condition);
                         }
                         else if constexpr (std::is_same_v<T, syntax::CheckDecl>) {
-                            if (item.proof_induction)
-                                declare_expression_sources(*item.proof_induction);
+                            if (item.predicate_induction)
+                                declare_expression_sources(*item.predicate_induction);
                             for (syntax::Expr const &condition : item.assumes)
                                 declare_expression_sources(condition);
                             for (syntax::Expr const &condition : item.ensures)
@@ -480,7 +480,7 @@ namespace fine {
 
         void Runtime::declare_view(syntax::ViewDecl const &declaration) {
             if (views_.contains(declaration.name) || types_.contains(declaration.name) ||
-                functions_.contains(declaration.name) || proof_families_.contains(declaration.name))
+                functions_.contains(declaration.name) || predicates_.contains(declaration.name))
                 reject(declaration.span, "duplicate type-level name `" + declaration.name + "`");
 
             ViewInfo info;
@@ -701,11 +701,11 @@ namespace fine {
             case syntax::Expr::Kind::call: {
                 auto found = constructors_.find(expression.name);
                 if (found == constructors_.end()) {
-                    auto proof_family = proof_families_.find(expression.name);
-                    if (proof_family != proof_families_.end()) {
-                        ProofFamilyInfo const &item = *proof_family->second;
+                    auto predicate = predicates_.find(expression.name);
+                    if (predicate != predicates_.end()) {
+                        PredicateInfo const &item = *predicate->second;
                         if (expression.elements.size() != item.index_types.size())
-                            reject(expression.span, "proof family `" + expression.name + "` expects " +
+                            reject(expression.span, "predicate `" + expression.name + "` expects " +
                                                         std::to_string(item.index_types.size()) + " indices");
                         std::vector<z3::expr> indices;
                         indices.reserve(expression.elements.size());
@@ -990,14 +990,14 @@ namespace fine {
         }
 
         int Runtime::execute_check(syntax::CheckDecl const &declaration) {
-            if (declaration.reusable && !proof_families_.empty())
+            if (declaration.reusable && !predicates_.empty())
                 reject(declaration.span,
-                       "a reusable proof must precede proof-family declarations; it is admitted only to later SMT "
+                       "a reusable proof must precede predicate declarations; it is admitted only to later SMT "
                        "queries, never retrofitted into a fixedpoint relation");
-            if (!proof_families_.empty())
-                return execute_proof_family_check(declaration);
-            if (declaration.proof_induction)
-                reject(declaration.proof_induction->span, "proof-family induction target has no declared proof family");
+            if (!predicates_.empty())
+                return execute_predicate_check(declaration);
+            if (declaration.predicate_induction)
+                reject(declaration.predicate_induction->span, "predicate induction target has no declared predicate");
             reserve_value_name(declaration.name, declaration.span);
             if (declaration.parameters.empty())
                 reject(declaration.span, "a check needs at least one parameter");
@@ -1381,8 +1381,8 @@ namespace fine {
                 else if (auto const *item = std::get_if<syntax::ViewDecl>(&declaration)) {
                     declare_view(*item);
                 }
-                else if (auto const *item = std::get_if<syntax::ProofFamilyDecl>(&declaration)) {
-                    declare_proof_family(*item);
+                else if (auto const *item = std::get_if<syntax::PredicateDecl>(&declaration)) {
+                    declare_predicate(*item);
                 }
                 else if (auto const *item = std::get_if<syntax::SynthDecl>(&declaration)) {
                     if (solve || synth || check)
@@ -1406,8 +1406,8 @@ namespace fine {
                     reject(item->span, "a `counterexample` declaration is a returned witness, not an executable check");
                 }
             }
-            if (!proof_families_.empty() && !check)
-                reject(document.span, "proof families currently require one ground least-relation membership `check`");
+            if (!predicates_.empty() && !check)
+                reject(document.span, "predicates currently require one ground least-relation membership `check`");
             if (synth)
                 return execute_synthesis(*synth);
             if (check)

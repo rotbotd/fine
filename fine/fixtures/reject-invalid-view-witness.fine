@@ -40,7 +40,7 @@ view FreshFor(support: Support) over Name {
   witness fresh_after(support);
 }
 
-proof family Step(before: Tm, after: Tm, support: Support) {
+predicate Step(before: Tm, after: Tm, support: Support) {
   constructor root(support: Support) {
     takes {}
     gives Step(left, right, support);

@@ -4,7 +4,7 @@ enum Tm {
   pair(first: Tm, second: Tm),
 }
 
-proof family Step(before: Tm, after: Tm) {
+predicate Step(before: Tm, after: Tm) {
   constructor swap_left() {
     takes {}
     gives Step(left, right);
