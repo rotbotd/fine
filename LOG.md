@@ -3862,3 +3862,8 @@ nix build --no-link --print-out-paths .#playground
 ls -lh /nix/store/r4irwr0rwizfw0iz9244zh7maj93wkaj-fine-playground-0.1.0/app.js
 # 386K
 ```
+
+Commit `1e029e025` was pushed to `origin/fine/proof-terms`. Restarting
+`fine-playground.service` realized the same clean artifact and switched the live
+page in place. The public HTML now contains the CodeMirror host rather than a
+textarea; `app.js` returns HTTP/2 200 as `text/javascript`, byte length 395,144.
