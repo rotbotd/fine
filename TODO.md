@@ -75,3 +75,8 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       against the new value representation.
 - [ ] Connect source proof materialization to the editor host's atomic revision
       transaction.
+- [ ] After the proof syntax, Rainfall schema, and materialization contract
+      survive a two-child proof function and the bounded Z3 selector, build the
+      first browser vertical slice: the real Fine core in WASM, CodeMirror 6,
+      and `identity-symmetry.fine` showing its candidate frontier, materialized
+      edit, and search-free rerun. Publish only then at `fine.shit.yachts`.
