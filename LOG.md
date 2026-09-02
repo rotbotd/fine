@@ -3913,7 +3913,10 @@ checks both paths byte-for-byte: the plain response must equal `fine.wasm`, whil
 the negotiated response must equal `fine.wasm.zst` and carry the encoding header.
 This caught Vite's default attempt to bundle its config into a temporary directory
 inside the read-only Nix store. The service now uses `--configLoader native`, so
-the runtime writes nothing into its package.
+the runtime writes nothing into its package. The first public smoke also caught
+Vite's host-header protection rejecting the published hostname; the preview
+allowlist now names `fine.shit.yachts` explicitly rather than disabling the
+protection.
 
 Validation before commit:
 

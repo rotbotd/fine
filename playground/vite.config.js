@@ -50,6 +50,9 @@ function precompressedZstd() {
 
 export default defineConfig({
   plugins: [precompressedZstd()],
+  preview: {
+    allowedHosts: ["fine.shit.yachts"],
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
