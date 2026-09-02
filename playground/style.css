@@ -7,6 +7,40 @@ main {
   max-width: 100rem;
 }
 
+.reference {
+  margin: 1rem 0;
+}
+
+.reference summary {
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.reference-note {
+  max-width: 70rem;
+}
+
+.reference-scroll {
+  overflow-x: auto;
+}
+
+.reference table {
+  border-collapse: collapse;
+  min-width: 52rem;
+}
+
+.reference th,
+.reference td {
+  border: 1px solid;
+  padding: 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.reference code {
+  font-family: monospace;
+}
+
 .cm-editor {
   border: 1px solid;
   min-height: 24rem;

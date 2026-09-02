@@ -11,6 +11,64 @@
       <h1>Fine</h1>
       <p>A browser build of Fine. Proof evidence remains virtual; Rainfall is the trace produced by the same executable.</p>
 
+      <details class="reference" open>
+        <summary>language reference</summary>
+        <p class="reference-note"><code>Int</code> and <code>Bool</code> are runtime types. <code>Id(A, left, right)</code> is proof-only: Fine can search for its evidence, but a running program cannot inspect it.</p>
+        <div class="reference-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>form</th>
+                <th>what Fine checks</th>
+                <th>smallest example</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>runtime binding</td>
+                <td>The expression has the declared runtime type.</td>
+                <td><code>let n: Int = 7;</code></td>
+              </tr>
+              <tr>
+                <td>value function</td>
+                <td>The body has the result type and satisfies every <code>ensures</code> clause.</td>
+                <td><code>function keep(x: Int) -&gt; Int<br>ensures { result == x; }<br>{ x }</code></td>
+              </tr>
+              <tr>
+                <td>identity evidence</td>
+                <td><code>refl(value)</code> is accepted only when both endpoints are the exact same value.</td>
+                <td><code>proof p: Id(Int, n, n) = refl(n);</code></td>
+              </tr>
+              <tr>
+                <td>needed evidence</td>
+                <td>The function is checked with the identity available; each call must supply matching local evidence.</td>
+                <td><code>needs [same: Id(Int, left, right)]</code></td>
+              </tr>
+              <tr>
+                <td>explicit evidence</td>
+                <td>The named local proof exactly matches the callee's instantiated need.</td>
+                <td><code>replace(x, y) using [same = p]</code></td>
+              </tr>
+              <tr>
+                <td>proof hole</td>
+                <td><code>?</code> searches typed local evidence, <code>refl</code>, then applicable proof functions.</td>
+                <td><code>proof q: Id(Int, n, n) = ?;</code></td>
+              </tr>
+              <tr>
+                <td>proof function</td>
+                <td>Its result follows from its value indices and needed evidence; it cannot be called as runtime code.</td>
+                <td><code>proof function symm(left: Bool, right: Bool)<br>needs [p: Id(Bool, left, right)]<br>-&gt; Id(Bool, right, left);</code></td>
+              </tr>
+              <tr>
+                <td>executable check</td>
+                <td>A <code>run</code> block is closed over runtime values and every assertion must hold.</td>
+                <td><code>run demo {<br>&nbsp;&nbsp;let n: Int = 7;<br>&nbsp;&nbsp;assert n == 7;<br>}</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+
       <h2>source</h2>
       <div id="source"></div>
       <p>

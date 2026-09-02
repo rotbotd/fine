@@ -3867,3 +3867,27 @@ Commit `1e029e025` was pushed to `origin/fine/proof-terms`. Restarting
 `fine-playground.service` realized the same clean artifact and switched the live
 page in place. The public HTML now contains the CodeMirror host rather than a
 textarea; `app.js` returns HTTP/2 200 as `text/javascript`, byte length 395,144.
+
+## 2026-09-02 — Live syntax reference above the playground
+
+The playground now opens with a compact three-column language reference before
+the editor: each row names a current form, states the check Fine performs, and
+gives the smallest useful spelling. It covers runtime bindings and functions,
+identity evidence, needed and explicit evidence, typed proof holes, proof
+functions, and executable assertions. The introductory boundary is explicit:
+only `Int` and `Bool` inhabit runtime values, while `Id` evidence is virtual and
+cannot be inspected by a running program.
+
+The sheet deliberately documents only syntax accepted by the current proof-term
+branch. It does not present roadmap items as available language features. The
+table remains open by default, can be collapsed, and scrolls horizontally rather
+than crushing code examples on narrow displays.
+
+Validation before commit:
+
+```sh
+git diff --check
+nix build --no-link --print-out-paths .#playground
+# /nix/store/gfdsbipw2cygkqcvn3f6c9k6s31zwjh4-fine-playground-0.1.0
+# package check: wasm smoke passed with 85 Rainfall events
+```
