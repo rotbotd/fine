@@ -1059,51 +1059,102 @@ namespace fine {
                            "direct-subterm induction requires a field-bearing datatype parameter");
 
                 DatatypeInfo const &datatype = *found->type->datatype;
-                std::string smaller_name = "Fine.check." + declaration.name + ".smaller";
-                z3::expr smaller = context_.constant(smaller_name.c_str(), found->type->sort);
-                z3::expr direct_subterm = context_.bool_val(false);
+                z3::expr all_hypotheses = context_.bool_val(true);
+                z3::expr all_branches = context_.bool_val(true);
                 std::size_t recursive_positions = 0;
-                for (DatatypeCaseInfo const &item : datatype.cases) {
-                    z3::expr is_case = item.recognizer(found->term);
-                    for (std::size_t i = 0; i < item.field_types.size(); ++i) {
-                        if (!same(item.field_types[i], found->type))
-                            continue;
-                        direct_subterm = direct_subterm || (is_case && smaller == item.accessors[i](found->term));
-                        ++recursive_positions;
+                for (std::size_t case_index = 0; case_index < datatype.cases.size(); ++case_index) {
+                    DatatypeCaseInfo const &item = datatype.cases[case_index];
+                    std::vector<z3::expr> fields;
+                    fields.reserve(item.field_types.size());
+                    for (std::size_t field_index = 0; field_index < item.field_types.size(); ++field_index) {
+                        std::string name = "Fine.check." + declaration.name + ".case." + item.name + ".field" +
+                                           std::to_string(field_index);
+                        fields.push_back(context_.constant(name.c_str(), item.field_types[field_index]->sort));
                     }
+                    z3::expr constructor = item.constructor(static_cast<unsigned>(fields.size()), fields.data());
+                    z3::expr branch_guard = found->term == constructor;
+                    z3::expr branch_hypotheses = context_.bool_val(true);
+
+                    for (std::size_t field_index = 0; field_index < item.field_types.size(); ++field_index) {
+                        if (!same(item.field_types[field_index], found->type))
+                            continue;
+                        ++recursive_positions;
+                        z3::expr_vector source(context_);
+                        z3::expr_vector destination(context_);
+                        source.push_back(found->term);
+                        destination.push_back(fields[field_index]);
+                        std::vector<Z3_app> bound;
+                        for (std::size_t parameter_index = 0; parameter_index < parameters.size(); ++parameter_index) {
+                            CheckParameter const &parameter = parameters[parameter_index];
+                            if (&parameter == &*found)
+                                continue;
+                            std::string name = "Fine.check." + declaration.name + ".ih." + item.name + ".field" +
+                                               std::to_string(field_index) + ".arg" + std::to_string(parameter_index);
+                            z3::expr generalized = context_.constant(name.c_str(), parameter.type->sort);
+                            source.push_back(parameter.term);
+                            destination.push_back(generalized);
+                            bound.push_back(reinterpret_cast<Z3_app>(static_cast<Z3_ast>(generalized)));
+                        }
+                        z3::expr hypothesis = theorem.substitute(source, destination);
+                        if (!bound.empty()) {
+                            std::string qid = "fine.induction." + declaration.name + "." + item.name + ".field" +
+                                              std::to_string(field_index);
+                            Z3_ast quantified = Z3_mk_quantifier_const_ex(
+                                context_, true, 0, context_.str_symbol(qid.c_str()), context_.str_symbol(""),
+                                static_cast<unsigned>(bound.size()), bound.data(), 0, nullptr, 0, nullptr, hypothesis);
+                            context_.check_error();
+                            hypothesis = z3::expr(context_, quantified);
+                        }
+                        branch_hypotheses = branch_hypotheses && hypothesis;
+                        all_hypotheses = all_hypotheses && hypothesis;
+                        if (rainfall_)
+                            rainfall_->record(
+                                "derive", "check.induction.hypothesis", {run_scope, "constructor:" + item.name},
+                                "fine.elaborator",
+                                "Exact direct-field induction hypothesis, generalized over every non-induction "
+                                "check parameter before branch verification",
+                                {RainfallRecorder::string_field("constructor", item.name),
+                                 RainfallRecorder::number_field("field_ordinal", field_index),
+                                 RainfallRecorder::string_field("recursive_field",
+                                                                rainfall_->term(fields[field_index])),
+                                 RainfallRecorder::string_field("hypothesis", rainfall_->term(hypothesis)),
+                                 RainfallRecorder::number_field("generalized_parameters", parameters.size() - 1)});
+                    }
+
+                    z3::expr branch_step = z3::implies(branch_guard, z3::implies(branch_hypotheses, theorem));
+                    all_branches = all_branches && branch_step;
+                    if (rainfall_)
+                        rainfall_->record(
+                            "derive", "check.induction.branch", {run_scope, "constructor:" + item.name},
+                            "fine.elaborator",
+                            "Compiler-owned constructor branch with one exact generalized hypothesis per direct "
+                            "recursive field; no guarded universal ranges over arbitrary datatype terms",
+                            {RainfallRecorder::string_field("constructor", item.name),
+                             RainfallRecorder::string_field("guard", rainfall_->term(branch_guard)),
+                             RainfallRecorder::string_field("hypotheses", rainfall_->term(branch_hypotheses)),
+                             RainfallRecorder::string_field("step", rainfall_->term(branch_step))});
                 }
                 if (recursive_positions == 0)
                     reject(*declaration.induction_span, "the induction datatype has no direct recursive fields");
 
-                z3::expr_vector source(context_);
-                z3::expr_vector destination(context_);
-                source.push_back(found->term);
-                destination.push_back(smaller);
-                z3::expr smaller_theorem = theorem.substitute(source, destination);
-                z3::expr hypothesis_body = z3::implies(direct_subterm, smaller_theorem);
-                std::vector<Z3_app> bound{reinterpret_cast<Z3_app>(static_cast<Z3_ast>(smaller))};
-                std::string qid = "fine.induction." + declaration.name + "." + induction_parameter;
-                Z3_ast quantified = Z3_mk_quantifier_const_ex(
-                    context_, true, 0, context_.str_symbol(qid.c_str()), context_.str_symbol(""),
-                    static_cast<unsigned>(bound.size()), bound.data(), 0, nullptr, 0, nullptr, hypothesis_body);
-                context_.check_error();
-                induction_hypothesis = z3::expr(context_, quantified);
-                induction_step = z3::implies(induction_hypothesis, theorem);
-
+                induction_hypothesis = all_hypotheses;
+                induction_step = all_branches;
                 if (rainfall_) {
                     rainfall_->source_term(declaration.node_id, declaration.span, "decl.check", induction_step,
                                            "generated", {run_scope});
                     rainfall_->record(
                         "transform", "check.induction.translate", {run_scope}, "fine.elaborator",
-                        "Compiler-owned weak structural induction translation over direct recursive datatype "
-                        "fields; Z3 receives only the resulting ordinary quantified formula",
+                        "Compiler-owned constructor induction with exact direct-field hypotheses generalized over "
+                        "the remaining check parameters; Z3 receives no guarded arbitrary-subterm quantifier",
                         {RainfallRecorder::string_field("parameter", induction_parameter),
-                         RainfallRecorder::string_field("order", "direct-subterm"),
+                         RainfallRecorder::string_field("order", "constructor-direct-field"),
+                         RainfallRecorder::number_field("constructors", datatype.cases.size()),
                          RainfallRecorder::number_field("recursive_positions", recursive_positions),
+                         RainfallRecorder::number_field("generalized_parameters", parameters.size() - 1),
                          RainfallRecorder::string_field("theorem", rainfall_->term(theorem)),
                          RainfallRecorder::string_field("hypothesis", rainfall_->term(induction_hypothesis)),
                          RainfallRecorder::string_field("step", rainfall_->term(induction_step)),
-                         RainfallRecorder::string_field("responsibility", "fine-generated-induction-scheme")});
+                         RainfallRecorder::string_field("responsibility", "fine-generated-constructor-induction")});
                 }
             }
             z3::expr counterexample_query = !induction_step;

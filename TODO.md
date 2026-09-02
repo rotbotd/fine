@@ -182,12 +182,16 @@ generic mechanism.
 
 This closes the trace-preservation item but not the quantified-field or STLC exit.
 The direct name-choice theorem—renaming an opening at one above-cutoff name to a
-second equals opening at the second—exceeded twenty seconds under Fine's weak
-structural-induction translation. Its exact source is retained as
-`fine/spikes/indexed-proof/open-equivariance-timeout.fine`; it receives no extra
-fuel and the compiler does not label availability as equivariance. Full locally
-nameless preservation still needs a source-owned proof of that obligation and
-the typing/reduction families that consume it.
+second equals opening at the second—first exposed a matching loop in the old
+guarded-universal induction translation. Rainfall showed 553 accepted instances
+over only 64 distinct terms and more than 480,000 admitted/inferred clauses.
+Fine now generates one branch per datatype constructor and one exact IH per
+direct recursive field, generalized over the remaining check parameters. The
+promoted `induction-open-equivariance.fine` verifies with three field-owned IHs
+and 16 accepted instances instead of unbounded selector growth. The field does
+not yet import that theorem as source evidence: full locally nameless
+preservation still needs the typing/reduction families that consume it and an
+explicit connection from their abstraction constructor to this result.
 
 ## Later language test: an elementary topos without ceremony
 

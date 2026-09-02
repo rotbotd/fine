@@ -1973,3 +1973,85 @@ nix build --no-link --print-out-paths
 
 The clean pre-commit realization was
 `/nix/store/q37ghy05v9256r2582ipkg3m0kjiak77-fine-0.0.1`.
+
+## 2026-09-02 — Rainfall located and removed the equivariance matching loop
+
+The direct opening-equivariance check initially exceeded twenty seconds. Merely
+retaining that timeout was the wrong diagnostic boundary: this is precisely the
+case Rainfall is supposed to make non-opaque. I reran the exact source through a
+line-buffered timed `fine rain` invocation. The killed run retained 553,053 events
+and 505,173,153 bytes in twenty seconds:
+
+- 553 accepted `z3.quantifier-instance` events, but only 64 distinct ground
+  instance terms;
+- 88,914 admitted clauses, 395,434 inferred clauses, and 1,565 deletions;
+- 66,390 strong terms; and
+- no public query result before timeout.
+
+The trace showed that the induction hypothesis was accepted repeatedly, not
+missing. Fine's old structural-induction translation built one formula
+
+```
+forall smaller.
+  direct_subterm(smaller, term) -> theorem(smaller)
+```
+
+and left pattern choice to preprocessing. The resulting quantifier had three
+patterns: `open_at(smaller, depth, fresh)`, `open_at(smaller, depth, other)`, and
+`support_cutoff(smaller)`. Recursive-function unfolding manufactured terms such
+as nested `body(abs(body(fn(body(...)))))`; each matched the hypothesis again
+even though its direct-subterm guard was irrelevant. Rainfall therefore located
+an E-matching selector-growth loop. Increasing fuel or tuning one trigger would
+have preserved the wrong induction object.
+
+Fine now compiles ordinary datatype induction in the same source-owned shape as
+its proof-family induction. It constructs one guarded branch per datatype
+constructor and one exact hypothesis per direct recursive field. Every such IH
+is generalized over all remaining check parameters. This last part is semantic,
+not merely an optimization: in the abstraction case the body hypothesis must be
+available at `depth + 1`, not only at the outer free depth constant. No quantifier
+ranges over arbitrary `Tm` values, so recursive unfolding cannot turn selector
+chains into new candidate subterms.
+
+Rainfall adds `check.induction.branch` and `check.induction.hypothesis` events.
+The translation event now reports `order: constructor-direct-field`, the exact
+constructor/recursive-position counts, number of generalized parameters, and
+`responsibility: fine-generated-constructor-induction`. Generalized IH
+quantifiers use field-specific qids such as
+`fine.induction.opening_equivariant.abs.field0`.
+
+The formerly timed-out source is promoted from the spike to
+`fine/fixtures/induction-open-equivariance.fine`. It now verifies immediately.
+Its complete admitted trace validates with 9,804 events and only 16 accepted
+instances: seven for each application field and two for the abstraction body.
+All accepted instance source roles are exact field qids; the former generic
+`fine.induction.opening_equivariant.term` role is absent. The fixture asserts the
+actual name-choice equation under two computed support bounds. The ordinary
+length fixture still verifies, its false `length(xs) == 1` control still returns
+`xs = nil` with exact parse/lift/reify identity, and its single recursive IH needs
+no generalized quantifier.
+
+Commands:
+
+```
+timeout 20 stdbuf -oL \
+  /nix/store/r067ihihxnzqw0jd1ybaxkgkd20xigcy-fine-0.0.1/bin/fine rain \
+  fine/spikes/indexed-proof/open-equivariance-timeout.fine \
+  > /tmp/open-equivariance-timeout.rain
+# status 124; 553053 lines, 505173153 bytes
+
+cmake --build .build -j2
+.build/fine run fine/fixtures/induction-length.fine
+.build/fine run fine/fixtures/induction-open-equivariance.fine
+.build/fine rain fine/fixtures/induction-open-equivariance.fine \
+  > /tmp/open-equivariance-fixed.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/induction-open-equivariance.fine \
+  /tmp/open-equivariance-fixed.rain
+
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The complete declarative suite passed. The clean pre-commit realization was
+`/nix/store/vfgj3afy5j548hy2gh7ds9nk8nwkq3b1-fine-0.0.1`.

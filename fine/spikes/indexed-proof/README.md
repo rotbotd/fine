@@ -37,30 +37,31 @@ Rainfall, and reject universal constructor premises with the precise message
 that this probe justifies.  The following slice adds the arbitrary-fresh
 elaboration; only then can the locally nameless `Step` fixture be admitted.
 
-## Retained equivariance null
+## Equivariance failure diagnosed through Rainfall
 
-`open-equivariance-timeout.fine` is the first direct formulation of the missing
-name-choice theorem for the executable locally nameless operations. It defines
-de Bruijn opening, a maximum-free-name cutoff, and free-name renaming, then asks
-Fine's weak direct-subterm induction to prove
+The first direct formulation of the missing name-choice theorem defines de
+Bruijn opening, a maximum-free-name cutoff, and free-name renaming, then asks
+Fine to prove
 
 ```
 rename(open_at(term, depth, fresh), fresh, other)
   == open_at(term, depth, other)
 ```
 
-when both names lie above the computed cutoff. The query exceeded twenty
-seconds with no answer:
+when both names lie above the computed cutoff. The former structural-induction
+translation exceeded twenty seconds. A line-buffered timed Rainfall run retained
+553 accepted E-matching instances but only 64 distinct ground instance terms,
+88,914 admitted clauses, and 395,434 inferred clauses. Preprocessing had inferred
+`open_at(smaller, ...)` and `support_cutoff(smaller)` as patterns for one guarded
+`forall smaller` hypothesis. Recursive-function unfolding manufactured deeper
+selector terms which matched it again even when they could not satisfy the
+direct-subterm guard.
 
-```sh
-timeout 20 nix run . -- run \
-  fine/spikes/indexed-proof/open-equivariance-timeout.fine
-# exit 124
-```
-
-This file is not a fixture and receives no extra fuel. The ordinary induction
-translation quantifies one direct subterm but gives Z3 no constructor-owned
-case evidence for the two nested recursive functions. The locally nameless
-opening fixture therefore establishes actual opening, support computation,
-fresh availability, and arbitrary-branch ownership, but not this equivariance
-theorem.
+Fine now compiles one guarded branch per datatype constructor and one exact IH
+per direct recursive field. Each IH is generalized over all other check
+parameters, so the abstraction branch can instantiate the body hypothesis at
+`depth + 1`; there is no quantifier ranging over arbitrary `Tm` values. The same
+equivariance source is promoted to
+`fine/fixtures/induction-open-equivariance.fine`. It verifies immediately, and
+its complete Rainfall trace has 9,804 events, 16 accepted instances tied only to
+the two application fields and abstraction body, and no selector-growth loop.

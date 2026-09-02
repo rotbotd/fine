@@ -253,6 +253,12 @@
           grep -F "verified: length_nonnegative" <<<"$induction"
           grep -F "induction: direct-subterm on xs" <<<"$induction"
           grep -F "counterexample: none" <<<"$induction"
+          equivariance="$($out/bin/fine run \
+            "$src/fine/fixtures/induction-open-equivariance.fine")"
+          echo "$equivariance"
+          grep -F "verified: opening_equivariant" <<<"$equivariance"
+          grep -F "induction: direct-subterm on term" <<<"$equivariance"
+          grep -F "counterexample: none" <<<"$equivariance"
           bad_recursion="$(mktemp)"
           sed 's/length(tail)/length(xs)/' \
             "$src/fine/fixtures/induction-length.fine" > "$bad_recursion"
@@ -577,10 +583,22 @@
           translation = next(event for event in events
                              if event["operation"] == "check.induction.translate")
           assert translation["data"]["parameter"] == "xs"
-          assert translation["data"]["order"] == "direct-subterm"
+          assert translation["data"]["order"] == "constructor-direct-field"
+          assert translation["data"]["constructors"] == 2
           assert translation["data"]["recursive_positions"] == 1
+          assert translation["data"]["generalized_parameters"] == 0
           assert translation["data"]["responsibility"] == \
-              "fine-generated-induction-scheme"
+              "fine-generated-constructor-induction"
+          branches = [event for event in events
+                      if event["operation"] == "check.induction.branch"]
+          assert [event["data"]["constructor"] for event in branches] == [
+              "nil", "cons"]
+          hypotheses = [event for event in events
+                        if event["operation"] == "check.induction.hypothesis"]
+          assert [(event["data"]["constructor"],
+                   event["data"]["field_ordinal"],
+                   event["data"]["generalized_parameters"])
+                  for event in hypotheses] == [("cons", 1, 0)]
           opened = next(event for event in events
                         if event["operation"] == "solver.query.open")
           assert opened["data"]["induction_translation"] is True
@@ -619,6 +637,43 @@
                   "ematching-only-query"
               assert instance["data"]["ematching"] is True
               assert instance["data"]["mbqi"] is False
+          PY
+
+          equivariance_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/induction-open-equivariance.fine" \
+            > "$equivariance_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/induction-open-equivariance.fine" \
+            "$equivariance_rain"
+          ${pkgs.python3}/bin/python - "$equivariance_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          translation = next(event for event in events
+                             if event["operation"] == "check.induction.translate")
+          assert translation["data"]["order"] == "constructor-direct-field"
+          assert translation["data"]["constructors"] == 4
+          assert translation["data"]["recursive_positions"] == 3
+          assert translation["data"]["generalized_parameters"] == 3
+          branches = [event["data"]["constructor"] for event in events
+                      if event["operation"] == "check.induction.branch"]
+          assert branches == ["bound", "free", "app", "abs"]
+          hypotheses = [event for event in events
+                        if event["operation"] == "check.induction.hypothesis"]
+          assert [(event["data"]["constructor"], event["data"]["field_ordinal"])
+                  for event in hypotheses] == [("app", 0), ("app", 1), ("abs", 0)]
+          assert all(event["data"]["generalized_parameters"] == 3
+                     for event in hypotheses)
+          instances = [event for event in events
+                       if event["operation"] == "z3.quantifier-instance"]
+          assert 0 < len(instances) < 100
+          assert {event["data"]["source_role"] for event in instances} == {
+              "fine.induction.opening_equivariant.app.field0",
+              "fine.induction.opening_equivariant.app.field1",
+              "fine.induction.opening_equivariant.abs.field0",
+          }
+          result = next(event for event in events
+                        if event["operation"] == "solver.query.result")
+          assert result["data"]["status"] == "unsat"
           PY
 
           bisim_projection="$(mktemp)"

@@ -1,6 +1,6 @@
-// Fine generates the weak direct-subterm induction hypothesis; Z3 still has
-// to unfold this recursive definition, reduce the hypothesis, and close the
-// constructor cases. In this fixture preprocessing leaves no accepted QI event.
+// Fine generates one constructor branch and one exact direct-field IH. Z3 still
+// unfolds the recursive definition and closes the branch formulas. This one-
+// parameter fixture needs no generalized quantified IH.
 enum List {
   nil,
   cons(head: Int, tail: List),
