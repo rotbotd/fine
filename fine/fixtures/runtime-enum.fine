@@ -1,0 +1,29 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function predecessor(value: Nat) -> Nat {
+  match value {
+    zero => zero,
+    succ(previous) => previous,
+  }
+}
+
+function rebuild(value: Nat) -> Nat
+ensures {
+  result == value;
+}
+{
+  match value {
+    zero => zero,
+    succ(previous) => succ(previous),
+  }
+}
+
+run runtime_enum {
+  let one: Nat = succ(zero);
+  let answer: Nat = predecessor(rebuild(one));
+  proof same: Id(Nat, one, one) = refl(one);
+  assert answer == zero;
+}

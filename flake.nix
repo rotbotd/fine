@@ -61,6 +61,30 @@
           grep -F "resolved coeffect: replace.same <- p (lexical search)" <<<"$output"
           grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$output"
 
+          enum_output="$($out/bin/fine run "$src/fine/fixtures/runtime-enum.fine")"
+          echo "$enum_output"
+          grep -F "declared enum: Nat (2 constructors)" <<<"$enum_output"
+          grep -F "verified function: predecessor" <<<"$enum_output"
+          grep -F "verified function: rebuild" <<<"$enum_output"
+          grep -F "formed proof: same : Id(Nat, one, one) (virtual)" <<<"$enum_output"
+          grep -F "runtime-value-kinds: Int, Bool, Nat" <<<"$enum_output"
+
+          nonexhaustive_enum="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-nonexhaustive-enum-match.fine" \
+              >"$nonexhaustive_enum" 2>&1; then
+            echo "non-exhaustive enum match unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'non-exhaustive match: missing `succ`' "$nonexhaustive_enum"
+
+          wrong_enum_field="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-enum-field-type.fine" \
+              >"$wrong_enum_field" 2>&1; then
+            echo "wrong enum constructor field unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'field 0 of `succ` has the wrong value type' "$wrong_enum_field"
+
           materialized="$(mktemp)"
           $out/bin/fine materialize "$src/fine/fixtures/identity-coeffect.fine" > "$materialized"
           cmp "$src/fine/fixtures/identity-coeffect-materialized.fine" "$materialized"

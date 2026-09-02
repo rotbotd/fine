@@ -1,0 +1,8 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+run reject_enum_field_type {
+  let value: Nat = succ(true);
+}

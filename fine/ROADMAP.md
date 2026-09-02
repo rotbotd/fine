@@ -185,9 +185,18 @@ indexed inductive proof type such as `Step(term, next)`. Its constructors create
 derivation evidence. Constructor premises are proof fields, not Bool premises
 that the compiler later decorates with imaginary evidence.
 
-This slice includes only the ordinary value data needed to index the first
-proof family. Closed `Ty` and `Tm` value ADTs may therefore arrive here, driven
-by the fixture; this does not require GADTs or proof-valued runtime constructors.
+The ordinary runtime-data prerequisite arrived independently before this slice.
+`enum` now declares a closed Z3 datatype with typed payloads and recursive self
+fields. Runtime `match` is exhaustive and binds the datatype accessors in each
+arm. `runtime-enum.fine` checks the boundary with recursive `Nat`: its values may
+index or carry identity proof types, but its constructors remain `ValueTerm`s and
+identity evidence remains unrepresentable at runtime.
+
+This slice adds the deliberately separate `proof inductive` form for static
+indexed constructor families. It must use ATS's split: ordinary values carry the
+runtime representation, while constructor result indices and proof premises live
+only in the static proof layer. This does not turn a family into a Bool predicate
+and does not introduce a runtime proof datatype.
 
 Fine may lower the proposition to a Z3 relation for checking and search, but the
 source constructor table owns branch identity, field scope, recursive-premise

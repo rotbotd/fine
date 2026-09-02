@@ -1,0 +1,14 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function bad(value: Nat) -> Nat {
+  match value {
+    zero => zero,
+  }
+}
+
+run reject_nonexhaustive_enum_match {
+  let value: Nat = zero;
+}

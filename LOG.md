@@ -4037,3 +4037,64 @@ nix build --no-link --print-out-paths .#default
 The install check now requires the exact Z3-selected application, byte-for-byte
 materialization, the parenthesized lifted identity on rerun, and absence of a
 second proof search.
+
+## 2026-09-02 — ordinary runtime enums before static indexed families
+
+h chose a clean surface split: `enum` for ordinary runtime ADTs and a later
+`proof inductive` form for ATS-style static indexed families. I closed the first
+vertical slice rather than implementing both through one shared tagged term.
+
+Implementation:
+
+- extended `syntax::ValueType` with named enumeration sorts while preserving the
+  disjoint `ValueType` / `ProofType` boundary;
+- added top-level `enum` declarations with typed constructor payloads and
+  recursive self fields;
+- represented each enum as a native Z3 recursive datatype. Fine retains the
+  exact constructor, recognizer, and accessor declarations returned by the same
+  manager instead of reconstructing them from names;
+- generalized runtime value kinds from the two built-ins to named sort identity.
+  The proof-model selector now uses the manager-local Z3 sort id for identity
+  carriers, so enum carriers remain distinct without inventing a parallel type
+  code;
+- added value-level `match` with constructor ownership checks, binder arity and
+  payload typing, exactly-once exhaustiveness, a single result type, and lowering
+  to native recognizers/accessors plus `ite`;
+- constructor calls remain runtime `ValueTerm`s. `Id(Nat, ...)` evidence remains
+  disjoint `ProofEvidence`, and the run boundary still reports zero runtime proof
+  variants.
+
+The executable fixture `fine/fixtures/runtime-enum.fine` declares recursive
+`Nat = zero | succ(Nat)`, checks a symbolic reconstruction function over an
+arbitrary `Nat`, constructs `one`, eliminates it through `predecessor`, and forms
+`Id(Nat, one, one)` without creating a proof value. Controls separately reject a
+missing `succ` arm and `succ(true)`. This is deliberately not `proof inductive`:
+that next form must add indexed proof constructors and proof-producing
+elimination without reusing runtime enum matching or lowering a family to Bool.
+
+Local validation before the clean build:
+
+```
+cmake --build build/proof-core -j2
+./build/proof-core/fine run fine/fixtures/runtime-enum.fine
+./build/proof-core/fine rain fine/fixtures/runtime-enum.fine > /tmp/runtime-enum.rain
+python3 fine/rainfall_validate.py fine/fixtures/runtime-enum.fine /tmp/runtime-enum.rain
+python3 fine/rainfall_replay.py /tmp/runtime-enum.rain
+```
+
+Rainfall validation reported 25 events, 5 source nodes, 4 terms, 3 exact
+source-term edges, and zero proof holes. The failed first draft of the positive
+fixture used `refl(zero)` for `Id(Nat, answer, zero)`; Fine correctly rejected it
+because the match-reduced `answer` is solver-equal but not exact manager-local
+AST identity. The final fixture uses `refl(one)` only for identical endpoints and
+keeps the semantic `answer == zero` check as an assertion.
+
+The clean declared build and install-check suite completed with:
+
+```
+nix flake check --print-build-logs
+nix build --no-link --print-out-paths .#default
+```
+
+`nix flake check` passed and the native artifact is
+`/nix/store/phhsharb7400y2fc7z35hsbimgf8ap74-fine-0.1.0`.

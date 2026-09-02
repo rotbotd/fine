@@ -1,5 +1,11 @@
 # Two-level proof core fixtures
 
+- `runtime-enum.fine` declares recursive `Nat` as a runtime enum, constructs it,
+  eliminates it with an exhaustive payload-binding match, verifies a symbolic
+  reconstruction function, and uses `Nat` as the carrier of virtual identity
+  evidence without creating a runtime proof value.
+- `reject-nonexhaustive-enum-match.fine` omits the recursive constructor arm.
+- `reject-enum-field-type.fine` supplies `Bool` to a recursive `Nat` field.
 - `identity-coeffect.fine` forms an elaborator-only identity proof, absorbs it,
   resolves a function coeffect from exact caller-local evidence, and verifies a
   guarantee which needs the absorbed equality.

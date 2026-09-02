@@ -55,7 +55,7 @@ namespace fine::syntax {
                         continue;
                     }
                     auto two = offset_ + 1 < source_.size() ? source_.substr(offset_, 2) : std::string_view{};
-                    if (two == "->" || two == "==") {
+                    if (two == "->" || two == "==" || two == "=>") {
                         advance();
                         advance();
                         result.push_back({Token::Kind::symbol, std::string(two), {begin, position()}});
@@ -128,6 +128,8 @@ namespace fine::syntax {
 
             Document document() {
                 Document result;
+                while (at("enum"))
+                    result.enums.push_back(enum_declaration());
                 while (at("function") || (at("proof") && peek(1).text == "function")) {
                     if (at("function"))
                         result.functions.push_back(function());
@@ -178,10 +180,49 @@ namespace fine::syntax {
             ValueType value_type() {
                 Token token = take();
                 if (token.text == "Int")
-                    return {ValueType::Kind::integer, token.span};
+                    return {ValueType::Kind::integer, "Int", token.span};
                 if (token.text == "Bool")
-                    return {ValueType::Kind::boolean, token.span};
-                fail(token, "expected value type `Int` or `Bool`");
+                    return {ValueType::Kind::boolean, "Bool", token.span};
+                if (token.kind == Token::Kind::identifier)
+                    return {ValueType::Kind::enumeration, token.text, token.span};
+                fail(token, "expected a value type");
+            }
+
+            EnumDecl enum_declaration() {
+                Token begin = expect("enum");
+                Token name = identifier("enum name");
+                expect("{");
+                EnumDecl result;
+                result.node_id = next_node_id_++;
+                result.name = name.text;
+                while (!at("}")) {
+                    Token constructor = identifier("enum constructor name");
+                    EnumConstructorDecl item;
+                    item.name = constructor.text;
+                    SourcePosition end = constructor.span.end;
+                    if (at("(")) {
+                        take();
+                        if (!at(")")) {
+                            while (true) {
+                                item.fields.push_back(value_type());
+                                if (!at(","))
+                                    break;
+                                take();
+                            }
+                        }
+                        Token close = expect(")");
+                        end = close.span.end;
+                    }
+                    item.span = {constructor.span.begin, end};
+                    result.constructors.push_back(std::move(item));
+                    if (at(","))
+                        take();
+                    else if (!at("}"))
+                        fail(peek(), "expected `,` or `}` after enum constructor");
+                }
+                Token close = take();
+                result.span = {begin.span.begin, close.span.end};
+                return result;
             }
 
             ValueParameter value_parameter() {
@@ -260,6 +301,44 @@ namespace fine::syntax {
             }
 
             ValueExpr primary_value() {
+                if (at("match")) {
+                    Token begin = take();
+                    ValueExpr result;
+                    result.kind = ValueExpr::Kind::match;
+                    result.node_id = next_node_id_++;
+                    result.elements.push_back(value_expression());
+                    expect("{");
+                    while (!at("}")) {
+                        Token constructor = identifier("match constructor");
+                        std::vector<std::string> binders;
+                        SourcePosition arm_begin = constructor.span.begin;
+                        if (at("(")) {
+                            take();
+                            if (!at(")")) {
+                                while (true) {
+                                    binders.push_back(identifier("pattern binder").text);
+                                    if (!at(","))
+                                        break;
+                                    take();
+                                }
+                            }
+                            expect(")");
+                        }
+                        expect("=>");
+                        ValueExpr body = value_expression();
+                        result.match_constructors.push_back(constructor.text);
+                        result.match_binders.push_back(std::move(binders));
+                        result.match_arm_spans.push_back({arm_begin, body.span.end});
+                        result.elements.push_back(std::move(body));
+                        if (at(","))
+                            take();
+                        else if (!at("}"))
+                            fail(peek(), "expected `,` or `}` after match arm");
+                    }
+                    Token end = take();
+                    result.span = {begin.span.begin, end.span.end};
+                    return result;
+                }
                 if (at("(")) {
                     Token begin = take();
                     ValueExpr result = value_expression();

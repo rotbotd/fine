@@ -26,6 +26,24 @@ The identity proof is retained as source evidence and automatically contributes
 proof. The first search rule selects an exact local proof; it does not perform
 global instance resolution.
 
+Ordinary runtime data uses Z3 native datatypes directly:
+
+```fine
+enum Nat { zero, succ(Nat) }
+
+function predecessor(value: Nat) -> Nat {
+  match value {
+    zero => zero,
+    succ(previous) => previous,
+  }
+}
+```
+
+Constructors have typed payloads, recursive self fields are allowed, and every
+runtime match must cover each constructor once. Enum values may occur in an
+identity type such as `Id(Nat, one, one)`, but its inhabitant is still static
+proof evidence rather than a runtime datatype value.
+
 Build and run:
 
 ```sh

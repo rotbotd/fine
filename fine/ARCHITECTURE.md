@@ -9,8 +9,8 @@ proofs are static evidence and cannot become runtime values.
 
 The source syntax has separate `ValueType` and `ProofType` nodes. The elaborator
 has separate `ValueTerm` and `ProofEvidence` structures. `ValueTerm` is closed
-over the value kinds which may reach execution and models; the first slice has
-`Int` and `Bool`. `ProofEvidence` contains an identity type, source ownership,
+over the value kinds which may reach execution and models: `Int`, `Bool`, and
+declared runtime enums. `ProofEvidence` contains an identity type, source ownership,
 and formation history, but no runtime payload. There is no common term variant
 with a proof case and no erasure pass which can accidentally forget to remove
 one.
@@ -30,6 +30,29 @@ Proofs are irrelevant to runtime behavior. Fine code cannot use a proof name as
 an `Int` or `Bool`, and this core has no eliminator from proofs to values. Two
 proofs may remain different source artifacts in Rainfall while contributing the
 same proposition to checking.
+
+## Ordinary runtime enums
+
+`enum` adds a closed Z3 native datatype to the value level. Constructor payloads
+may use `Int`, `Bool`, previously declared enums, or the enum itself recursively.
+A runtime `match` compiles to the native recognizers and accessors and must name
+every constructor exactly once. Its arms must agree on one runtime result type.
+
+```fine
+enum Nat { zero, succ(Nat) }
+
+function predecessor(value: Nat) -> Nat {
+  match value {
+    zero => zero,
+    succ(previous) => previous,
+  }
+}
+```
+
+These datatypes do not blur the level boundary. `succ(zero)` is a `ValueTerm`.
+An `Id(Nat, left, right)` inhabitant remains `ProofEvidence`, and no enum match
+can inspect it. Static indexed families will use the separate `proof inductive`
+form rather than pretending an indexed proof constructor is a runtime enum.
 
 ## Contextual proof demand
 

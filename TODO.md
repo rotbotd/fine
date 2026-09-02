@@ -34,6 +34,22 @@ Exit test: `identity-coeffect.fine` passes; removing its proof fails at the call
 removing the function coeffect fails its guarantee; and `reject-proof-as-value`
 shows proof evidence cannot enter execution.
 
+## Closed: ordinary runtime enums
+
+- [x] Add closed value-level enums backed by Z3 native datatypes, including
+      recursive self fields and typed payload constructors.
+- [x] Add exhaustive runtime matching with recognizers and typed accessors;
+      reject missing constructors, repeated arms, and wrong binder arity.
+- [x] Keep enum values inside `ValueTerm`, while permitting an enum sort as the
+      carrier/index of virtual proof evidence.
+- [x] Preserve the two-level boundary: enum constructors are runtime values and
+      proof evidence still has no runtime variant.
+
+Exit test: `runtime-enum.fine` constructs recursive `Nat`, symbolically rebuilds
+and eliminates it, and checks `Id(Nat, one, one)` without creating a proof value.
+The two rejecting controls catch non-exhaustive elimination and a mistyped
+recursive field.
+
 ## Closed: typed identity holes
 
 - [x] Add `?` with an expected identity proof type.
@@ -72,8 +88,11 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       from proofs into runtime values.
 - [ ] Design inductive propositions with derivation terms from birth. Do not
       retrofit the old Bool-valued `predicate` declaration.
-- [ ] Recover datatypes and ordinary model/counterexample consumers one at a time
-      against the new value representation.
+- [x] Recover closed ordinary datatypes and runtime matching against the new
+      value representation.
+- [ ] Add `proof inductive` as an indexed, static constructor family; do not
+      reuse runtime enum matching or turn the family into a Bool predicate.
+- [ ] Recover ordinary model/counterexample consumers one at a time.
 - [ ] Connect source proof materialization to the editor host's atomic revision
       transaction.
 - [x] After the proof syntax, Rainfall schema, and materialization contract

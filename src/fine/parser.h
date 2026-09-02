@@ -37,9 +37,10 @@ namespace fine::syntax {
     // of one common source type, and the runtime has no reason to add a proof
     // case when elaborating either structure.
     struct ValueType {
-        enum class Kind { integer, boolean };
+        enum class Kind { integer, boolean, enumeration };
 
         Kind kind = Kind::integer;
+        std::string name;
         SourceSpan span;
     };
 
@@ -50,7 +51,7 @@ namespace fine::syntax {
     };
 
     struct ValueExpr {
-        enum class Kind { name, integer, boolean, call, equal };
+        enum class Kind { name, integer, boolean, call, equal, match };
 
         Kind kind = Kind::name;
         SourceSpan span;
@@ -60,6 +61,12 @@ namespace fine::syntax {
         bool boolean_value = false;
         std::vector<ValueExpr> elements;
         std::vector<ExplicitProofArgument> using_proofs;
+        // A match keeps its scrutinee in elements[0] and one body per arm in
+        // elements[1..]. Constructor names and binders remain source syntax;
+        // the elaborator owns their Z3 recognizer/accessor identities.
+        std::vector<std::string> match_constructors;
+        std::vector<std::vector<std::string>> match_binders;
+        std::vector<SourceSpan> match_arm_spans;
         // End of the call's closing parenthesis. An implicit coeffect
         // materialization inserts ` using [...]` at this exact byte offset.
         std::size_t call_argument_end = 0;
@@ -122,6 +129,19 @@ namespace fine::syntax {
         ProofType result_type;
     };
 
+    struct EnumConstructorDecl {
+        SourceSpan span;
+        std::string name;
+        std::vector<ValueType> fields;
+    };
+
+    struct EnumDecl {
+        SourceSpan span;
+        std::size_t node_id = 0;
+        std::string name;
+        std::vector<EnumConstructorDecl> constructors;
+    };
+
     struct LetDecl {
         SourceSpan span;
         std::size_t node_id = 0;
@@ -154,6 +174,7 @@ namespace fine::syntax {
     };
 
     struct Document {
+        std::vector<EnumDecl> enums;
         std::vector<FunctionDecl> functions;
         std::vector<ProofFunctionDecl> proof_functions;
         RunDecl run;

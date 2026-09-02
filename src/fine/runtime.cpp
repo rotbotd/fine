@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <charconv>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -16,14 +17,34 @@
 namespace fine {
     namespace {
 
-        enum class ValueKind { integer, boolean };
+        struct ValueKind {
+            enum class Tag { integer, boolean, enumeration };
 
-        char const *kind_name(ValueKind kind) {
-            return kind == ValueKind::integer ? "Int" : "Bool";
+            Tag tag;
+            std::string name;
+
+            friend bool operator==(ValueKind const &, ValueKind const &) = default;
+        };
+
+        ValueKind integer_kind() {
+            return {ValueKind::Tag::integer, "Int"};
+        }
+
+        ValueKind boolean_kind() {
+            return {ValueKind::Tag::boolean, "Bool"};
+        }
+
+        std::string const &kind_name(ValueKind const &kind) {
+            return kind.name;
         }
 
         ValueKind kind_of(syntax::ValueType const &type) {
-            return type.kind == syntax::ValueType::Kind::integer ? ValueKind::integer : ValueKind::boolean;
+            switch (type.kind) {
+            case syntax::ValueType::Kind::integer: return integer_kind();
+            case syntax::ValueType::Kind::boolean: return boolean_kind();
+            case syntax::ValueType::Kind::enumeration: return {ValueKind::Tag::enumeration, type.name};
+            }
+            return integer_kind();
         }
 
         struct ValueTerm {
@@ -61,6 +82,25 @@ namespace fine {
 
         using ValueEnvironment = std::map<std::string, ValueTerm>;
         using ProofEnvironment = std::map<std::string, ProofEvidence>;
+
+        struct RuntimeConstructor {
+            std::string name;
+            std::vector<ValueKind> fields;
+            z3::func_decl constructor;
+            z3::func_decl tester;
+            std::vector<z3::func_decl> accessors;
+
+            RuntimeConstructor(z3::context &context, std::string name, std::vector<ValueKind> fields)
+                : name(std::move(name)), fields(std::move(fields)), constructor(context), tester(context) {}
+        };
+
+        struct RuntimeEnum {
+            ValueKind kind;
+            z3::sort sort;
+            std::vector<RuntimeConstructor> constructors;
+
+            RuntimeEnum(z3::context &context, ValueKind kind) : kind(std::move(kind)), sort(context) {}
+        };
 
         struct ProofCandidate {
             std::string source;
@@ -123,6 +163,26 @@ namespace fine {
                     result << ']';
                 }
                 return result.str();
+            }
+            case syntax::ValueExpr::Kind::match: {
+                std::ostringstream result;
+                result << "match " << print_value(expression.elements[0]) << " { ";
+                for (std::size_t i = 0; i < expression.match_constructors.size(); ++i) {
+                    if (i)
+                        result << ", ";
+                    result << expression.match_constructors[i];
+                    if (!expression.match_binders[i].empty()) {
+                        result << '(';
+                        for (std::size_t j = 0; j < expression.match_binders[i].size(); ++j) {
+                            if (j)
+                                result << ", ";
+                            result << expression.match_binders[i][j];
+                        }
+                        result << ')';
+                    }
+                    result << " => " << print_value(expression.elements[i + 1]);
+                }
+                return result.str() + " }";
             }
             }
             return "<value>";
@@ -221,6 +281,8 @@ namespace fine {
             }
 
             ExecutionResult execute(syntax::Document const &document) {
+                for (auto const &enumeration : document.enums)
+                    declare_enum(enumeration);
                 record_boundary();
                 for (auto const &function : document.proof_functions)
                     declare_proof_function(function);
@@ -240,9 +302,10 @@ namespace fine {
                          RainfallRecorder::number_field("coeffects_resolved", result_.coeffects_resolved),
                          RainfallRecorder::number_field("runtime_proof_values", 0)});
                 }
-                output_ << "verified run: " << document.run.name << '\n'
-                        << "runtime-value-kinds: Int, Bool\n"
-                        << "runtime-proof-values: 0 (unrepresentable)\n";
+                output_ << "verified run: " << document.run.name << '\n' << "runtime-value-kinds: Int, Bool";
+                for (auto const &[name, enumeration] : enums_)
+                    output_ << ", " << name;
+                output_ << '\n' << "runtime-proof-values: 0 (unrepresentable)\n";
                 return result_;
             }
 
@@ -251,6 +314,8 @@ namespace fine {
             std::ostream &output_;
             ExecutionOptions options_;
             std::optional<RainfallRecorder> rainfall_;
+            std::map<std::string, std::unique_ptr<RuntimeEnum>> enums_;
+            std::map<std::string, std::pair<RuntimeEnum *, std::size_t>> constructors_;
             std::map<std::string, syntax::FunctionDecl const *> functions_;
             std::map<std::string, syntax::ProofFunctionDecl const *> proof_functions_;
             std::vector<std::string> proof_function_order_;
@@ -269,25 +334,177 @@ namespace fine {
                     reject(span, "two materializations disagree at one source range");
             }
 
-            z3::sort sort(ValueKind kind) {
-                return kind == ValueKind::integer ? context_.int_sort() : context_.bool_sort();
+            z3::sort sort(ValueKind const &kind) {
+                if (kind.tag == ValueKind::Tag::integer)
+                    return context_.int_sort();
+                if (kind.tag == ValueKind::Tag::boolean)
+                    return context_.bool_sort();
+                auto found = enums_.find(kind.name);
+                if (found == enums_.end())
+                    throw std::logic_error("unknown runtime enum kind `" + kind.name + "`");
+                return found->second->sort;
+            }
+
+            void require_known_type(syntax::ValueType const &type) {
+                if (type.kind == syntax::ValueType::Kind::enumeration && !enums_.contains(type.name))
+                    reject(type.span, "unknown value type `" + type.name + "`");
+            }
+
+            void declare_enum(syntax::EnumDecl const &declaration) {
+                if (declaration.name == "Int" || declaration.name == "Bool" || enums_.contains(declaration.name))
+                    reject(declaration.span, "duplicate value type `" + declaration.name + "`");
+                if (declaration.constructors.empty())
+                    reject(declaration.span, "enum `" + declaration.name + "` has no constructors");
+
+                ValueKind kind{ValueKind::Tag::enumeration, declaration.name};
+                auto runtime = std::make_unique<RuntimeEnum>(context_, kind);
+                z3::symbol sort_symbol = context_.str_symbol(("fine.enum." + declaration.name).c_str());
+                z3::constructors z3_constructors(context_);
+                std::set<std::string> local_constructors;
+                std::vector<std::vector<ValueKind>> field_kinds;
+                for (std::size_t constructor_index = 0; constructor_index < declaration.constructors.size();
+                     ++constructor_index) {
+                    auto const &constructor = declaration.constructors[constructor_index];
+                    if (!local_constructors.insert(constructor.name).second || constructors_.contains(constructor.name))
+                        reject(constructor.span, "duplicate enum constructor `" + constructor.name + "`");
+                    std::vector<ValueKind> fields;
+                    std::vector<z3::symbol> field_names;
+                    std::vector<z3::sort> field_sorts;
+                    for (std::size_t field_index = 0; field_index < constructor.fields.size(); ++field_index) {
+                        auto const &field = constructor.fields[field_index];
+                        if (field.kind == syntax::ValueType::Kind::enumeration && field.name != declaration.name)
+                            require_known_type(field);
+                        ValueKind field_kind = kind_of(field);
+                        fields.push_back(field_kind);
+                        field_names.push_back(
+                            context_.str_symbol(("fine.enum." + declaration.name + "." + constructor.name + ".field" +
+                                                 std::to_string(field_index))
+                                                    .c_str()));
+                        field_sorts.push_back(field_kind == kind ? context_.datatype_sort(sort_symbol)
+                                                                 : sort(field_kind));
+                    }
+                    field_kinds.push_back(std::move(fields));
+                    std::string z3_name = "fine.enum." + declaration.name + "." + constructor.name;
+                    std::string z3_tester = "fine.enum." + declaration.name + ".is-" + constructor.name;
+                    z3_constructors.add(context_.str_symbol(z3_name.c_str()), context_.str_symbol(z3_tester.c_str()),
+                                        static_cast<unsigned>(field_names.size()),
+                                        field_names.empty() ? nullptr : field_names.data(),
+                                        field_sorts.empty() ? nullptr : field_sorts.data());
+                }
+
+                runtime->sort = context_.datatype(sort_symbol, z3_constructors);
+                for (std::size_t i = 0; i < declaration.constructors.size(); ++i) {
+                    auto const &source = declaration.constructors[i];
+                    RuntimeConstructor constructor(context_, source.name, std::move(field_kinds[i]));
+                    z3::func_decl_vector accessors(context_);
+                    z3_constructors.query(static_cast<unsigned>(i), constructor.constructor, constructor.tester,
+                                          accessors);
+                    for (unsigned j = 0; j < accessors.size(); ++j)
+                        constructor.accessors.push_back(accessors[j]);
+                    runtime->constructors.push_back(std::move(constructor));
+                }
+                RuntimeEnum *stored = runtime.get();
+                enums_.emplace(declaration.name, std::move(runtime));
+                for (std::size_t i = 0; i < stored->constructors.size(); ++i)
+                    constructors_.emplace(stored->constructors[i].name, std::pair{stored, i});
+                output_ << "declared enum: " << declaration.name << " (" << stored->constructors.size()
+                        << " constructors)\n";
             }
 
             void record_boundary() {
                 if (!rainfall_)
                     return;
-                rainfall_->record("object", "proof.erasure.boundary", {}, "fine.two-level-core",
-                                  "The runtime value representation is closed over Int and Bool; ProofEvidence is a "
-                                  "disjoint elaborator-only type",
-                                  {RainfallRecorder::raw_field("runtime_value_kinds", "[\"Int\",\"Bool\"]"),
-                                   RainfallRecorder::number_field("runtime_proof_variants", 0),
-                                   RainfallRecorder::boolean_field("proof_evidence_elaboration_only", true)});
+                std::vector<std::string> runtime_kinds{"Int", "Bool"};
+                for (auto const &[name, enumeration] : enums_)
+                    runtime_kinds.push_back(name);
+                rainfall_->record(
+                    "object", "proof.erasure.boundary", {}, "fine.two-level-core",
+                    "The runtime value representation contains only value sorts; ProofEvidence is a "
+                    "disjoint elaborator-only type",
+                    {RainfallRecorder::raw_field("runtime_value_kinds", RainfallRecorder::string_array(runtime_kinds)),
+                     RainfallRecorder::number_field("declared_runtime_enums", enums_.size()),
+                     RainfallRecorder::number_field("runtime_proof_variants", 0),
+                     RainfallRecorder::boolean_field("proof_evidence_elaboration_only", true)});
             }
 
             void ensure_fresh(std::string const &name, syntax::SourceSpan span, ValueEnvironment const &values,
                               ProofEnvironment const &proofs) {
                 if (values.contains(name) || proofs.contains(name))
                     reject(span, "duplicate local name `" + name + "`");
+            }
+
+            ValueTerm elaborate_constructor(syntax::ValueExpr const &expression, RuntimeEnum &enumeration,
+                                            RuntimeConstructor const &constructor, ValueEnvironment const &values,
+                                            ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
+                                            std::vector<z3::expr> const &absorbed) {
+                if (!expression.using_proofs.empty())
+                    reject(expression.span, "enum constructor `" + constructor.name + "` does not take proofs");
+                if (expression.elements.size() != constructor.fields.size())
+                    reject(expression.span, "enum constructor `" + constructor.name + "` expects " +
+                                                std::to_string(constructor.fields.size()) + " fields");
+                z3::expr_vector arguments(context_);
+                for (std::size_t i = 0; i < expression.elements.size(); ++i) {
+                    ValueTerm field = elaborate_value(expression.elements[i], values, proofs, proof_order, absorbed);
+                    if (field.kind != constructor.fields[i])
+                        reject(expression.elements[i].span, "field " + std::to_string(i) + " of `" + constructor.name +
+                                                                "` has the wrong value type");
+                    arguments.push_back(field.expression);
+                }
+                return {enumeration.kind, constructor.constructor(arguments)};
+            }
+
+            ValueTerm elaborate_match(syntax::ValueExpr const &expression, ValueEnvironment const &values,
+                                      ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
+                                      std::vector<z3::expr> const &absorbed) {
+                ValueTerm scrutinee = elaborate_value(expression.elements[0], values, proofs, proof_order, absorbed);
+                if (scrutinee.kind.tag != ValueKind::Tag::enumeration)
+                    reject(expression.elements[0].span, "match scrutinee is not an enum value");
+                RuntimeEnum &enumeration = *enums_.at(scrutinee.kind.name);
+                if (expression.match_constructors.empty())
+                    reject(expression.span, "match has no arms");
+
+                std::set<std::string> seen;
+                std::vector<std::pair<z3::expr, ValueTerm>> branches;
+                for (std::size_t i = 0; i < expression.match_constructors.size(); ++i) {
+                    std::string const &name = expression.match_constructors[i];
+                    auto global = constructors_.find(name);
+                    if (global == constructors_.end() || global->second.first != &enumeration)
+                        reject(expression.match_arm_spans[i],
+                               "constructor `" + name + "` does not belong to enum `" + enumeration.kind.name + "`");
+                    if (!seen.insert(name).second)
+                        reject(expression.match_arm_spans[i], "duplicate match arm for `" + name + "`");
+                    RuntimeConstructor const &constructor = enumeration.constructors[global->second.second];
+                    auto const &binders = expression.match_binders[i];
+                    if (binders.size() != constructor.fields.size())
+                        reject(expression.match_arm_spans[i], "match arm `" + name + "` expects " +
+                                                                  std::to_string(constructor.fields.size()) +
+                                                                  " binders");
+                    ValueEnvironment branch_values = values;
+                    std::set<std::string> arm_names;
+                    for (std::size_t j = 0; j < binders.size(); ++j) {
+                        if (!arm_names.insert(binders[j]).second)
+                            reject(expression.match_arm_spans[i], "duplicate pattern binder `" + binders[j] + "`");
+                        branch_values.insert_or_assign(
+                            binders[j],
+                            ValueTerm(constructor.fields[j], constructor.accessors[j](scrutinee.expression)));
+                    }
+                    ValueTerm body =
+                        elaborate_value(expression.elements[i + 1], branch_values, proofs, proof_order, absorbed);
+                    branches.emplace_back(constructor.tester(scrutinee.expression), std::move(body));
+                }
+                if (seen.size() != enumeration.constructors.size()) {
+                    for (auto const &constructor : enumeration.constructors)
+                        if (!seen.contains(constructor.name))
+                            reject(expression.span, "non-exhaustive match: missing `" + constructor.name + "`");
+                }
+                ValueKind result_kind = branches.front().second.kind;
+                for (auto const &branch : branches)
+                    if (branch.second.kind != result_kind)
+                        reject(expression.span, "match arms return different value types");
+                z3::expr result = branches.back().second.expression;
+                for (std::size_t i = branches.size() - 1; i-- > 0;)
+                    result = z3::ite(branches[i].first, branches[i].second.expression, result);
+                return {result_kind, std::move(result)};
             }
 
             ValueTerm elaborate_value(syntax::ValueExpr const &expression, ValueEnvironment const &values,
@@ -300,21 +517,38 @@ namespace fine {
                         return value->second;
                     if (proofs.contains(expression.name))
                         reject(expression.span, "proof `" + expression.name + "` cannot inhabit a runtime value");
+                    if (auto found = constructors_.find(expression.name); found != constructors_.end()) {
+                        RuntimeConstructor const &constructor = found->second.first->constructors[found->second.second];
+                        if (!constructor.fields.empty())
+                            reject(expression.span, "enum constructor `" + expression.name + "` expects " +
+                                                        std::to_string(constructor.fields.size()) + " fields");
+                        syntax::ValueExpr nullary = expression;
+                        nullary.kind = syntax::ValueExpr::Kind::call;
+                        return elaborate_constructor(nullary, *found->second.first, constructor, values, proofs,
+                                                     proof_order, absorbed);
+                    }
                     reject(expression.span, "unknown value `" + expression.name + "`");
                 }
                 case syntax::ValueExpr::Kind::integer:
-                    return {ValueKind::integer, context_.int_val(expression.integer_text.c_str())};
+                    return {integer_kind(), context_.int_val(expression.integer_text.c_str())};
                 case syntax::ValueExpr::Kind::boolean:
-                    return {ValueKind::boolean, context_.bool_val(expression.boolean_value)};
+                    return {boolean_kind(), context_.bool_val(expression.boolean_value)};
                 case syntax::ValueExpr::Kind::equal: {
                     ValueTerm left = elaborate_value(expression.elements[0], values, proofs, proof_order, absorbed);
                     ValueTerm right = elaborate_value(expression.elements[1], values, proofs, proof_order, absorbed);
                     if (left.kind != right.kind)
                         reject(expression.span, "equality operands have different value types");
-                    return {ValueKind::boolean, left.expression == right.expression};
+                    return {boolean_kind(), left.expression == right.expression};
                 }
-                case syntax::ValueExpr::Kind::call:
+                case syntax::ValueExpr::Kind::call: {
+                    if (auto found = constructors_.find(expression.name); found != constructors_.end())
+                        return elaborate_constructor(expression, *found->second.first,
+                                                     found->second.first->constructors[found->second.second], values,
+                                                     proofs, proof_order, absorbed);
                     return elaborate_call(expression, values, proofs, proof_order, absorbed);
+                }
+                case syntax::ValueExpr::Kind::match:
+                    return elaborate_match(expression, values, proofs, proof_order, absorbed);
                 }
                 reject(expression.span, "unsupported value expression");
             }
@@ -322,6 +556,7 @@ namespace fine {
             IdentityType elaborate_identity(syntax::ProofType const &type, ValueEnvironment const &values,
                                             ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
                                             std::vector<z3::expr> const &absorbed) {
+                require_known_type(type.carrier);
                 ValueKind carrier = kind_of(type.carrier);
                 ValueTerm left = elaborate_value(type.left, values, proofs, proof_order, absorbed);
                 ValueTerm right = elaborate_value(type.right, values, proofs, proof_order, absorbed);
@@ -453,7 +688,7 @@ namespace fine {
             }
 
             proof_model::Type proof_model_type(IdentityType const &type) {
-                return {static_cast<unsigned>(type.carrier) + 1, Z3_get_ast_id(context_, type.left),
+                return {sort(type.carrier).id(), Z3_get_ast_id(context_, type.left),
                         Z3_get_ast_id(context_, type.right)};
             }
 
@@ -920,7 +1155,8 @@ namespace fine {
             }
 
             void declare_proof_function(syntax::ProofFunctionDecl const &declaration) {
-                if (proof_functions_.contains(declaration.name) || functions_.contains(declaration.name))
+                if (proof_functions_.contains(declaration.name) || functions_.contains(declaration.name) ||
+                    constructors_.contains(declaration.name))
                     reject(declaration.span, "duplicate function `" + declaration.name + "`");
                 ValueEnvironment indices;
                 ProofEnvironment proofs;
@@ -930,6 +1166,7 @@ namespace fine {
                 for (auto const &parameter : declaration.parameters) {
                     if (!names.insert(parameter.name).second)
                         reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
+                    require_known_type(parameter.type);
                     ValueKind kind = kind_of(parameter.type);
                     std::string symbol = "fine.proof-function." + declaration.name + "." + parameter.name;
                     indices.emplace(parameter.name, ValueTerm(kind, context_.constant(symbol.c_str(), sort(kind))));
@@ -985,7 +1222,8 @@ namespace fine {
             }
 
             void declare_function(syntax::FunctionDecl const &declaration) {
-                if (functions_.contains(declaration.name) || proof_functions_.contains(declaration.name))
+                if (functions_.contains(declaration.name) || proof_functions_.contains(declaration.name) ||
+                    constructors_.contains(declaration.name))
                     reject(declaration.span, "duplicate function `" + declaration.name + "`");
                 ValueEnvironment values;
                 ProofEnvironment proofs;
@@ -995,6 +1233,7 @@ namespace fine {
                 for (auto const &parameter : declaration.parameters) {
                     if (!names.insert(parameter.name).second)
                         reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
+                    require_known_type(parameter.type);
                     ValueKind kind = kind_of(parameter.type);
                     std::string symbol = "fine." + declaration.name + "." + parameter.name;
                     values.emplace(parameter.name, ValueTerm(kind, context_.constant(symbol.c_str(), sort(kind))));
@@ -1026,6 +1265,7 @@ namespace fine {
                            source.empty() ? std::nullopt : std::optional(source));
                 }
                 ValueTerm body = elaborate_value(declaration.body, values, proofs, proof_order, absorbed);
+                require_known_type(declaration.result_type);
                 ValueKind result_kind = kind_of(declaration.result_type);
                 if (body.kind != result_kind)
                     reject(declaration.body.span, "function body does not have declared result type `" +
@@ -1034,7 +1274,7 @@ namespace fine {
                 std::vector<z3::expr> ensures;
                 for (auto const &clause : declaration.ensures) {
                     ValueTerm proposition = elaborate_value(clause, values, proofs, proof_order, absorbed);
-                    if (proposition.kind != ValueKind::boolean)
+                    if (proposition.kind != boolean_kind())
                         reject(clause.span, "function guarantee is not Bool");
                     ensures.push_back(proposition.expression);
                 }
@@ -1085,6 +1325,7 @@ namespace fine {
                 for (std::size_t i = 0; i < expression.elements.size(); ++i) {
                     ValueTerm argument = elaborate_value(expression.elements[i], caller_values, caller_proofs,
                                                          caller_proof_order, caller_absorbed);
+                    require_known_type(function.parameters[i].type);
                     ValueKind expected = kind_of(function.parameters[i].type);
                     if (argument.kind != expected)
                         reject(expression.elements[i].span,
@@ -1184,6 +1425,7 @@ namespace fine {
                 }
                 ValueTerm result =
                     elaborate_value(function.body, callee_values, callee_proofs, callee_proof_order, callee_absorbed);
+                require_known_type(function.result_type);
                 if (result.kind != kind_of(function.result_type))
                     reject(expression.span, "internal function result type mismatch");
                 return result;
@@ -1211,6 +1453,7 @@ namespace fine {
                                    std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed) {
                 ensure_fresh(declaration.name, declaration.span, values, proofs);
                 ValueTerm value = elaborate_value(declaration.value, values, proofs, proof_order, absorbed);
+                require_known_type(declaration.type);
                 ValueKind expected = kind_of(declaration.type);
                 if (value.kind != expected)
                     reject(declaration.span, "value binding `" + declaration.name + "` has the wrong type");
@@ -1264,7 +1507,7 @@ namespace fine {
                                    std::size_t &assertion_index, ValueEnvironment &values, ProofEnvironment &proofs,
                                    std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed) {
                 ValueTerm proposition = elaborate_value(declaration.proposition, values, proofs, proof_order, absorbed);
-                if (proposition.kind != ValueKind::boolean)
+                if (proposition.kind != boolean_kind())
                     reject(declaration.span, "assertion is not Bool");
                 z3::solver solver(context_);
                 for (auto const &assumption : absorbed)
