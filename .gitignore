@@ -127,3 +127,5 @@ bazel-*
 .deeptest/
 tptp_test/
 tptp_benchmarks/
+# Local executable for the opt-in proof-term synthesis probe.
+fine/spikes/proof-term-synthesis/probe

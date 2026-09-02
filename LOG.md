@@ -3296,3 +3296,77 @@ must be the first fixture because neither exact-local selection nor `refl` can
 inhabit its reversed endpoint type; only a typed source application can close
 the hole. Recursive application grammars need a finite bound before transitivity
 or any larger proof search is admitted.
+
+## 2026-09-02 — Z3 proof-term synthesis boundary
+
+h asked whether Z3 can synthesize proof terms. The question was split into
+native unsatisfiability proofs, ground Fine-source inhabitants, and universally
+correct recursive proof functions; treating all three as one facility would
+have hidden the ownership boundary the proof-term branch was created to enforce.
+
+Local source inspection found `solver::proof()` and the complete low-level
+`Z3_OP_PR_*` operator family, recursive datatypes/functions, model extraction,
+fixedpoint answers, and QSAT. A full scan found no implementation of
+`synth-fun`, `synth_fun`, `SyGuS`, or `sygus` in `src`, `examples`, or `doc`.
+The official Z3 proof-log guide describes proof terms as low-level inference
+rules and newer logs as big-step hints, some of which need an SMT call to
+validate. The official datatype guide explicitly says ground ADT procedures do
+not lift to induction and Z3 has no method for producing induction proofs. The
+Reynolds et al. CEGQI synthesis paper contributes the useful ADT-grammar and
+evaluation-axiom pattern, but its synthesis implementation was in CVC4.
+
+Added the opt-in reproducible probe at
+`fine/spikes/proof-term-synthesis`. It builds against the exact local Z3 static
+library and exercises four discriminators:
+
+1. Native proof mode returns
+   `(unit-resolution (asserted a) (asserted (not a)) false)` for a Boolean
+   contradiction.
+2. Symmetry over an uninterpreted carrier contains the operator set
+   `asserted mp rewrite symm unit-resolution`. The same formula over `Int`
+   instead contains
+   `asserted monotonicity mp not-or-elim rewrite trans unit-resolution`.
+   Therefore mining a native `symm` happens to work in one theory path but is
+   not a stable source proof representation.
+3. A Fine-owned recursive `SrcProof` datatype with exact endpoint functions and
+   a cost bound returns the ground model values
+   `apply-symm local-p` and
+   `apply-symm (apply-trans local-12 local-23)` for the two requested holes.
+   This is real bounded ground proof-term synthesis because the model contains
+   an inspectable constructor tree, while Fine still owns its grammar, typing,
+   scoping, and recheck.
+4. An unknown `synth-symm : SrcProof -> SrcProof` constrained to reverse every
+   well-formed recursive proof returns `unknown` / `timeout` at five seconds.
+   The specialized QSAT tactic also returns `unknown`, immediately, because the
+   formula contains the uninterpreted candidate function. These do not prove
+   impossibility, but they prevent the ground result from being mislabeled as
+   induction or general proof-function synthesis.
+
+The first compile attempt tried to classify proof nodes with a nonexistent
+public `Z3_PROOF_SORT` enum and failed exactly at that identifier. The public
+sort-kind API deliberately has no proof member; the corrected probe recognizes
+the internal sort name `Proof` before collecting proof-declaration names.
+
+Commands and observed result:
+
+```sh
+fine/spikes/proof-term-synthesis/run.sh
+# native Boolean and both symmetry queries: unsat
+# ground-symmetry-hole: sat, apply-symm local-p
+# ground-composition-hole: sat, apply-symm (apply-trans local-12 local-23)
+# universal-symmetry-scheme: unknown, timeout
+# qsat-universal-symmetry-scheme: unknown, formula contains uninterpreted functions
+
+rg -n 'synth-fun|synth_fun|SyGuS|sygus' src examples doc
+# no matches
+```
+
+The closed design decision is narrower than adding a new backend now. Named
+proof functions and deterministic typed application enumeration remain next.
+After symmetry passes that route, Fine may test Z3 datatype-valued model search
+behind the same exact grammar and then lift, reparse, and recheck its selection.
+Rainfall would retain grammar, bound, model choice, and final Fine check as
+separate facts. Native Z3 proofs remain solver evidence only; Spacer invariants
+remain excluded because prior fixtures showed they project away constructor
+support. Full analysis and primary-source links are in
+`fine/research/z3-proof-term-synthesis.md`.

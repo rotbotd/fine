@@ -61,6 +61,9 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       search; retain its two input proofs distinctly in Rainfall.
 - [ ] Bound recursive application grammar so a cyclic proof-function set
       terminates without adding a tactic language or global theorem search.
+- [ ] After symmetry works with deterministic enumeration, test a bounded
+      Z3 datatype-model backend against the same exact grammar. Lift and recheck
+      its chosen tree; do not treat Z3's native unsat proof as Fine source.
 
 ## Later, only after identity search earns it
 
