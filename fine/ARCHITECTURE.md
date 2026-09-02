@@ -156,6 +156,16 @@ field can close a branch vacuously. Nested or negative atoms, multiple predicate
 goals, multiple arbitrary fields, and a user-facing inversion form remain
 rejected.
 
+Every one-layer constructor alternative is alpha-local before it is bound.
+Fine creates fresh same-sort terms for the retained constructor parameters and
+arbitrary-field binder, substitutes them through that alternative's result,
+premises, requirements, and witness, and only then applies its existential and
+universal quantifiers. Reusing the retained schema constants would be unsound:
+when induction and goal construction mention the same predicate constructor,
+the alternative's existential binder would also capture the live consumer
+branch fields inside the goal atom. Rainfall pairs every schema parameter with
+its local binder and keeps the arbitrary field's schema/local handles distinct.
+
 An arbitrary constrained field has the source form
 `arbitrary x: View(arguments) { recursive_atoms; }` inside a constructor's
 `takes` block. It is retained as a proof-only function field and is never put in

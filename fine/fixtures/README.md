@@ -145,6 +145,17 @@ the later declaration from running. Rainfall retains both constructor results,
 the exact `proof.admit`, a later `proof.use`, and the fact that no theorem was
 added to fixedpoint.
 
+`predicate-renaming-proof.fine` is the same-predicate binder-collision control.
+`named_rename` inducts over `Named(name, term)` and constructs the direct goal
+`Named(other, rename(term, name, other))`. In the `application` branch the
+goal's `Named.application` alternative must existentially bind a fresh local
+copy of its three schema parameters. Binding the retained constants themselves
+captures the live source name, function, and argument inside the goal atom and
+leaves the branch searching. Rainfall records every schema/local parameter pair
+and the construction retains the unbound source branch fields. Deleting the
+proof makes the later nonrecursive `Request` consumer refute; the false control
+tries to change the name index without renaming the term and fails at `here`.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.

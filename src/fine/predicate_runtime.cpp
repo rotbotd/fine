@@ -596,29 +596,87 @@ namespace fine::runtime_detail {
             }
         }
 
+        std::size_t one_layer_serial = 0;
         auto one_layer = [&](PredicateInfo const &item, z3::expr const &atom,
                              std::string const &consumer_constructor, std::string const &use,
                              std::size_t assumption_ordinal) {
             if (!atom.is_app() || atom.num_args() != item.index_types.size())
                 throw std::runtime_error("internal predicate inversion arity mismatch");
+            std::size_t invocation = one_layer_serial++;
             z3::expr alternatives = context_.bool_val(false);
             for (PredicateConstructorInfo const &constructor : item.constructors) {
+                z3::expr_vector schema_terms(context_);
+                z3::expr_vector local_terms(context_);
+                z3::expr_vector local_parameters(context_);
+                std::string local_prefix = "Fine.predicate-induction." + declaration.name + ".one-layer." +
+                                           std::to_string(invocation) + "." + constructor.name;
+                for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
+                    z3::expr local = context_.constant(
+                        (local_prefix + ".parameter" + std::to_string(i)).c_str(),
+                        constructor.parameters[i].get_sort());
+                    schema_terms.push_back(constructor.parameters[i]);
+                    local_terms.push_back(local);
+                    local_parameters.push_back(local);
+                    if (rainfall_)
+                        rainfall_->record(
+                            "derive", "predicate-induction.one-layer.parameter",
+                            {run_scope, "branch:" + consumer_constructor}, "fine.induction",
+                            "Fresh local binder for one retained constructor-schema parameter; existential closure "
+                            "cannot capture a same-manager term already owned by the consumer branch",
+                            {RainfallRecorder::string_field("consumer_constructor", consumer_constructor),
+                             RainfallRecorder::string_field("use", use),
+                             RainfallRecorder::string_field("predicate", item.name),
+                             RainfallRecorder::string_field("predicate_constructor", constructor.name),
+                             RainfallRecorder::number_field("parameter_ordinal", i),
+                             RainfallRecorder::string_field("schema_parameter",
+                                                            rainfall_->term(constructor.parameters[i])),
+                             RainfallRecorder::string_field("local_parameter", rainfall_->term(local))});
+                }
+                std::vector<z3::expr> local_field_binders;
+                local_field_binders.reserve(constructor.arbitrary_fields.size());
+                for (std::size_t i = 0; i < constructor.arbitrary_fields.size(); ++i) {
+                    z3::expr local = context_.constant(
+                        (local_prefix + ".arbitrary" + std::to_string(i)).c_str(),
+                        constructor.arbitrary_fields[i].binder_term.get_sort());
+                    schema_terms.push_back(constructor.arbitrary_fields[i].binder_term);
+                    local_terms.push_back(local);
+                    local_field_binders.push_back(local);
+                }
+                auto localize = [&](z3::expr const &expression) {
+                    z3::expr result = expression;
+                    return schema_terms.empty() ? result : result.substitute(schema_terms, local_terms);
+                };
+
                 z3::expr branch = context_.bool_val(true);
                 for (unsigned i = 0; i < atom.num_args(); ++i)
-                    branch = branch && atom.arg(i) == constructor.result_indices[i];
+                    branch = branch && atom.arg(i) == localize(constructor.result_indices[i]);
                 for (z3::expr const &premise : constructor.premise_terms)
-                    branch = branch && premise;
+                    branch = branch && localize(premise);
                 for (std::size_t field_ordinal = 0; field_ordinal < constructor.arbitrary_fields.size();
                      ++field_ordinal) {
                     PredicateConstructorInfo::ArbitraryField const &field =
                         constructor.arbitrary_fields[field_ordinal];
+                    z3::expr local_binder = local_field_binders[field_ordinal];
+                    z3::expr local_requirement = localize(field.requirement);
                     z3::expr field_premises = context_.bool_val(true);
                     for (z3::expr const &premise : field.premise_terms)
-                        field_premises = field_premises && premise;
+                        field_premises = field_premises && localize(premise);
                     z3::expr_vector binder(context_);
-                    binder.push_back(field.binder_term);
-                    z3::expr availability = field_availability(constructor, field, false);
-                    z3::expr total_field = z3::forall(binder, z3::implies(field.requirement, field_premises));
+                    binder.push_back(local_binder);
+                    z3::expr availability = local_requirement;
+                    std::optional<z3::expr> local_witness;
+                    if (field.availability_witness) {
+                        local_witness = localize(*field.availability_witness);
+                        z3::expr_vector source(context_);
+                        z3::expr_vector destination(context_);
+                        source.push_back(local_binder);
+                        destination.push_back(*local_witness);
+                        availability = availability.substitute(source, destination);
+                    }
+                    else {
+                        availability = z3::exists(binder, availability);
+                    }
+                    z3::expr total_field = z3::forall(binder, z3::implies(local_requirement, field_premises));
                     branch = branch && availability && total_field;
                     if (rainfall_) {
                         std::vector<RainfallField> data{
@@ -628,14 +686,15 @@ namespace fine::runtime_detail {
                             RainfallRecorder::string_field("predicate_constructor", constructor.name),
                             RainfallRecorder::number_field("field_ordinal", field_ordinal),
                             RainfallRecorder::string_field("binder", field.binder),
-                            RainfallRecorder::string_field("binder_term", rainfall_->term(field.binder_term)),
+                            RainfallRecorder::string_field("binder_term", rainfall_->term(local_binder)),
+                            RainfallRecorder::string_field("schema_binder_term", rainfall_->term(field.binder_term)),
                             RainfallRecorder::string_field("view", field.view_name),
-                            RainfallRecorder::string_field("requirement", rainfall_->term(field.requirement)),
+                            RainfallRecorder::string_field("requirement", rainfall_->term(local_requirement)),
                             RainfallRecorder::string_field(
                                 "availability_mode", field.availability_witness ? "declared-witness" : "solver-exists"),
                             RainfallRecorder::string_field(
                                 "availability_witness",
-                                field.availability_witness ? rainfall_->term(*field.availability_witness) : ""),
+                                local_witness ? rainfall_->term(*local_witness) : ""),
                             RainfallRecorder::string_field("availability", rainfall_->term(availability)),
                             RainfallRecorder::string_field("premises", rainfall_->term(field_premises)),
                             RainfallRecorder::string_field("total_field", rainfall_->term(total_field)),
@@ -645,17 +704,14 @@ namespace fine::runtime_detail {
                         rainfall_->record(
                             "derive", "predicate-induction." + use + ".arbitrary-field",
                             {run_scope, "branch:" + consumer_constructor}, "fine.induction",
-                            "Compiler-owned total constrained field in one predicate-constructor alternative; "
-                            "availability and the universally scoped recursive premises remain separate exact terms",
+                            "Alpha-local compiler-owned constrained field in one predicate-constructor alternative; "
+                            "its binders cannot capture consumer-branch terms, and availability remains separate "
+                            "from universally scoped recursive premises",
                             data);
                     }
                 }
-                if (!constructor.parameters.empty()) {
-                    z3::expr_vector parameters(context_);
-                    for (z3::expr const &parameter : constructor.parameters)
-                        parameters.push_back(parameter);
-                    branch = z3::exists(parameters, branch);
-                }
+                if (!local_parameters.empty())
+                    branch = z3::exists(local_parameters, branch);
                 alternatives = alternatives || branch;
             }
             return alternatives;

@@ -546,6 +546,78 @@
           grep -F "refuted-predicate-induction: use_step_distinct" \
             <<<"$no_predicate_proof_output"
           grep -F "failed-constructor: requested" <<<"$no_predicate_proof_output"
+          predicate_renaming="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-renaming-proof.fine")"
+          echo "$predicate_renaming"
+          grep -F "verified-proof: named_rename" <<<"$predicate_renaming"
+          grep -F "constructor-branches: 3 verified" <<<"$predicate_renaming"
+          grep -F "verified-predicate-induction: use_named_rename" <<<"$predicate_renaming"
+          predicate_renaming_false="$(mktemp)"
+          if $out/bin/fine run \
+            "$src/fine/fixtures/predicate-renaming-proof-false.fine" \
+            >"$predicate_renaming_false" 2>&1; then
+            echo "admitted predicate-index renaming without renaming the term" >&2
+            exit 1
+          fi
+          grep -F "refuted-proof: name_capture" "$predicate_renaming_false"
+          grep -F "failed-constructor: here" "$predicate_renaming_false"
+          predicate_renaming_false_rain="$(mktemp)"
+          if $out/bin/fine rain \
+            "$src/fine/fixtures/predicate-renaming-proof-false.fine" \
+            >"$predicate_renaming_false_rain"; then
+            echo "refuted predicate proof rain unexpectedly returned success" >&2
+            exit 1
+          fi
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/predicate-renaming-proof-false.fine" \
+            "$predicate_renaming_false_rain"
+          predicate_renaming_rain="$(mktemp)"
+          $out/bin/fine rain \
+            "$src/fine/fixtures/predicate-renaming-proof.fine" >"$predicate_renaming_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/predicate-renaming-proof.fine" "$predicate_renaming_rain"
+          ${pkgs.python3}/bin/python - "$predicate_renaming_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          terms = {event["data"]["id"]: event["data"]["text"]
+                   for event in events if event["operation"] == "term.declare"}
+          construction = next(event for event in events
+                              if event["operation"] == "predicate-induction.goal.construct"
+                              and event["within"][0] == "proof:named_rename"
+                              and event["data"]["constructor"] == "application")
+          text = terms[construction["data"]["construction"]]
+          assert "_d_app_app(_d_Fine_predicate_Named_application_arg1," \
+                 "_d_Fine_predicate_Named_application_arg2)" in text
+          assert "Fine.predicate-induction.named_rename.one-layer." in text
+          assert ".application.parameter" in text
+          parameter_pairs = [event for event in events
+                             if event["operation"] == "predicate-induction.one-layer.parameter"
+                             and event["within"][0] == "proof:named_rename"
+                             and event["data"]["consumer_constructor"] == "application"
+                             and event["data"]["predicate_constructor"] == "application"]
+          assert [event["data"]["parameter_ordinal"] for event in parameter_pairs] == [0, 1, 2]
+          assert all(event["data"]["schema_parameter"] != event["data"]["local_parameter"]
+                     for event in parameter_pairs)
+          uses = [event for event in events if event["operation"] == "proof.use"]
+          assert len(uses) == 1
+          assert uses[0]["data"]["proof"] == "named_rename"
+          assert uses[0]["data"]["consumer"] == "use_named_rename"
+          assert uses[0]["data"]["constructor"] == "requested"
+          PY
+          no_renaming_proof="$(mktemp)"
+          ${pkgs.python3}/bin/python - \
+            "$src/fine/fixtures/predicate-renaming-proof.fine" "$no_renaming_proof" <<'PY'
+          import pathlib, sys
+          source = pathlib.Path(sys.argv[1]).read_text()
+          start = source.index("proof named_rename")
+          end = source.index("\npredicate Request")
+          pathlib.Path(sys.argv[2]).write_text(source[:start] + source[end + 1:])
+          PY
+          no_renaming_proof_output="$($out/bin/fine run "$no_renaming_proof")"
+          echo "$no_renaming_proof_output"
+          grep -F "refuted-predicate-induction: use_named_rename" \
+            <<<"$no_renaming_proof_output"
+          grep -F "failed-constructor: requested" <<<"$no_renaming_proof_output"
           append_proof="$($out/bin/fine run \
             "$src/fine/fixtures/proof-append-length.fine")"
           echo "$append_proof"

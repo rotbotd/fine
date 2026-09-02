@@ -298,6 +298,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
         if operation in {"check.run.close", "synth.run.close", "bisim.run.close", "predicate-check.run.close",
                          "predicate-induction.run.close"}:
             terminal_sequence = sequence
+        if operation == "proof.run.close" and data.get("status") != "verified":
+            terminal_sequence = sequence
 
     _require(len(documents) == 1, "replay must declare exactly one document")
     _require(len(snapshots) == 1, "replay must declare exactly one snapshot")

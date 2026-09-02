@@ -1,0 +1,46 @@
+// One-layer construction must alpha-rename its constructor schema before binding it.
+// Otherwise the Named.application alternative captures the live induction-branch fields.
+enum Tm {
+  bound(index: Int),
+  free(name: Int),
+  app(fn: Tm, argument: Tm),
+  abs(body: Tm),
+}
+
+function rename(term: Tm, source: Int, target: Int): Tm {
+  match term {
+    bound(index) => bound(index),
+    free(name) => if name == source { free(target) } else { free(name) },
+    app(fn, argument) => app(rename(fn, source, target), rename(argument, source, target)),
+    abs(body) => abs(rename(body, source, target)),
+  }
+}
+
+predicate Named(name: Int, term: Tm) {
+  constructor here(name: Int) { takes {} gives Named(name, free(name)); }
+  constructor application(name: Int, fn: Tm, argument: Tm) {
+    takes { Named(name, fn); Named(name, argument); }
+    gives Named(name, app(fn, argument));
+  }
+  constructor abstraction(name: Int, body: Tm) {
+    takes { Named(name, body); }
+    gives Named(name, abs(body));
+  }
+}
+
+proof named_rename(name: Int, term: Tm, other: Int) {
+  inducts(Named(name, term));
+  assumes { Named(name, term); }
+  ensures { Named(other, rename(term, name, other)); }
+}
+
+predicate Request(name: Int, term: Tm, other: Int) {
+  constructor requested(name: Int, term: Tm, other: Int) {
+    takes {} gives Request(name, term, other);
+  }
+}
+check use_named_rename(name: Int, term: Tm, other: Int) {
+  inducts(Request(name, term, other));
+  assumes { Request(name, term, other); Named(name, term); }
+  ensures { Named(other, rename(term, name, other)); }
+}

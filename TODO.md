@@ -275,6 +275,18 @@ proving typing/predicate-respecting opening equivariance. The next fixture must
 use that mechanism with genuinely different Step and typing freshness views so
 neither total field can be instantiated directly in the other's domain.
 
+The first such predicate-respecting renaming attempt found and closed a lower
+binder-identity bug. One-layer inversion/construction now freshens every
+constructor parameter and arbitrary-field binder before quantifying an
+alternative. `predicate-renaming-proof.fine` can consequently prove and reuse
+`Named(name, term) -> Named(other, rename(term, name, other))`; the predecessor
+captures the live `Named.application` branch fields in its goal alternative and
+does not return within two seconds. This establishes ordinary predicate
+renaming, not the cofinite abstraction theorem. The full scratch `Marked`
+renaming proof now reaches and refutes `abs_case` instead of disappearing in
+that captured application search, isolating the remaining total-field transport
+obligation.
+
 ## Later language test: an elementary topos without ceremony
 
 An elementary topos must be definable once and usable for generic theorems

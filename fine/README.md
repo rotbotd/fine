@@ -159,6 +159,16 @@ enclosing one-layer formula separately. Nested or negative predicate formulas,
 multiple predicate goals, multiple arbitrary fields in one constructor, and
 typed derivation witnesses remain outside this slice.
 
+Each one-constructor inversion/construction alternative alpha-renames its
+retained schema parameters before quantifying them. This is not cosmetic. If a
+proof inducts over `P` and has a direct `P(...)` goal, reusing the same
+manager-local constructor constants would let the goal alternative's
+existential binder capture the current induction branch's fields. Rainfall
+records each schema/local parameter pair. `predicate-renaming-proof.fine`
+exercises the exact collision: a `Named.application` branch proves that renaming
+its two recursively named children preserves `Named`; the predecessor remains
+in that captured branch, while the alpha-local construction closes it.
+
 The first non-Horn derivation field is explicit rather than smuggled through a body
 variable:
 

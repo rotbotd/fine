@@ -2808,3 +2808,123 @@ now gets past the former syntax restriction but remains in its abstraction
 branch beyond ten seconds without the needed equations relating renaming,
 opening, support, and the predicate. The next slice can finally state and reuse
 those predicate-respecting transport facts without putting them into Spacer.
+
+## 2026-09-02 — alpha-local one-layer predicate construction
+
+The first predicate-respecting renaming probe after `a42ff4627` exposed a
+same-manager binder capture in Fine's own one-layer constructor expansion. The
+probe defined a recursive native `Tm`, a structural `rename`, and the ordinary
+constructor-generated predicate:
+
+```
+Named(name, term)
+here(name): Named(name, free(name))
+application(name, fn, argument):
+  Named(name, fn) && Named(name, argument)
+  -> Named(name, app(fn, argument))
+abstraction(name, body): Named(name, body) -> Named(name, abs(body))
+```
+
+It then asked for the derivation-induction theorem
+
+```
+Named(name, term) -> Named(other, rename(term, name, other))
+```
+
+The `here` branch closed, but `application` remained past twenty seconds. A
+three-second Rainfall prefix isolated the exact generated construction formula.
+`one_layer` had built each alternative directly with the constructor table's
+retained parameter constants and then called `exists` on those same constants.
+When the consumer branch and the goal alternative were both
+`Named.application`, the current branch's `name`, `fn`, and `argument` were the
+same Z3 ASTs as the schema constants being bound. Z3 correctly abstracted every
+occurrence, including those already present inside the goal atom. The purported
+fixed source term
+
+```
+rename(app(Fine.predicate.Named.application.arg1,
+           Fine.predicate.Named.application.arg2),
+       Fine.predicate.Named.application.arg0,
+       other)
+```
+
+therefore became a function of the alternative's existential variables. This
+was not alpha-equivalent construction; it changed which object the branch was
+proving. Earlier preservation tests avoided the collision accidentally because
+the induction predicate was `Step` while the constructed/inverted predicate was
+`Marked`.
+
+Every one-layer alternative is now localized before any binder is made. Fine
+creates a fresh same-sort constant for every retained constructor parameter and
+arbitrary-field binder, substitutes the full vector through result indices,
+ordinary premises, arbitrary requirements, recursive premises, and declared
+witnesses, and only then existentially closes the constructor parameters and
+universally closes an arbitrary field. The consumer atom is never included in
+that substitution. Fresh names include the declaration, one-layer invocation,
+constructor, and ordinal; identity does not rely on text after construction.
+Rainfall records one `predicate-induction.one-layer.parameter` event per schema
+parameter with the strong schema and local handles. Arbitrary-field events now
+retain both `schema_binder_term` and the local `binder_term`.
+
+The promoted `predicate-renaming-proof.fine` now verifies all three `Named`
+branches and admits `named_rename`. A later nonrecursive `Request` induction uses
+the theorem; deleting it makes `Request.requested` refute. The false control
+changes the predicate's name index without renaming the term and fails at
+`Named.here`, demonstrating that the repaired construction does not simply
+admit same-predicate goals. Rainfall's `application` construction contains the
+unchanged live branch `app(arg1,arg2)` outside the existential binders, while
+its candidate fields have distinct `.one-layer.<n>.application.parameter<i>`
+identities. All three schema/local pairs are unequal.
+
+The clean predecessor artifact is an executable discriminator:
+
+```
+timeout 2 \
+  /nix/store/2ac8q16x64l7jb53hcmldq2qjvplzsg0-fine-0.0.1/bin/fine run \
+  fine/fixtures/predicate-renaming-proof.fine
+# exit 124, no output
+
+build/fine/fine run fine/fixtures/predicate-renaming-proof.fine
+# verified-proof: named_rename
+# verified-predicate-induction: use_named_rename
+```
+
+This probe also found a trace-lifecycle omission. A verified `proof.run.close`
+is nonterminal because later declarations may use it, but a refuted proof stops
+the document and its close is terminal. `rainfall_replay.py` previously treated
+no proof close as terminal, so a complete refuted-proof trace failed with
+`replay has no terminal run close`. It now accepts `proof.run.close` as terminal
+exactly when its status is not `verified`. The false predicate-renaming proof's
+211-event trace validates and remains a process-level failure.
+
+Existing Horn preservation, non-Horn arbitrary preservation, total-field
+preservation, and reusable predicate-proof fixtures still verify after
+alpha-localization. Their Rainfall traces validate. The full dirty package build,
+including every install check, produced:
+
+```
+nix flake check
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/2sdzh58ina8fn66zqpkwp5ab1jrrmpbb-fine-0.0.1
+```
+
+The original cofinite transport edge is now sharper, not closed. The scratch
+`Marked(term)` renaming proof no longer disappears in `app_case`; it closes the
+three ordinary constructors and returns `sat` for `abs_case`. Its total IH says
+that every fresh opening remains `Marked` after an arbitrary rename. Its goal
+requires a total field over openings of the renamed body. Connecting those
+terms needs the standard fresh intermediary, a commute theorem for rename with
+open away from the renamed names, and predicate transport between two fresh
+openings. The fixed compiler now exposes that missing argument rather than
+capturing the terms that state it.
+
+After adding the terminal refuted-proof replay control to the install check, the
+complete dirty tree was rebuilt again:
+
+```
+nix flake check
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/wnsxa8h5iivxq6dwbkj2vv6z0zz2vacn-fine-0.0.1
+```
