@@ -160,14 +160,17 @@ An arbitrary constrained field has the source form
 `arbitrary x: View(arguments) { recursive_atoms; }` inside a constructor's
 `takes` block. It is retained as a proof-only function field and is never put in
 the Horn body. During induction, `x` is a distinct free same-manager carrier
-term scoped to that field, the instantiated view proposition is an assumption,
-and every scoped recursive atom yields its own exact induction hypothesis. Fine
+term scoped to that field, and every scoped recursive atom yields its own exact
+induction-hypothesis template. Fine then retains the actual function-field
+resource as `forall x. requirement -> conjunction(IH templates)`. The branch
+also receives the separately verified availability formula, so it may instantiate
+that total resource without identifying `x` with the availability witness. Fine
 also separately verifies that the view is inhabited for every constructor
 parameter assignment; otherwise the branch would close vacuously. Without a
 declared view witness this is the direct `forall parameters. exists x.
 View(arguments, x)` obligation. With one, Fine checks `forall parameters.
 View(arguments, witness(arguments))`, which constructively entails availability.
-The arbitrary branch still uses its independent free `x`, never the witness.
+The template binder remains independent of the witness.
 This is a compiler-owned induction rule, not a fixedpoint interpretation of the
 arbitrary field.
 
@@ -182,8 +185,8 @@ A universally quantified constructor field stays explicit in the predicate
 IR. In particular, putting the bound name only in a Horn rule body turns
 `forall fresh names` into a search for one working name. Fine must not perform
 that translation. Fine now retains the arbitrary carrier, its constrained-view
-requirement, scoped recursive premise, availability obligation, and induction
-hypothesis without Horn lowering. The remaining locally nameless slice must put
+requirement, scoped recursive premise, availability obligation, individual IH
+template, and total universally bound IH field without Horn lowering. The remaining locally nameless slice must put
 the real opening and support operations into those objects and retain the
 freshness/equivariance argument that makes the source cofinite constructor
 sound. This is an elaboration of the general predicate mechanism, not a primitive

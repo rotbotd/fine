@@ -731,19 +731,20 @@ namespace fine::runtime_detail {
             for (std::size_t field_ordinal = 0; field_ordinal < constructor.arbitrary_fields.size(); ++field_ordinal) {
                 PredicateConstructorInfo::ArbitraryField const &field = constructor.arbitrary_fields[field_ordinal];
 
-                z3::expr availability = field.requirement;
+                z3::expr branch_availability = field.requirement;
                 if (field.availability_witness) {
                     z3::expr_vector source(context_);
                     z3::expr_vector destination(context_);
                     source.push_back(field.binder_term);
                     destination.push_back(*field.availability_witness);
-                    availability = availability.substitute(source, destination);
+                    branch_availability = branch_availability.substitute(source, destination);
                 }
                 else {
                     z3::expr_vector binders(context_);
                     binders.push_back(field.binder_term);
-                    availability = z3::exists(binders, availability);
+                    branch_availability = z3::exists(binders, branch_availability);
                 }
+                z3::expr availability = branch_availability;
                 if (!constructor.parameters.empty()) {
                     z3::expr_vector constructor_parameters(context_);
                     for (z3::expr const &parameter : constructor.parameters)
@@ -799,20 +800,20 @@ namespace fine::runtime_detail {
                                             constructor.name + "`; arbitrary-fresh induction would be vacuous");
                 }
 
-                hypotheses = hypotheses && field.requirement;
+                z3::expr field_hypotheses = context_.bool_val(true);
                 for (std::size_t i = 0; i < field.recursive_premise_indices.size(); ++i) {
                     std::vector<z3::expr> const &indices = field.recursive_premise_indices[i];
                     z3::expr hypothesis = induction_hypothesis(
                         indices, constructor.name + ".arbitrary" + std::to_string(field_ordinal) + ".premise" +
                                      std::to_string(i));
-                    hypotheses = hypotheses && hypothesis;
+                    field_hypotheses = field_hypotheses && hypothesis;
                     hypothesis_terms.push_back(hypothesis);
                     if (rainfall_)
                         rainfall_->record(
                             "derive", "predicate-induction.arbitrary-hypothesis", {run_scope, branch_scope},
                             "fine.induction",
-                            "Exact recursive premise and induction hypothesis under one scoped arbitrary-fresh carrier "
-                            "value and its independently retained view requirement",
+                            "Exact recursive premise and induction-hypothesis template owned by one total "
+                            "arbitrary constrained field",
                             {RainfallRecorder::string_field("constructor", constructor.name),
                              RainfallRecorder::number_field("field_ordinal", field_ordinal),
                              RainfallRecorder::number_field("premise_ordinal", i),
@@ -826,6 +827,31 @@ namespace fine::runtime_detail {
                              RainfallRecorder::number_field("generalized_parameters", context_terms.size()),
                              RainfallRecorder::string_field("scope_owner", "fine-arbitrary-field")});
                 }
+                z3::expr_vector binder(context_);
+                binder.push_back(field.binder_term);
+                z3::expr total_hypotheses =
+                    z3::forall(binder, z3::implies(field.requirement, field_hypotheses));
+                hypotheses = hypotheses && branch_availability && total_hypotheses;
+                if (rainfall_)
+                    rainfall_->record(
+                        "derive", "predicate-induction.arbitrary.total-hypothesis", {run_scope, branch_scope},
+                        "fine.induction",
+                        "Compiler-owned total induction resource for every carrier satisfying one constrained "
+                        "field; the separately verified availability resource prevents vacuity",
+                        {RainfallRecorder::string_field("constructor", constructor.name),
+                         RainfallRecorder::number_field("field_ordinal", field_ordinal),
+                         RainfallRecorder::string_field("binder", field.binder),
+                         RainfallRecorder::string_field("binder_term", rainfall_->term(field.binder_term)),
+                         RainfallRecorder::string_field("view", field.view_name),
+                         RainfallRecorder::string_field("requirement", rainfall_->term(field.requirement)),
+                         RainfallRecorder::string_field("availability_resource",
+                                                        rainfall_->term(branch_availability)),
+                         RainfallRecorder::string_field("hypothesis_templates",
+                                                        rainfall_->term(field_hypotheses)),
+                         RainfallRecorder::string_field("total_hypothesis", rainfall_->term(total_hypotheses)),
+                         RainfallRecorder::number_field("recursive_hypotheses",
+                                                        field.recursive_premise_indices.size()),
+                         RainfallRecorder::string_field("scope_owner", "fine-arbitrary-field")});
             }
             z3::expr branch_query = hypotheses && branch_resources && !branch_goal_resource;
             if (rainfall_) {

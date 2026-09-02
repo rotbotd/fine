@@ -166,10 +166,11 @@ arbitrary fresh: FreshApart(excluded) {
 
 `FreshApart` is a named `view ... over Name` proposition and creates no wrapper
 sort. Fine keeps the arbitrary name, instantiated view requirement, opened
-recursive atom, and resulting induction hypothesis as separate terms. It checks
+recursive atom, individual IH template, and
+`forall name. requirement -> IH` field as separate terms. It checks
 that the view is inhabited for every constructor-parameter assignment before
-using the requirement as a branch assumption, preventing an empty view from
-proving anything. The field is never lowered to Horn; consequently membership
+admitting that total field and its availability resource, preventing an empty
+view from proving anything. The field is never lowered to Horn; consequently membership
 and fixedpoint-invariant queries reject a predicate containing it, and none of the
 predicate's other constructors are registered with fixedpoint either. Full locally
 nameless opening/support and its

@@ -1,0 +1,90 @@
+// Two independent arbitrary fields share a view but not a binder identity.
+// The under_abs branch needs Step's total IH at Marked's bound fresh name.
+enum Tm {
+  bound(index: Int),
+  free(name: Int),
+  app(fn: Tm, argument: Tm),
+  abs(body: Tm),
+}
+
+function open_at(term: Tm, depth: Int, fresh: Int): Tm {
+  match term {
+    bound(index) => if index == depth { free(fresh) } else { bound(index) },
+    free(name) => free(name),
+    app(fn, argument) => app(open_at(fn, depth, fresh), open_at(argument, depth, fresh)),
+    abs(body) => abs(open_at(body, depth + 1, fresh)),
+  }
+}
+
+function support_cutoff(term: Tm): Int {
+  match term {
+    bound(_) => 0,
+    free(name) => name,
+    app(fn, argument) => if support_cutoff(fn) >= support_cutoff(argument) {
+      support_cutoff(fn)
+    } else {
+      support_cutoff(argument)
+    },
+    abs(body) => support_cutoff(body),
+  }
+}
+
+view FreshFor(left: Tm, right: Tm) over Int {
+  requires {
+    value >= support_cutoff(left) + 1;
+    value >= support_cutoff(right) + 1;
+  }
+  witness if support_cutoff(left) >= support_cutoff(right) {
+    support_cutoff(left) + 1
+  } else {
+    support_cutoff(right) + 1
+  };
+}
+
+predicate Marked(left: Tm, right: Tm) {
+  constructor forward() {
+    takes {}
+    gives Marked(bound(0), free(0));
+  }
+
+  constructor backward() {
+    takes {}
+    gives Marked(free(0), bound(0));
+  }
+
+  constructor under_abs(left: Tm, right: Tm) {
+    takes {
+      arbitrary fresh: FreshFor(left, right) {
+        Marked(open_at(left, 0, fresh), open_at(right, 0, fresh));
+      }
+    }
+    gives Marked(abs(left), abs(right));
+  }
+}
+
+predicate Step(before: Tm, after: Tm) {
+  constructor root() {
+    takes {}
+    gives Step(bound(0), free(0));
+  }
+
+  constructor under_abs(before: Tm, after: Tm) {
+    takes {
+      arbitrary branch_name: FreshFor(before, after) {
+        Step(open_at(before, 0, branch_name), open_at(after, 0, branch_name));
+      }
+    }
+    gives Step(abs(before), abs(after));
+  }
+}
+
+check marked_diagonal(before: Tm, after: Tm) {
+  inducts(Step(before, after));
+  assumes {
+    Step(before, after);
+    Marked(before, after);
+  }
+  ensures {
+    Marked(after, after);
+  }
+}

@@ -280,6 +280,53 @@
                      if event["operation"] == "predicate-induction.branch.result"]
           assert all(event["data"]["status"] == "unsat" for event in results)
           PY
+          total_field_preservation="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-total-field-preservation.fine")"
+          echo "$total_field_preservation"
+          grep -F "verified-predicate-induction: marked_flip" <<<"$total_field_preservation"
+          total_field_false="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-total-field-preservation-false.fine")"
+          echo "$total_field_false"
+          grep -F "refuted-predicate-induction: marked_diagonal" <<<"$total_field_false"
+          grep -F "failed-constructor: root" <<<"$total_field_false"
+          total_field_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/predicate-total-field-preservation.fine" \
+            > "$total_field_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/predicate-total-field-preservation.fine" "$total_field_rain"
+          ${pkgs.python3}/bin/python - "$total_field_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          terms = {event["data"]["id"]: event["data"]["text"]
+                   for event in events if event["operation"] == "term.declare"}
+          relations = {event["data"]["predicate"]: event
+                       for event in events if event["operation"] == "fine.predicate.relation"}
+          assert relations["Step"]["data"]["horn_complete"] is False
+          assert relations["Marked"]["data"]["horn_complete"] is False
+          total = next(event for event in events
+                       if event["operation"] == "predicate-induction.arbitrary.total-hypothesis"
+                       and event["data"]["constructor"] == "under_abs")
+          assert total["data"]["binder"] == "branch_name"
+          assert total["data"]["recursive_hypotheses"] == 1
+          total_text = terms[total["data"]["total_hypothesis"]]
+          assert "forall[" in total_text
+          assert "_d_implies" in total_text
+          assert total_text.count("_d_Marked") == 2
+          goal_field = next(event for event in events
+                            if event["operation"] == "predicate-induction.goal.arbitrary-field"
+                            and event["data"]["consumer_constructor"] == "under_abs")
+          assumption_field = next(event for event in events
+                                  if event["operation"] == "predicate-induction.assumption.arbitrary-field"
+                                  and event["data"]["consumer_constructor"] == "under_abs")
+          assert goal_field["data"]["binder"] == "fresh"
+          assert assumption_field["data"]["binder"] == "fresh"
+          assert total["data"]["binder_term"] != goal_field["data"]["binder_term"]
+          assert "forall[" in terms[goal_field["data"]["total_field"]]
+          under = next(event for event in events
+                       if event["operation"] == "predicate-induction.branch.result"
+                       and event["data"]["constructor"] == "under_abs")
+          assert under["data"]["status"] == "unsat"
+          PY
           predicate_induction_rain="$(mktemp)"
           $out/bin/fine rain "$src/fine/fixtures/predicate-induction-two-premises.fine" \
             > "$predicate_induction_rain"
@@ -337,6 +384,12 @@
           hypothesis = one("predicate-induction.arbitrary-hypothesis")
           assert hypothesis["data"]["binder_term"] == field["data"]["binder_term"]
           assert hypothesis["data"]["requirement"] == field["data"]["requirement"]
+          total = one("predicate-induction.arbitrary.total-hypothesis")
+          assert total["data"]["binder_term"] == field["data"]["binder_term"]
+          assert total["data"]["recursive_hypotheses"] == 1
+          terms = {event["data"]["id"]: event["data"]["text"]
+                   for event in events if event["operation"] == "term.declare"}
+          assert "forall[" in terms[total["data"]["total_hypothesis"]]
           branch = next(event for event in events
                         if event["operation"] == "predicate-induction.branch.open"
                         and event["data"]["constructor"] == "under_abs")

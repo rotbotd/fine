@@ -127,6 +127,14 @@ construction, and proves the same Step preservation theorem without Horn
 lowering `Marked`. The false fixture fails at `root`; the invalid-witness fixture
 is rejected before an unavailable field can make a branch vacuous.
 
+`predicate-total-field-preservation.fine` gives the target `Step.under_abs` and
+secondary `Marked.under_abs` fields distinct binder identities over the same
+`FreshFor` view. The abstraction branch proves a flipped Marked pair by
+instantiating Step's total IH at Marked's bound name; the predecessor compiler's
+single free-name IH refutes exactly `under_abs`. Rainfall retains the IH template,
+availability resource, total universal IH, and both unequal binder handles. The
+diagonal false control still fails at `root`.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.

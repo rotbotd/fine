@@ -2606,3 +2606,106 @@ name while typing inversion/construction owns another total field binder. The
 next executable theorem must show how opening equivariance lets the branch use
 the Step IH at the name demanded by the typing field without identifying the two
 binders or replacing either by the availability witness.
+
+## 2026-09-02 — total induction hypotheses for arbitrary fields
+
+The secondary-predicate field formula exposed a mismatch on the target side.
+An `arbitrary fresh: View(...) { Step(opened...) }` constructor is an erased
+function field, but predicate induction retained only one free binder constant,
+its requirement, and one IH instance. A branch whose goal did not mention that
+name could still verify: an unsatisfiable query with a free constant checks every
+value satisfying the requirement. That was extensionally sufficient for the
+old distinct-indices fixtures, but it was not a compositional representation of
+the field. A second independently bound field could not consume the IH at its
+own name.
+
+The target arbitrary-field resource now has three explicit layers. Fine first
+constructs one ordinary IH template per scoped recursive premise at the retained
+free binder. It conjoins those templates and then binds the field as
+
+```
+forall binder.
+  requirement -> conjunction(induction-hypothesis templates)
+```
+
+The separately verified availability resource is admitted beside this total IH.
+With a declared witness it is the requirement instantiated at that witness;
+without one it remains `exists binder. requirement`. The witness is therefore
+only evidence that the domain is inhabited. It is never substituted for the
+universally bound derivation name. Rainfall keeps the individual
+`predicate-induction.arbitrary-hypothesis` events and adds
+`predicate-induction.arbitrary.total-hypothesis`, containing the binder,
+requirement, branch availability resource, IH-template conjunction, exact
+universal term, and recursive-IH count.
+
+The discriminator is `predicate-total-field-preservation.fine`. Both relations
+are non-Horn. `Step.under_abs` owns an arbitrary `branch_name` with the recursive
+premise
+
+```
+Step(open_at(before, 0, branch_name),
+     open_at(after, 0, branch_name))
+```
+
+while `Marked.under_abs` owns an independently interned `fresh` and the analogous
+Marked premise. Both use the same two-body `FreshFor` view, deliberately removing
+opening equivariance from this test. The theorem flips the secondary evidence:
+
+```
+Step(before, after) && Marked(before, after)
+  -> Marked(after, before)
+```
+
+In the abstraction branch, Marked inversion supplies its total premise at every
+`fresh`; Marked construction demands the flipped premise at every `fresh`.
+Step's total IH can be instantiated at that name even though its retained
+binder handle is `branch_name`. The two handles remain unequal. The base branch
+selects separate forward/backward Marked constructors.
+
+This fixture discriminates the representation rather than merely documenting
+it. During the slice, the new source was saved, `predicate_runtime.cpp` was
+replaced with the exact predecessor `d46321c55` version, and the local binary was
+rebuilt. The predecessor returned:
+
+```
+refuted-predicate-induction: marked_flip
+failed-constructor: under_abs
+```
+
+Restoring the total-IH implementation and rebuilding verified both branches.
+The source stayed identical across the two runs. The diagonal false control
+asks for `Marked(after, after)` and still fails at `root`, so a total field does
+not rubber-stamp positive predicate goals.
+
+The install check validates both public results and the trace. It requires Step
+and Marked to remain non-Horn, one `under_abs` total-IH event with binder
+`branch_name`, a rendered universal containing the two Marked sides of the
+contextual theorem, secondary goal/assumption fields bound by `fresh`, unequal
+binder handles across the two derivation sites, and an unsatisfiable
+`under_abs` branch. Existing arbitrary-field, cofinite-support, reusable-proof,
+contextual-induction, two-premise, and preservation traces still validate.
+
+Commands and results:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/predicate-total-field-preservation.fine
+# verified-predicate-induction: marked_flip
+.build/fine run fine/fixtures/predicate-total-field-preservation-false.fine
+# refuted-predicate-induction: marked_diagonal; failed-constructor: root
+.build/fine rain fine/fixtures/predicate-total-field-preservation.fine \
+  > /tmp/predicate-total-field-preservation.rain
+python3 fine/rainfall_replay.py schemas/rainfall-v2.schema.json \
+  schemas/rainfall-v2-semantics.schema.json \
+  /tmp/predicate-total-field-preservation.rain
+nix flake check
+nix build --no-link --print-out-paths
+# /nix/store/r5di9b6dp60rha00qjxj4z1lf9cmh1pc-fine-0.0.1
+```
+
+This closes independent binder identity when the two total fields have the same
+admissibility predicate. It does not yet use opening equivariance. The next
+fixture must give the Step and typing fields genuinely different freshness
+domains so the typing binder cannot directly instantiate the Step IH. That is
+where a separately proved name-transport theorem becomes necessary rather than
+ornamental.

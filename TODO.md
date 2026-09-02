@@ -214,6 +214,21 @@ does not align that typing field's bound name with the independently arbitrary
 name in the actual Step abstraction branch; the locally nameless preservation
 fixture and the opening/equivariance use that forces the alignment remain next.
 
+The target-predicate side is now genuinely total too.
+`predicate-total-field-preservation.fine` gives both `Step.under_abs` and a
+paired `Marked.under_abs` independent arbitrary binders over the same
+`FreshFor` view. The theorem flips `Marked(before, after)` along a Step
+derivation. Its abstraction branch can close only by instantiating Step's
+`forall branch_name. FreshFor -> IH` at Marked's separately bound `fresh`;
+retaining one free-name IH refutes that branch, as a rebuild of the predecessor
+compiler confirmed. Rainfall keeps the individual IH template, availability
+resource, and total IH separately, and the binder handles for Step and Marked
+remain unequal. The diagonal false control fails at `root`. This closes total
+target-field identity, not name transport: the two fields deliberately share a
+freshness domain. The next fixture must make their requirements unequal so the
+typing binder cannot directly instantiate the Step field and opening
+equivariance is actually consumed.
+
 The arbitrary-field mechanism now has a real locally nameless consumer at the
 evidence boundary. `predicate-cofinite-support-induction.fine` represents
 terms by bound indices, free integer names, application, and abstraction.
