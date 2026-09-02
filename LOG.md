@@ -3163,3 +3163,13 @@ should contain exact lexical evidence, `refl`, and later named identity proof
 applications; ill-typed candidates must be absent before enumeration. It must
 materialize one actual proof term and rerun with no proof search before
 inductive propositions or old predicates are reconsidered.
+
+Post-commit verification of `8573e8718` used the clean Git source rather than
+the earlier dirty-tree derivation:
+
+```
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/67091p1ghr4qjs6hf5fp6blaq8vxvhjw-fine-0.1.0
+```
