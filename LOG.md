@@ -3818,3 +3818,15 @@ A local service smoke returned `200 OK` for the page and served `fine.wasm`
 with `Content-Type: application/wasm` and byte length 10,662,220.
 The unchanged native semantics also passed the complete install-check suite in
 `/nix/store/822xsgb3qdbl3widd4mna173v8ilmi9s-fine-0.1.0`.
+
+Commit `630d12175` was pushed to `origin/fine/proof-terms`. A clean-source native
+rebuild then passed at
+`/nix/store/am6ijaxmsm9q8v9yyk93qz0f09lfzgzb-fine-0.1.0`; the clean playground
+artifact remained
+`/nix/store/qb8r7dgfrhdrys9xvfaah4mfp8fdhm13-fine-playground-0.1.0`.
+`rc-service add ./fine-playground.service` installed and started the localhost
+server, while `rc-publish add fine 4174` installed its gateway. Both appear in
+`multi-user.target`'s dependency list under `/etc/systemd/system.control`.
+The public smoke at `https://fine.shit.yachts/` returned HTTP/2 200, the expected
+page title, and the same 10,662,220-byte WebAssembly module with
+`application/wasm`.
