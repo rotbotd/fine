@@ -29,6 +29,12 @@
   same source tree.
 - `identity-transitivity-materialized.fine` is that exact two-child tree and
   reruns with proof search forbidden.
+- `identity-congruence.fine` lifts a non-reflexive local identity through a
+  nested Boolean expression. Result matching must recover both hidden indices
+  from the proof parameter, and rendering must preserve the parentheses in the
+  selected application so materialization reparses exactly.
+- `identity-congruence-materialized.fine` is that explicit one-child
+  application and reruns without search.
 - `reject-transitivity-gap.fine` omits the second local child. Its reconstructible
   two-node alternative exceeds the same cost bound, so marginal support from the
   first child cannot admit transitivity.

@@ -95,8 +95,15 @@ namespace fine {
             case syntax::ValueExpr::Kind::name: return expression.name;
             case syntax::ValueExpr::Kind::integer: return expression.integer_text;
             case syntax::ValueExpr::Kind::boolean: return expression.boolean_value ? "true" : "false";
-            case syntax::ValueExpr::Kind::equal:
-                return print_value(expression.elements[0]) + " == " + print_value(expression.elements[1]);
+            case syntax::ValueExpr::Kind::equal: {
+                std::string left = print_value(expression.elements[0]);
+                std::string right = print_value(expression.elements[1]);
+                if (expression.elements[0].kind == syntax::ValueExpr::Kind::equal)
+                    left = "(" + left + ")";
+                if (expression.elements[1].kind == syntax::ValueExpr::Kind::equal)
+                    right = "(" + right + ")";
+                return left + " == " + right;
+            }
             case syntax::ValueExpr::Kind::call: {
                 std::ostringstream result;
                 result << expression.name << '(';
@@ -165,9 +172,15 @@ namespace fine {
                     return found->second;
                 return expression.name;
             }
-            if (expression.kind == syntax::ValueExpr::Kind::equal)
-                return print_value_substituted(expression.elements[0], substitutions) +
-                       " == " + print_value_substituted(expression.elements[1], substitutions);
+            if (expression.kind == syntax::ValueExpr::Kind::equal) {
+                std::string left = print_value_substituted(expression.elements[0], substitutions);
+                std::string right = print_value_substituted(expression.elements[1], substitutions);
+                if (expression.elements[0].kind == syntax::ValueExpr::Kind::equal)
+                    left = "(" + left + ")";
+                if (expression.elements[1].kind == syntax::ValueExpr::Kind::equal)
+                    right = "(" + right + ")";
+                return left + " == " + right;
+            }
             if (expression.kind == syntax::ValueExpr::Kind::call) {
                 std::ostringstream result;
                 result << expression.name << '(';

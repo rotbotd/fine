@@ -140,6 +140,26 @@
           cmp "$src/fine/fixtures/identity-transitivity-materialized.fine" \
             "$z3_transitivity_materialized"
 
+          congruence_output="$($out/bin/fine run --proof-selector z3 \
+            "$src/fine/fixtures/identity-congruence.fine")"
+          echo "$congruence_output"
+          grep -F 'filled proof hole: lifted <- truth_congruence[x == false, (x == true) == false](p) (Z3 datatype model)' \
+            <<<"$congruence_output"
+
+          congruence_materialized="$(mktemp)"
+          $out/bin/fine materialize --proof-selector z3 \
+            "$src/fine/fixtures/identity-congruence.fine" \
+            > "$congruence_materialized"
+          cmp "$src/fine/fixtures/identity-congruence-materialized.fine" \
+            "$congruence_materialized"
+          congruence_rerun="$($out/bin/fine run "$congruence_materialized")"
+          grep -F 'formed proof: lifted : Id(Bool, (x == false) == true, ((x == true) == false) == true) (virtual)' \
+            <<<"$congruence_rerun"
+          if grep -F "filled proof hole:" <<<"$congruence_rerun"; then
+            echo "materialized congruence proof unexpectedly searched again" >&2
+            exit 1
+          fi
+
           transitivity_gap="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-transitivity-gap.fine" \
               >"$transitivity_gap" 2>&1; then

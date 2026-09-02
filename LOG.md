@@ -3990,3 +3990,50 @@ Clean build before commit:
 nix build --no-link --print-out-paths .#playground
 # /nix/store/ghkc824qwp113v6yjdaxlphl8c8y6va8-fine-playground-0.1.0
 ```
+
+## 2026-09-02 — Congruence without premature proof elimination
+
+The first probe for proof-only elimination asked whether identity could be moved
+through an ordinary value expression using only the existing absorbed context.
+Two attempted fixtures were rejected before they could answer it: `+` and `!`
+are not forms in the deliberately tiny current value grammar. A third attempt
+bound two names to the exact same interned value, so `refl` closed the transformed
+goal and failed to discriminate congruence from reflexivity.
+
+The retained `identity-congruence.fine` uses only nested Boolean equalities. A
+zero-premise `neg_characterization` creates non-reflexive local evidence, then
+`truth_congruence` absorbs that evidence and proves equality beneath an additional
+`== true`. Its result does not expose either static index directly, so backward
+matching must recover both from the exact local proof parameter. The Z3 selector
+chooses:
+
+```text
+truth_congruence[x == false, (x == true) == false](p)
+```
+
+This showed that ordinary congruence does not earn a new eliminator: the current
+checked proof-function/context boundary already expresses it without inspecting
+proof structure or creating a runtime proof value.
+
+The first materialization failed on a real rendering defect. Nested equality
+indices printed as `x == true == false`, although the parser admits only one
+equality whose operands are primary expressions. `print_value` and
+`print_value_substituted` now parenthesize equality children. The selected proof
+therefore reparses with exact structure, and the checked-in materialized fixture
+reruns without search.
+
+Validation:
+
+```sh
+cmake --build build/proof-core --target fine-bin
+build/proof-core/fine materialize --proof-selector z3 \
+  fine/fixtures/identity-congruence.fine
+# exact match: fine/fixtures/identity-congruence-materialized.fine
+
+nix build --no-link --print-out-paths .#default
+# /nix/store/gkrw31d25zqb2pdr6m7wi0kxyv4pr994-fine-0.1.0
+```
+
+The install check now requires the exact Z3-selected application, byte-for-byte
+materialization, the parenthesized lifted identity on rerun, and absence of a
+second proof search.

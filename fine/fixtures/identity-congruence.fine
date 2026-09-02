@@ -1,0 +1,12 @@
+proof function neg_characterization(value: Bool)
+  -> Id(Bool, value == false, (value == true) == false);
+
+proof function truth_congruence(left: Bool, right: Bool)
+  needs [same: Id(Bool, left, right)]
+  -> Id(Bool, left == true, right == true);
+
+run identity_congruence {
+  let x: Bool = true;
+  proof p: Id(Bool, x == false, (x == true) == false) = neg_characterization[x]();
+  proof lifted: Id(Bool, (x == false) == true, ((x == true) == false) == true) = ?;
+}

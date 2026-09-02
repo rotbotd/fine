@@ -158,6 +158,13 @@ result is another proof. The first eliminator should expose exactly one missing
 operation, such as transporting a proposition along identity, rather than adding
 a general dependent match.
 
+`identity-congruence.fine` establishes that ordinary congruence does not yet
+force this slice. A checked proof function can absorb `Id(Bool, left, right)` and
+establish identity after both values occur beneath another equality. Search
+recovers the hidden indices from the local proof, and the selected application
+materializes exactly. Do not add an eliminator merely to rename this behavior;
+wait for a proof whose constructor must actually be consumed.
+
 The hard boundary is syntactic: a proof eliminator cannot produce a `ValueTerm`,
 and runtime function bodies cannot inspect constructors of `ProofEvidence`. A
 negative fixture must attempt both and fail before lowering. Rainfall may retain

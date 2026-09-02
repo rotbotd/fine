@@ -49,7 +49,7 @@ Exit test: `identity-holes.fine` constructs one `refl`, selects one local proof,
 retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 `reject-empty-proof-hole.fine` fails with an empty typed grammar.
 
-## Next: named proof functions
+## Closed: named proof functions
 
 - [x] Add proof-level function declarations whose parameters and result are
       proof evidence and which cannot enter runtime value calls.
@@ -67,15 +67,16 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 
 ## Later, only after identity search earns it
 
-- [ ] Add proof-only elimination and reject elimination from proofs into runtime
-      values.
+- [ ] Add proof-only elimination only when a proof consumer cannot be expressed
+      by context absorption and a checked proof function; reject elimination
+      from proofs into runtime values.
 - [ ] Design inductive propositions with derivation terms from birth. Do not
       retrofit the old Bool-valued `predicate` declaration.
 - [ ] Recover datatypes and ordinary model/counterexample consumers one at a time
       against the new value representation.
 - [ ] Connect source proof materialization to the editor host's atomic revision
       transaction.
-- [ ] After the proof syntax, Rainfall schema, and materialization contract
+- [x] After the proof syntax, Rainfall schema, and materialization contract
       survive a two-child proof function and the bounded Z3 selector, build the
       first browser vertical slice: the real Fine core in WASM, CodeMirror 6,
       and `identity-symmetry.fine` showing its candidate frontier, materialized
