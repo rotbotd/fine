@@ -1,0 +1,17 @@
+{
+  "name": "fine-playground",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild app.js --bundle --minify --format=esm --platform=browser --external:./fine.mjs --outfile=dist/app.js"
+  },
+  "dependencies": {
+    "@codemirror/language": "6.11.3",
+    "@lezer/highlight": "1.2.1",
+    "codemirror": "6.0.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.11"
+  }
+}

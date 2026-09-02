@@ -3830,3 +3830,35 @@ server, while `rc-publish add fine 4174` installed its gateway. Both appear in
 The public smoke at `https://fine.shit.yachts/` returned HTTP/2 200, the expected
 page title, and the same 10,662,220-byte WebAssembly module with
 `application/wasm`.
+
+## 2026-09-02 — CodeMirror without a second language parser
+
+The plain textarea was replaced by a locally bundled CodeMirror 6 editor. The
+frontend pins `codemirror` 6.0.2, `@codemirror/language` 6.11.3,
+`@lezer/highlight` 1.2.1, and esbuild 0.25.11 in
+`playground/package-lock.json`; the deployed page has no CDN dependency. The
+root ignore rules now admit only the playground's package manifest and lock.
+
+Fine highlighting is deliberately lexical. It distinguishes proof declarations
+and `Id` from runtime declarations and `Int`/`Bool`, and separately marks
+definition sites, coeffect/guarantee keywords, booleans, numbers, operators,
+comments, `refl`, `result`, and typed holes. It does not invent an independent
+browser parser whose disagreements with `fine::syntax::parse` would look
+authoritative. The C++ parser remains the only source of diagnostics.
+
+The static `playground` derivation is now a `buildNpmPackage` with fixed npm hash
+`sha256-t9A5fFAlRTfdL8HvekInKcGARsVnKd7t/XvSydRtowo=`. Esbuild keeps
+`fine.mjs` external, minifies the editor bundle to 386 KiB, and then the package
+copies the unchanged solver module. The source-filtered `playground-wasm`
+derivation did not rebuild.
+
+Validation before commit:
+
+```sh
+nix build --no-link --print-out-paths .#playground
+# /nix/store/r4irwr0rwizfw0iz9244zh7maj93wkaj-fine-playground-0.1.0
+# package check: wasm smoke passed with 85 Rainfall events
+
+ls -lh /nix/store/r4irwr0rwizfw0iz9244zh7maj93wkaj-fine-playground-0.1.0/app.js
+# 386K
+```

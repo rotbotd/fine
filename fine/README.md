@@ -79,10 +79,11 @@ frontier stays a stable reference rather than an accidental solver model.
 ## Browser playground
 
 The browser build compiles the ordinary Fine executable and this repository's
-Z3 fork to WebAssembly. A textarea writes source into Emscripten's in-memory
-filesystem, invokes the same CLI first in `run` mode and then in `rain` mode,
-and displays the ordinary result beside formatted Rainfall events. The sample
-uses the Z3 datatype-model proof selector.
+Z3 fork to WebAssembly. A bundled CodeMirror editor with a Fine-specific lexical
+mode writes source into Emscripten's in-memory filesystem, invokes the same CLI
+first in `run` mode and then in `rain` mode, and displays the ordinary result
+beside formatted Rainfall events. The sample uses the Z3 datatype-model proof
+selector.
 
 ```sh
 nix build --no-link --print-out-paths .#playground

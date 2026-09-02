@@ -7,11 +7,14 @@ main {
   max-width: 100rem;
 }
 
-textarea {
-  box-sizing: border-box;
-  font-family: monospace;
+.cm-editor {
+  border: 1px solid;
   min-height: 24rem;
-  width: 100%;
+}
+
+.cm-scroller {
+  font-family: monospace;
+  overflow: auto;
 }
 
 section {

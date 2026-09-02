@@ -17,6 +17,8 @@ genaisrc/genaiscript.d.ts
 .genaiscript
 package-lock.json
 package.json
+!playground/package-lock.json
+!playground/package.json
 node_modules
 # OCaml generated files
 *.a

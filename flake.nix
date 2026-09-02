@@ -392,12 +392,12 @@
         '';
       };
 
-      playground = pkgs.stdenvNoCC.mkDerivation {
+      playground = pkgs.buildNpmPackage {
         pname = "fine-playground";
         version = "0.1.0";
         src = ./playground;
-        nativeBuildInputs = [ pkgs.nodejs_22 ];
-        dontBuild = true;
+        npmDepsHash = "sha256-t9A5fFAlRTfdL8HvekInKcGARsVnKd7t/XvSydRtowo=";
+        npmBuildScript = "build";
 
         doCheck = true;
         checkPhase = ''
@@ -410,7 +410,7 @@
         installPhase = ''
           runHook preInstall
           mkdir -p "$out"
-          cp index.html app.js style.css "$out/"
+          cp index.html dist/app.js style.css "$out/"
           cp ${./fine/fixtures/identity-transitivity.fine} "$out/sample.fine"
           cp ${self.packages.${system}.playground-wasm}/fine.mjs \
             ${self.packages.${system}.playground-wasm}/fine.wasm "$out/"
