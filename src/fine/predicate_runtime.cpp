@@ -270,6 +270,10 @@ namespace fine::runtime_detail {
             reject(*declaration.induction_span, "predicate membership does not yet implement derivation induction");
         if (declaration.predicate_induction)
             return execute_predicate_induction(declaration);
+        if (declaration.reusable)
+            reject(declaration.span,
+                   "a proof declared after predicates must use `inducts(P(...))`; Fine admits only the exact theorem "
+                   "verified by all compiler-owned constructor branches and never adds it to fixedpoint");
         if (!declaration.parameters.empty())
             return execute_predicate_invariant(declaration);
         if (!declaration.assumes.empty())
@@ -408,7 +412,8 @@ namespace fine::runtime_detail {
                        "predicate induction admits a predicate guarantee only as its one direct ensured atom");
         }
 
-        std::string run_scope = "predicate-induction:" + declaration.name;
+        std::string run_scope =
+            std::string(declaration.reusable ? "proof:" : "predicate-induction:") + declaration.name;
         capture_source_edges_ = true;
         source_edge_within_ = {run_scope};
         TypedExpression target_term = elaborate_expression(target, environment);
@@ -440,7 +445,8 @@ namespace fine::runtime_detail {
 
         if (rainfall_)
             rainfall_->record(
-                "scope", "predicate-induction.run.open", {run_scope}, "fine.induction",
+                "scope", declaration.reusable ? "proof.run.open" : "predicate-induction.run.open", {run_scope},
+                "fine.induction",
                 "Fine-owned structural induction over predicate constructors; each recursive predicate premise becomes "
                 "one exact induction hypothesis and each branch is checked by a separate public SMT query",
                 {RainfallRecorder::string_field("declaration", declaration.name),
@@ -456,6 +462,8 @@ namespace fine::runtime_detail {
                  RainfallRecorder::string_field("target", rainfall_->term(target_term.expression)),
                  RainfallRecorder::string_field("auxiliary_assumptions", rainfall_->term(auxiliary_assumptions)),
                  RainfallRecorder::string_field("guarantees", rainfall_->term(guarantees))});
+
+        z3::expr admitted_body = z3::implies(target_term.expression && auxiliary_assumptions, guarantees);
 
         auto instantiate = [&](z3::expr const &expression, std::vector<z3::expr> const &indices) {
             if (indices.size() != index_terms.size())
@@ -855,7 +863,8 @@ namespace fine::runtime_detail {
             }
             z3::expr branch_query = hypotheses && branch_resources && !branch_goal_resource;
             if (rainfall_) {
-                rainfall_->source_term(declaration.node_id, declaration.span, "decl.check", branch_query, "generated",
+                rainfall_->source_term(declaration.node_id, declaration.span,
+                                       declaration.reusable ? "decl.proof" : "decl.check", branch_query, "generated",
                                        {run_scope, branch_scope});
                 rainfall_->record(
                     "scope", "predicate-induction.branch.open", {run_scope, branch_scope}, "fine.induction",
@@ -912,21 +921,57 @@ namespace fine::runtime_detail {
         }
 
         bool verified = failed_branch.empty();
+        if (verified && declaration.reusable) {
+            std::vector<Z3_app> bound;
+            bound.reserve(index_terms.size() + context_terms.size());
+            for (unsigned i = 0; i < index_terms.size(); ++i)
+                bound.push_back(reinterpret_cast<Z3_app>(static_cast<Z3_ast>(index_terms[i])));
+            for (unsigned i = 0; i < context_terms.size(); ++i)
+                bound.push_back(reinterpret_cast<Z3_app>(static_cast<Z3_ast>(context_terms[i])));
+            std::string qid = "fine.proof." + declaration.name;
+            z3::expr admitted = admitted_body;
+            if (!bound.empty()) {
+                Z3_ast quantified = Z3_mk_quantifier_const_ex(
+                    context_, true, 0, context_.str_symbol(qid.c_str()), context_.str_symbol(""),
+                    static_cast<unsigned>(bound.size()), bound.data(), 0, nullptr, 0, nullptr, admitted_body);
+                context_.check_error();
+                admitted = z3::expr(context_, quantified);
+            }
+            admitted_proofs_.push_back({declaration.name, admitted});
+            if (rainfall_)
+                rainfall_->record(
+                    "transition", "proof.admit", {run_scope}, "fine.induction",
+                    "Only verification of every compiler-owned predicate-constructor branch permits universal "
+                    "closure and later SMT reuse; the theorem is never added to fixedpoint",
+                    {RainfallRecorder::string_field("proof", declaration.name),
+                     RainfallRecorder::string_field("predicate", predicate.name),
+                     RainfallRecorder::string_field("theorem", rainfall_->term(admitted)),
+                     RainfallRecorder::string_field("qid", qid),
+                     RainfallRecorder::number_field("verified_constructor_branches", predicate.constructors.size()),
+                     RainfallRecorder::boolean_field("verified_before_admission", true),
+                     RainfallRecorder::boolean_field("added_to_fixedpoint", false)});
+        }
         if (rainfall_) {
             rainfall_->validate_terms();
-            rainfall_->record("scope", "predicate-induction.run.close", {run_scope}, "fine.induction",
+            rainfall_->record("scope",
+                              declaration.reusable ? "proof.run.close" : "predicate-induction.run.close",
+                              {run_scope}, "fine.induction",
                               "Compiler-generated predicate induction completed",
                               {RainfallRecorder::string_field("status", verified ? "verified" : "refuted"),
                                RainfallRecorder::string_field("failed_constructor", failed_branch)});
         }
-        output_ << (verified ? "verified-predicate-induction: " : "refuted-predicate-induction: ") << declaration.name << '\n';
+        if (declaration.reusable)
+            output_ << (verified ? "verified-proof: " : "refuted-proof: ") << declaration.name << '\n';
+        else
+            output_ << (verified ? "verified-predicate-induction: " : "refuted-predicate-induction: ")
+                    << declaration.name << '\n';
         output_ << "predicate: " << predicate.name << '\n';
         if (verified)
             output_ << "constructor-branches: " << predicate.constructors.size() << " verified\n";
         else
             output_ << "failed-constructor: " << failed_branch << '\n';
         output_ << "derivation-witness: erased after compiler-owned branch construction\n";
-        return 0;
+        return declaration.reusable && !verified ? 1 : 0;
     }
 
     int Runtime::execute_predicate_invariant(syntax::CheckDecl const &declaration) {

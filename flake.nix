@@ -485,6 +485,67 @@
           grep -F "verified-proof: opening_equivariant" <<<"$reusable_proof"
           grep -F "verified-predicate-induction: safe_opening" <<<"$reusable_proof"
           grep -F "constructor-branches: 1 verified" <<<"$reusable_proof"
+          predicate_proof="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-reusable-proof.fine")"
+          echo "$predicate_proof"
+          grep -F "verified-proof: step_distinct" <<<"$predicate_proof"
+          grep -F "predicate: Step" <<<"$predicate_proof"
+          grep -F "verified-predicate-induction: use_step_distinct" <<<"$predicate_proof"
+          predicate_proof_false="$(mktemp)"
+          if $out/bin/fine run \
+            "$src/fine/fixtures/predicate-reusable-proof-false.fine" \
+            >"$predicate_proof_false" 2>&1; then
+            echo "admitted a refuted predicate-induction proof" >&2
+            exit 1
+          fi
+          grep -F "refuted-proof: step_equal" "$predicate_proof_false"
+          grep -F "failed-constructor: root" "$predicate_proof_false"
+          if grep -F "unreachable" "$predicate_proof_false"; then
+            echo "continued after a refuted predicate-induction proof" >&2
+            exit 1
+          fi
+          predicate_proof_rain="$(mktemp)"
+          $out/bin/fine rain \
+            "$src/fine/fixtures/predicate-reusable-proof.fine" >"$predicate_proof_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/predicate-reusable-proof.fine" "$predicate_proof_rain"
+          ${pkgs.python3}/bin/python - "$predicate_proof_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          admissions = [event for event in events if event["operation"] == "proof.admit"]
+          assert len(admissions) == 1
+          admission = admissions[0]
+          assert admission["data"]["proof"] == "step_distinct"
+          assert admission["data"]["predicate"] == "Step"
+          assert admission["data"]["qid"] == "fine.proof.step_distinct"
+          assert admission["data"]["verified_constructor_branches"] == 2
+          assert admission["data"]["verified_before_admission"] is True
+          assert admission["data"]["added_to_fixedpoint"] is False
+          uses = [event for event in events if event["operation"] == "proof.use"]
+          assert len(uses) == 1
+          assert uses[0]["data"]["proof"] == "step_distinct"
+          assert uses[0]["data"]["consumer"] == "use_step_distinct"
+          assert uses[0]["data"]["constructor"] == "requested"
+          proof_results = [event for event in events
+                           if event["operation"] == "predicate-induction.branch.result"
+                           and event["within"][0] == "proof:step_distinct"]
+          assert [event["data"]["constructor"] for event in proof_results] == ["root", "under"]
+          assert all(event["data"]["status"] == "unsat" for event in proof_results)
+          PY
+          no_predicate_proof="$(mktemp)"
+          ${pkgs.python3}/bin/python - \
+            "$src/fine/fixtures/predicate-reusable-proof.fine" "$no_predicate_proof" <<'PY'
+          import pathlib, sys
+          source = pathlib.Path(sys.argv[1]).read_text()
+          start = source.index("proof step_distinct")
+          end = source.index("\npredicate Request")
+          pathlib.Path(sys.argv[2]).write_text(source[:start] + source[end + 1:])
+          PY
+          no_predicate_proof_output="$($out/bin/fine run "$no_predicate_proof")"
+          echo "$no_predicate_proof_output"
+          grep -F "refuted-predicate-induction: use_step_distinct" \
+            <<<"$no_predicate_proof_output"
+          grep -F "failed-constructor: requested" <<<"$no_predicate_proof_output"
           append_proof="$($out/bin/fine run \
             "$src/fine/fixtures/proof-append-length.fine")"
           echo "$append_proof"

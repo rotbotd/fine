@@ -2709,3 +2709,102 @@ fixture must give the Step and typing fields genuinely different freshness
 domains so the typing binder cannot directly instantiate the Step IH. That is
 where a separately proved name-transport theorem becomes necessary rather than
 ornamental.
+
+## 2026-09-02 — reusable proofs by predicate induction
+
+The first attempt to state a predicate-respecting renaming theorem exposed a
+language contradiction before it exposed any solver behavior. A scratch
+`proof marked_rename(...) { inducts(Marked(term)); ... }` necessarily followed
+its `Marked` declaration, but `execute_check` rejected every reusable proof once
+any predicate existed:
+
+```
+a reusable proof must precede predicate declarations; it is admitted only to
+later SMT queries, never retrofitted into a fixedpoint relation
+```
+
+The no-retrofit invariant was correct; the declaration-order restriction was
+not. A theorem established by derivation induction cannot precede the
+constructor table it quantifies over. The restriction made the advertised
+"proof has the same obligation as check" surface unable to state precisely the
+type/predicate equivariance theorem required by the unequal-freshness-domain
+fixture.
+
+Fine now admits one deliberately narrow new proof shape. A reusable proof after
+predicate declarations must write `inducts(P(indices))` and repeat that exact
+atom first in `assumes`, so it enters the existing Fine-owned predicate-induction
+path. Fine elaborates the exact source theorem
+
+```
+P(indices) && auxiliary assumptions -> guarantees
+```
+
+but does not assume it while checking itself. It runs the retained constructor
+branches exactly as an ordinary predicate-induction check does. Only if every
+branch query is unsatisfiable does it universally bind all index and context
+parameters under `fine.proof.<name>`, append the strong same-manager theorem to
+the later-SMT proof table, and record `proof.admit`. The theorem is never added
+to `fixedpoint_`; the Rainfall event says `added_to_fixedpoint: false`. An
+unknown branch remains an error. The first satisfiable branch prints
+`refuted-proof`, names the failed constructor, returns status 1, and prevents all
+later declarations from executing. Ordinary proofs declared before predicates
+retain their typed-counterexample path. A proof after predicates without
+predicate induction is rejected rather than silently treated as a fixedpoint
+invariant or membership query.
+
+`predicate-reusable-proof.fine` is discriminating rather than merely a green
+example. `proof step_distinct` establishes by the two retained `Step`
+constructors that every step has unequal indices. A later nonrecursive
+`Request(before, after)` predicate has one constructor admitting every pair.
+Its final induction check assumes both `Request(before, after)` and
+`Step(before, after)` and asks for unequal indices. With the admitted theorem,
+its sole `requested` branch is unsatisfiable. Removing the proof from the exact
+same source produces:
+
+```
+refuted-predicate-induction: use_step_distinct
+failed-constructor: requested
+```
+
+Thus the consumer does not happen to re-prove the result through its own
+constructor table. `predicate-reusable-proof-false.fine` asks for equality
+instead; `Step.root` refutes it, the process exits 1, and the later `unreachable`
+check never runs.
+
+Rainfall uses `proof.run.open` / `proof.run.close` for the reusable declaration,
+so closing it does not falsely terminate a multi-declaration trace. Between
+those scopes it retains both `predicate-induction.branch.result` events, then
+the exact admitted universal theorem and qid. The consumer records one
+`proof.use` on `Request.requested`. Validation checks the two proof branches,
+admission only after both succeed, the later use, and the explicit fixedpoint
+exclusion. An initial use of `predicate-induction.run.close` for the proof was
+rejected correctly by `fine-rain-validate` as an event after a terminal run
+close; changing the proof's scope operation fixed the trace rather than weakening
+the validator.
+
+Commands and results before the final clean commit build:
+
+```
+cmake --build build/fine -j2
+build/fine/fine run fine/fixtures/predicate-reusable-proof.fine
+# verified-proof: step_distinct
+# verified-predicate-induction: use_step_distinct
+build/fine/fine run fine/fixtures/predicate-reusable-proof-false.fine
+# refuted-proof: step_equal; failed-constructor: root; exit 1
+build/fine/fine rain fine/fixtures/predicate-reusable-proof.fine \
+  > /tmp/pred-proof.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/predicate-reusable-proof.fine /tmp/pred-proof.rain
+# valid rainfall: events=169, source_nodes=44, terms=35, source_term_edges=31
+nix flake check
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/y3yndvm856wbvfdr7i3n4b00lzd4lrhm-fine-0.0.1
+```
+
+This closes theorem admission from compiler-owned predicate branches. It does
+not close the unequal-domain opening theorem. The scratch `marked_rename` proof
+now gets past the former syntax restriction but remains in its abstraction
+branch beyond ten seconds without the needed equations relating renaming,
+opening, support, and the predicate. The next slice can finally state and reuse
+those predicate-respecting transport facts without putting them into Spacer.

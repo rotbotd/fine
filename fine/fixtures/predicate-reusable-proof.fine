@@ -1,0 +1,51 @@
+// A theorem proved by derivation induction is admitted only after every Step
+// constructor branch closes.  Request has no recursive evidence of its own: its
+// consumer needs the admitted theorem to propagate Step's invariant past one
+// compiler-owned unfolding.
+enum Tm {
+  atom,
+  mark,
+  wrap(body: Tm),
+}
+
+predicate Step(before: Tm, after: Tm) {
+  constructor root() {
+    takes {}
+    gives Step(atom, mark);
+  }
+
+  constructor under(before: Tm, after: Tm) {
+    takes {
+      Step(before, after);
+    }
+    gives Step(wrap(before), wrap(after));
+  }
+}
+
+proof step_distinct(before: Tm, after: Tm) {
+  inducts(Step(before, after));
+  assumes {
+    Step(before, after);
+  }
+  ensures {
+    (before == after) == false;
+  }
+}
+
+predicate Request(before: Tm, after: Tm) {
+  constructor requested(before: Tm, after: Tm) {
+    takes {}
+    gives Request(before, after);
+  }
+}
+
+check use_step_distinct(before: Tm, after: Tm) {
+  inducts(Request(before, after));
+  assumes {
+    Request(before, after);
+    Step(before, after);
+  }
+  ensures {
+    (before == after) == false;
+  }
+}

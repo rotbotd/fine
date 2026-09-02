@@ -55,8 +55,8 @@ Fine currently has:
 - finite model production and exact model-value round trips;
 - typed counterexamples over integers, Booleans, enums, monomorphic recursive
   datatypes, and binary tuples;
-- named reusable `proof` declarations admitted only after their negated query is
-  unsatisfiable;
+- named reusable `proof` declarations admitted only after their negated query,
+  or every compiler-owned predicate-constructor branch, is unsatisfiable;
 - recursive functions and compiler-owned constructor/direct-field induction;
 - constructor-generated indexed predicates, least-relation membership and
   invariant checks, direct predicate-preservation induction including total

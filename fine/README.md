@@ -109,14 +109,18 @@ remaining STLC boundary are in `research/induction-translation.md`.
 
 A verified result can cross a source declaration boundary without becoming an
 axiom by fiat. `proof name(parameters) { ... }` has the same obligation and
-optional `inducts` clause as `check`. Fine first runs its counterexample query;
-only `unsat` permits universal closure under the qid `fine.proof.name`. The
-closed theorem is then an assumption in later ordinary SMT checks,
-predicate-constructor branches, and arbitrary-field availability queries in the
-same document. A refuted proof returns its typed counterexample and stops the
-document before any later declaration runs. Rainfall retains separate
-`proof.admit` and `proof.use` events and the exact same-manager theorem; this
-does not inject arbitrary theorems into Spacer's least-relation rules.
+optional `inducts` clause as `check`. An ordinary or datatype-induction proof
+must precede predicate declarations and is admitted only after its single
+counterexample query is `unsat`. A proof after predicate declarations must use
+`inducts(P(...))`; Fine admits it only after every retained constructor branch
+is `unsat`. In either case Fine universally closes the original source theorem
+under the qid `fine.proof.name`, then makes it an assumption in later ordinary
+SMT checks, predicate-constructor branches, and arbitrary-field availability
+queries. A refuted ordinary proof returns its typed counterexample; a refuted
+predicate proof names the failing constructor. Both stop the document before
+later declarations run. Rainfall retains separate `proof.admit` and `proof.use`
+events and the exact same-manager theorem; no admitted proof is added to
+Spacer's least-relation rules.
 
 Predicate induction is a separate first-order path. Given an erased least
 relation such as `Step(before, after)`, a check writes

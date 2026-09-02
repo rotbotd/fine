@@ -264,6 +264,17 @@ preservation still needs the actual typing/reduction predicates and the beta/ope
 lemmas they force; the generic mechanism is no substitute for that
 object-language work.
 
+Predicate-induction theorems now cross that same checked boundary. A `proof`
+may follow the predicate declarations it inducts over; Fine universally closes
+the source implication only after every retained constructor query is
+unsatisfiable, stops on the first refuted constructor, and never adds the theorem
+to fixedpoint. `predicate-reusable-proof.fine` makes reuse necessary by feeding
+the admitted `Step` invariant to a nonrecursive `Request` induction; without the
+proof its sole branch refutes. This removes the declaration-order obstruction to
+proving typing/predicate-respecting opening equivariance. The next fixture must
+use that mechanism with genuinely different Step and typing freshness views so
+neither total field can be instantiated directly in the other's domain.
+
 ## Later language test: an elementary topos without ceremony
 
 An elementary topos must be definable once and usable for generic theorems

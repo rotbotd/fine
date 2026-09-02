@@ -990,10 +990,6 @@ namespace fine {
         }
 
         int Runtime::execute_check(syntax::CheckDecl const &declaration) {
-            if (declaration.reusable && !predicates_.empty())
-                reject(declaration.span,
-                       "a reusable proof must precede predicate declarations; it is admitted only to later SMT "
-                       "queries, never retrofitted into a fixedpoint relation");
             if (!predicates_.empty())
                 return execute_predicate_check(declaration);
             if (declaration.predicate_induction)

@@ -414,15 +414,18 @@ admitted value domain. `sat` is not collapsed to a diagnostic string: Fine
 completes every parameter under that returned model and emits a typed,
 parseable `counterexample name { ... }` declaration.
 
-`proof` uses the same syntax and verification path as `check`, including
-constructor/direct-field induction. On an unsatisfiable counterexample query,
-Fine universally closes the original source theorem—not its generated induction
-step—and retains it under a stable `fine.proof.<name>` qid. Only then may later
-ordinary solver and predicate-induction branch queries assert it. Source order is
-semantic: reusable proofs must precede predicate and executable declarations,
-and a refuted proof terminates execution rather than leaving a missing assumption for
-later code. Rainfall records admission separately from each use. Fixedpoint
-relations never acquire these theorems as unowned background axioms.
+`proof` uses the same syntax and verification obligations as `check`. An
+ordinary or datatype-induction proof has one counterexample query. A
+predicate-induction proof may follow the predicate declarations it depends on
+and has one compiler-owned query per retained constructor. Only an ordinary
+`unsat` result or the `unsat` result of every predicate branch permits Fine to
+universally close the original source theorem—not its generated induction
+step—and retain it under a stable `fine.proof.<name>` qid. Later ordinary solver
+and predicate-induction branch queries may assert that theorem. A proof must
+still precede the one executable declaration, and a refuted proof terminates
+execution rather than leaving a missing assumption for later code. Rainfall
+records admission separately from each use. Fixedpoint relations never acquire
+these theorems as unowned background axioms.
 
 The round-trip law applies separately to each assignment. Ints, Bools, finite
 enums, binary tuples, and monomorphic algebraic datatypes lift to ordinary Fine

@@ -135,6 +135,16 @@ single free-name IH refutes exactly `under_abs`. Rainfall retains the IH templat
 availability resource, total universal IH, and both unequal binder handles. The
 diagonal false control still fails at `root`.
 
+`predicate-reusable-proof.fine` proves `Step(before, after) -> before != after`
+by Fine-owned derivation induction after `Step` has been declared. Only after
+both retained constructor branches close does Fine universally close the source
+theorem and make it available to later SMT branches. A deliberately nonrecursive
+`Request` consumer needs that theorem: deleting the proof makes its `requested`
+branch refute. The false proof fails at `Step.root`, exits nonzero, and prevents
+the later declaration from running. Rainfall retains both constructor results,
+the exact `proof.admit`, a later `proof.use`, and the fact that no theorem was
+added to fixedpoint.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.
