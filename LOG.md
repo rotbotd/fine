@@ -4168,3 +4168,41 @@ nix build --no-link --print-out-paths .#default
 
 All checks passed. Clean native artifact:
 `/nix/store/1k0ii1k35s5afxkhkig9gdj56k4wynax-fine-0.1.0`.
+
+## 2026-09-02 — browser reference catches up to the accepted language
+
+h asked that the playground language reference remain current. The page had
+fallen one syntax slice behind immediately: it documented identity proof
+functions but not the newly accepted runtime enum/match or proof-inductive forms.
+
+I expanded the open reference table with four accepted forms and their actual
+checks: runtime enum declarations, typed constructor application, exhaustive
+runtime match, and static indexed proof families/constructor evidence. The note
+above the table now states the admitted declaration order and distinguishes
+runtime types from both identity and inductive proof types.
+
+The CodeMirror lexical mode now recognizes `enum`, `match`, `=>`, and the
+`proof inductive` two-token declaration. Its stream state retains the names of
+value types introduced by `enum` separately from proof types introduced by
+`proof inductive`, so later occurrences of `Nat` and `Even` receive different
+syntax roles without turning the highlighter into a second parser.
+
+`playground/serve-smoke.mjs` now fetches the built page and requires the four
+current reference rows. The repository close condition in `TODO.md` and
+`fine/ROADMAP.md` now requires each syntax-changing slice to update both the
+browser reference and lexical highlighting.
+
+A direct `npm run build` initially failed with `ENOENT` for
+`playground/public/fine.wasm`; this is expected outside the flake because the
+playground derivation injects the current Wasm artifact during `preBuild`. The
+correct declared command passed, including Wasm execution and served-asset
+smokes:
+
+```
+nix build --no-link --print-out-paths .#playground
+```
+
+Artifact: `/nix/store/siyisjkz7mnr4pda192n2i3mynjsjxzi-fine-playground-0.1.0`.
+I restarted `fine-playground.service`, verified both it and
+`rc-publish-fine.service` active, and fetched both localhost and
+`https://fine.shit.yachts/`; both contained the indexed-proof-family reference.

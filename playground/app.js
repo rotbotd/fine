@@ -22,10 +22,20 @@ const fineLanguage = StreamLanguage.define({
     valueType: tags.typeName,
   },
   startState() {
-    return { expectsDefinition: false, afterProof: false };
+    return {
+      expectsDefinition: false,
+      afterProof: false,
+      definitionKind: null,
+      valueTypes: new Set(["Int", "Bool"]),
+      proofTypes: new Set(["Id"]),
+    };
   },
   copyState(state) {
-    return { ...state };
+    return {
+      ...state,
+      valueTypes: new Set(state.valueTypes),
+      proofTypes: new Set(state.proofTypes),
+    };
   },
   token(stream, state) {
     if (stream.eatSpace())
@@ -36,7 +46,7 @@ const fineLanguage = StreamLanguage.define({
     }
     if (stream.match(/^[0-9]+/))
       return "number";
-    if (stream.match(/^(?:==|!=|<=|>=|->|<-|&&|\|\||[=<>+*/!-])/))
+    if (stream.match(/^(?:==|!=|<=|>=|->|=>|<-|&&|\|\||[=<>+*/!-])/))
       return "operator";
     if (stream.match(/^[()[\]{},;:.]/))
       return "punctuation";
@@ -44,18 +54,32 @@ const fineLanguage = StreamLanguage.define({
       return "hole";
     if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) {
       const word = stream.current();
+      if (word === "enum") {
+        state.expectsDefinition = true;
+        state.definitionKind = "valueType";
+        state.afterProof = false;
+        return "definitionKeyword";
+      }
       if (word === "function") {
         state.expectsDefinition = true;
+        state.definitionKind = null;
         state.afterProof = false;
         return "definitionKeyword";
       }
       if (["run", "let"].includes(word)) {
         state.expectsDefinition = true;
+        state.definitionKind = null;
         state.afterProof = false;
         return "definitionKeyword";
       }
       if (word === "proof") {
         state.afterProof = true;
+        return "proofKeyword";
+      }
+      if (word === "inductive" && state.afterProof) {
+        state.afterProof = false;
+        state.expectsDefinition = true;
+        state.definitionKind = "proofType";
         return "proofKeyword";
       }
       if (state.afterProof) {
@@ -65,13 +89,18 @@ const fineLanguage = StreamLanguage.define({
       }
       if (state.expectsDefinition) {
         state.expectsDefinition = false;
+        if (state.definitionKind === "valueType")
+          state.valueTypes.add(word);
+        if (state.definitionKind === "proofType")
+          state.proofTypes.add(word);
+        state.definitionKind = null;
         return "definition";
       }
-      if (["needs", "ensures", "using", "assert"].includes(word))
+      if (["needs", "ensures", "using", "assert", "match"].includes(word))
         return "keyword";
-      if (["Int", "Bool"].includes(word))
+      if (state.valueTypes.has(word))
         return "valueType";
-      if (word === "Id")
+      if (state.proofTypes.has(word))
         return "proofType";
       if (["true", "false"].includes(word))
         return "bool";

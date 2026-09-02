@@ -3,7 +3,8 @@
 This roadmap records the destination chosen in the design conversation that led
 to `fine/proof-terms`. It is ordered by executable slices, not by surface-feature
 count. A slice closes only when its positive fixture, rejecting control, Rainfall
-record, materialized source, and no-search rerun agree.
+record, materialized source, no-search rerun, and browser language reference
+agree.
 
 ## The turn
 

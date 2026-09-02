@@ -13,7 +13,7 @@
 
       <details class="reference" open>
         <summary>language reference</summary>
-        <p class="reference-note"><code>Int</code> and <code>Bool</code> are runtime types. <code>Id(A, left, right)</code> is proof-only: Fine can search for its evidence, but a running program cannot inspect it.</p>
+        <p class="reference-note"><code>Int</code>, <code>Bool</code>, and declared <code>enum</code>s are runtime types. <code>Id(A, left, right)</code> and declared <code>proof inductive</code> families are proof-only: Fine retains their source evidence, but a running program cannot inspect it. Declarations appear in this order: enums, proof inductives, functions, then one run.</p>
         <div class="reference-scroll">
           <table>
             <thead>
@@ -28,6 +28,21 @@
                 <td>runtime binding</td>
                 <td>The expression has the declared runtime type.</td>
                 <td><code>let n: Int = 7;</code></td>
+              </tr>
+              <tr>
+                <td>runtime enum</td>
+                <td>Each payload is a runtime type. A field may recursively use the enum being declared.</td>
+                <td><code>enum Nat {<br>&nbsp;&nbsp;zero,<br>&nbsp;&nbsp;succ(Nat),<br>}</code></td>
+              </tr>
+              <tr>
+                <td>runtime constructor</td>
+                <td>Every payload has the constructor's declared type.</td>
+                <td><code>let one: Nat = succ(zero);</code></td>
+              </tr>
+              <tr>
+                <td>runtime match</td>
+                <td>Every constructor appears exactly once, pattern arities agree, and all arms return one runtime type.</td>
+                <td><code>match n {<br>&nbsp;&nbsp;zero =&gt; zero,<br>&nbsp;&nbsp;succ(previous) =&gt; previous,<br>}</code></td>
               </tr>
               <tr>
                 <td>value function</td>
@@ -58,6 +73,16 @@
                 <td>proof function</td>
                 <td>Its result follows from its value indices and needed evidence; it cannot be called as runtime code.</td>
                 <td><code>proof function symm(left: Bool, right: Bool)<br>needs [p: Id(Bool, left, right)]<br>-&gt; Id(Bool, right, left);</code></td>
+              </tr>
+              <tr>
+                <td>indexed proof family</td>
+                <td>Its indices are runtime values, but its constructors and evidence exist only in the static proof layer.</td>
+                <td><code>proof inductive Even(value: Nat) {<br>&nbsp;&nbsp;even_zero() -&gt; Even(zero);<br>&nbsp;&nbsp;even_next(previous: Nat)<br>&nbsp;&nbsp;&nbsp;&nbsp;needs [prior: Even(previous)]<br>&nbsp;&nbsp;&nbsp;&nbsp;-&gt; Even(succ(succ(previous)));<br>}</code></td>
+              </tr>
+              <tr>
+                <td>indexed constructor evidence</td>
+                <td>Square brackets instantiate static value parameters; parentheses supply exact virtual proof fields.</td>
+                <td><code>proof two: Even(succ(succ(zero)))<br>&nbsp;&nbsp;= even_next[zero](zero_even);</code></td>
               </tr>
               <tr>
                 <td>executable check</td>

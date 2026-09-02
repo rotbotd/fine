@@ -8,6 +8,10 @@ proof so later runs check it without repeating search. Z3 propositions and Z3's
 own unsat proofs are not source proof terms. Fine owns the proof grammar and
 rechecks every materialized term.
 
+Every syntax-changing slice also updates the browser language reference and its
+lexical highlighting before it closes. The playground must not advertise an
+older language than the executable accepts.
+
 Proof evidence is virtual by construction. Value and proof types have disjoint
 ASTs; runtime values have no proof variant. Introducing identity evidence
 retains its source term while automatically absorbing its equality proposition
