@@ -3589,3 +3589,15 @@ must consume the same exact grammar and reproduce this two-child tree, then lift
 reparse, and recheck it. The deterministic enumerator remains the reference;
 this slice does not yet infer an absent index whose only witness is itself a
 nested synthesized proof rather than lexical evidence.
+
+Post-commit clean-source verification for implementation commit `fcd285def`
+reran the full install checks, including the positive materialized transitivity
+fixture, the missing-child rejection, Rainfall replay, and every earlier proof
+core control:
+
+```sh
+nix flake check
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/1v9ivq1vp4f5891l0ig9rh4b8dzfjvfi-fine-0.1.0
+```
