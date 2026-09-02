@@ -2298,3 +2298,14 @@ Z3's existing MIT `LICENSE.txt`, full upstream Git history, and original README
 are retained. The public repository is intended as `rotbotd/fine`, with the
 local upstream remote preserved separately rather than overwritten so future
 Z3 comparison remains explicit.
+
+Publication completed at <https://github.com/rotbotd/fine>. The GitHub default
+branch is `main`; the local historical branch remains `fine/main` and tracks it.
+Remote names now state ownership accurately: `origin` is `rotbotd/fine`, while
+`upstream` is `Z3Prover/z3`; an explicit `HEAD:main` push refspec prevents the
+local slash-bearing name from creating a second public branch. Repository topics
+are `z3`, `smt`, `programming-languages`, `formal-methods`, and
+`theorem-proving`. GitHub Actions are disabled at repository scope for the
+initial publication because the retained upstream tree contains Z3's large
+workflow suite, not Fine-specific CI; the locked Nix install check remains the
+release gate until a bounded Fine workflow is written.
