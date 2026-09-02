@@ -92,7 +92,8 @@ identity type. It binds index parameters from a matching result, recursively
 fills only the instantiated proof parameters, and admits application trees only
 within cost three. The frontier order remains exact local evidence, applicable
 `refl`, then proof functions in source order. Rainfall retains the application
-function, child proof sources, cost, selected event, and residual alternatives.
+function, ordered index arguments, child proof sources, cost, selected event,
+and residual alternatives.
 
 `identity-symmetry.fine` first constructs the non-definitional but valid Boolean
 identity `x = (x == true)` using a checked zero-premise proof function. Reversing
@@ -101,6 +102,18 @@ it cannot use the local proof or `refl`; search selects
 search forbidden. An input-preserving cyclic proof function with no base proof
 exhausts the cost bound.
 
-Transitivity is still withheld. Its middle index does not occur in the result,
-so backward search must learn it from two proof arguments rather than pretending
-all indices can be read from the goal.
+`identity-transitivity.fine` closes the missing-index case. Its declaration has
+indices `(left, middle, right)` but the requested result mentions only `left` and
+`right`. Search matches direct index occurrences in the proof-parameter types
+against exact local evidence,
+uses those constraints to recover `middle`, and only then recursively enumerates
+both instantiated child types. The sole cost-three result is
+`trans[left, middle, right](p, q)`. Rainfall preserves the three ordered indices
+and the two child sources as separate arrays; the unrelated reflexive proof
+`wrong` never enters the tree. `reject-transitivity-gap.fine` removes `q`; the
+remaining reconstructible child costs two, making the application cost four,
+so the fixed bound rejects it rather than accepting one-sided support.
+
+This inference is deliberately finite and syntax-owned. An index absent from a
+result is learned only by exact matching against lexical proof evidence, never by
+mining an SMT proof or guessing a semantically equal pretty-printing.

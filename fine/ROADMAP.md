@@ -127,14 +127,17 @@ Exit conditions:
 - a cyclic proof-function grammar terminates at the declared bound;
 - the chosen application tree materializes and reruns without search.
 
-The symmetry half is closed. Proof functions use explicit static indices and
+This slice is closed. Proof functions use explicit static indices and
 virtual `needs` parameters; their result proposition is checked under absorbed
 inputs before the declaration enters search. `identity-symmetry.fine` can close
 its reversed identity only with `symm[x, x == true](p)`, retains one nested
 application as residual frontier, materializes exactly, and reruns without
 search. `reject-cyclic-proof-search.fine` establishes that a recursive grammar
-with no base inhabitant stops at cost three. Transitivity remains open because
-its middle index must be inferred from child proof types rather than the result.
+with no base inhabitant stops at cost three. `identity-transitivity.fine` then
+recovers the result-absent middle index by matching lexical child proof types and
+retains `p` and `q` distinctly in the single cost-three tree. Removing `q` leaves
+only a cost-four reconstruction and fails, so search cannot accept marginal
+support from one premise. Both materialized fixtures rerun without search.
 
 ## Slice 3 — proof-only elimination
 

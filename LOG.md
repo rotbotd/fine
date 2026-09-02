@@ -3482,3 +3482,110 @@ Post-commit clean-source verification for `7f02e214d` reran every install check:
 nix build --no-link --print-out-paths
 # /nix/store/rxlz6jfrwvsby9gj6fnamgdz2ww5hmsm-fine-0.1.0
 ```
+
+## 2026-09-02 — transitivity infers a result-absent middle index
+
+Closed the second half of roadmap slice 2. The prior enumerator required every
+static index of a proof function to occur as a direct parameter in its result.
+That admitted symmetry but correctly made transitivity unavailable: for
+
+```fine
+proof function trans(left: Bool, middle: Bool, right: Bool)
+  needs [first: Id(Bool, left, middle), second: Id(Bool, middle, right)]
+  -> Id(Bool, left, right);
+```
+
+`left` and `right` came from the requested result while `middle` remained
+unbound. The clean pre-change artifact reproduced the intended failure on the
+new positive fixture:
+
+```sh
+/nix/store/rxlz6jfrwvsby9gj6fnamgdz2ww5hmsm-fine-0.1.0/bin/fine \
+  run fine/fixtures/identity-transitivity.fine
+# proof hole `composed` has no well-typed candidate ...
+# exit 1
+```
+
+The deterministic enumerator now treats result matching as the initial partial
+index substitution. If indices remain absent, it matches proof-parameter
+identity patterns against exact lexical `ProofEvidence` types. A direct index
+parameter may be bound only to the target's existing manager-local AST; a
+previously bound parameter must have exact AST identity. Compound endpoint
+patterns are checked only when their referenced indices are available. Partial
+substitutions are memoized by ordered index name and Z3 AST ID. Once every index
+is bound, Fine re-elaborates the complete result and demands exact type identity
+before recursively enumerating both instantiated proof arguments. This is
+finite unification over lexical evidence, not semantic equality search and not
+mining a Z3 proof.
+
+`ProofEvidence` now retains the source spelling of its two endpoints alongside
+the manager-local terms. This lets the inferred middle index materialize as the
+source expression which supplied it while the equality test remains AST-based.
+An application candidate separately retains ordered `index_arguments` and
+ordered `proof_arguments`; both generated and explicitly reapplied proof
+functions emit those arrays in Rainfall, and replay rejects missing or malformed
+arrays.
+
+The first fixture draft was discarded as insufficiently discriminating. A
+simple `x -> y -> z` chain built from the zero-premise `bool_eta` function
+produced four valid cost-three transitivity trees: both local children and each
+of their cost-one reconstructions. It demonstrated enumeration but could not
+prove that both stored children were necessary. The retained fixture instead
+makes each nonlocal reconstruction pass through `symm`, hence cost two. It binds
+
+```text
+p : Id(Bool, left, middle)
+q : Id(Bool, middle, right)
+```
+
+as locals and asks for `Id(Bool, left, right)`. Under total cost three the only
+candidate is exactly:
+
+```fine
+trans[left, middle, right](p, q)
+```
+
+Rainfall records indices `[left, middle, right]`, children `[p, q]`, and cost 3
+as distinct data. The unrelated `wrong : Id(Bool, left, left)` never enters the
+tree. `reject-transitivity-gap.fine` removes `q` but leaves its `base_right`:
+reconstructing the second child as `symm[right, middle](base_right)` costs two,
+so the transitivity tree costs four and the same bounded grammar is empty. This
+is the control against accepting marginal support from only the first premise.
+
+Observed checks:
+
+```sh
+cmake --build .build -j2
+# success
+
+.build/fine run fine/fixtures/identity-transitivity.fine
+# verified proof function: trans
+# filled proof hole: composed <- trans[left, middle, right](p, q) (typed search)
+# runtime-proof-values: 0 (unrepresentable)
+
+.build/fine materialize fine/fixtures/identity-transitivity.fine |
+  diff -u fine/fixtures/identity-transitivity-materialized.fine -
+# no diff
+
+.build/fine run fine/fixtures/reject-transitivity-gap.fine
+# proof hole `impossible` has no well-typed candidate ...
+# exit 1
+
+.build/fine rain fine/fixtures/identity-transitivity.fine \
+  > /tmp/trans-rain.jsonl
+python fine/rainfall_validate.py fine/fixtures/identity-transitivity.fine \
+  /tmp/trans-rain.jsonl
+# valid rainfall: events=82, source_nodes=21, terms=14,
+# source_term_edges=3, proof_holes=1
+
+nix flake check
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/pva2mzhax3vbl2b4bzvz95n6918csr6s-fine-0.1.0
+```
+
+The bounded Z3 datatype-model selector is now the remaining immediate edge. It
+must consume the same exact grammar and reproduce this two-child tree, then lift,
+reparse, and recheck it. The deterministic enumerator remains the reference;
+this slice does not yet infer an absent index whose only witness is itself a
+nested synthesized proof rather than lexical evidence.

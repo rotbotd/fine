@@ -57,7 +57,7 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       impossible to close by exact local selection or `refl`.
 - [x] Add type-directed application candidates only when the instantiated
       result has the exact expected proof type.
-- [ ] Add transitivity only after symmetry materializes and reruns without
+- [x] Add transitivity only after symmetry materializes and reruns without
       search; retain its two input proofs distinctly in Rainfall.
 - [x] Bound recursive application grammar so a cyclic proof-function set
       terminates without adding a tactic language or global theorem search.

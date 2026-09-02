@@ -218,10 +218,14 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             proof_functions[function] = data
         elif operation == "proof.function.apply":
             function = data.get("function")
+            indices = data.get("index_arguments")
             arguments = data.get("proof_arguments")
             _require(function in proof_functions and
                      isinstance(data.get("body"), str) and
                      data["body"].startswith(function) and
+                     isinstance(indices, list) and
+                     all(isinstance(argument, str) and argument
+                         for argument in indices) and
                      isinstance(arguments, list) and
                      all(isinstance(argument, str) and argument
                          for argument in arguments) and
@@ -275,10 +279,14 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                          data["body"].endswith(")"),
                          f"event {sequence}: reflexivity candidate is not Fine proof syntax")
             else:
+                indices = data.get("index_arguments")
                 arguments = data.get("proof_arguments")
                 function = data.get("function")
                 _require("proof" not in data and
                          isinstance(function, str) and function and
+                         isinstance(indices, list) and
+                         all(isinstance(argument, str) and argument
+                             for argument in indices) and
                          isinstance(arguments, list) and
                          all(isinstance(argument, str) and argument
                              for argument in arguments) and

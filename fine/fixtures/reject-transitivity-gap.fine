@@ -1,0 +1,20 @@
+proof function bool_eta(value: Bool)
+  -> Id(Bool, value, value == true);
+
+proof function symm(left: Bool, right: Bool)
+  needs [given: Id(Bool, left, right)]
+  -> Id(Bool, right, left);
+
+proof function trans(left: Bool, middle: Bool, right: Bool)
+  needs [first: Id(Bool, left, middle), second: Id(Bool, middle, right)]
+  -> Id(Bool, left, right);
+
+run reject_transitivity_gap {
+  let right: Bool = true;
+  let middle: Bool = right == true;
+  let left: Bool = middle == true;
+  proof base_left: Id(Bool, middle, left) = bool_eta[middle]();
+  proof p: Id(Bool, left, middle) = symm[middle, left](base_left);
+  proof base_right: Id(Bool, right, middle) = bool_eta[right]();
+  proof impossible: Id(Bool, left, right) = ?;
+}

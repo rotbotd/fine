@@ -21,6 +21,15 @@
   search selects `symm[x, x == true](p)` and retains the nested alternative.
 - `identity-symmetry-materialized.fine` is the exact selected application tree
   and reruns with proof search forbidden.
+- `identity-transitivity.fine` forces backward search to recover a middle index
+  absent from the goal by matching exact local proof types. The only cost-three
+  tree is `trans[left, middle, right](p, q)`; Rainfall retains the middle index
+  and the two child proofs separately.
+- `identity-transitivity-materialized.fine` is that exact two-child tree and
+  reruns with proof search forbidden.
+- `reject-transitivity-gap.fine` omits the second local child. Its reconstructible
+  two-node alternative exceeds the same cost bound, so marginal support from the
+  first child cannot admit transitivity.
 - `reject-unjustified-proof-function.fine` declares an arbitrary identity with
   no premise; declaration checking refutes the declaration itself.
 - `reject-proof-function-as-value.fine` tries to call virtual proof code from a

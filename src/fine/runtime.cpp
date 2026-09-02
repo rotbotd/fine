@@ -49,9 +49,13 @@ namespace fine {
             IdentityType type;
             std::string formation;
             syntax::SourceSpan span;
+            std::string left_source;
+            std::string right_source;
 
-            ProofEvidence(std::string name, IdentityType type, std::string formation, syntax::SourceSpan span)
-                : name(std::move(name)), type(std::move(type)), formation(std::move(formation)), span(span) {}
+            ProofEvidence(std::string name, IdentityType type, std::string formation, syntax::SourceSpan span,
+                          std::string left_source, std::string right_source)
+                : name(std::move(name)), type(std::move(type)), formation(std::move(formation)), span(span),
+                  left_source(std::move(left_source)), right_source(std::move(right_source)) {}
         };
 
         using ValueEnvironment = std::map<std::string, ValueTerm>;
@@ -62,8 +66,14 @@ namespace fine {
             std::string production;
             std::optional<std::string> local_proof;
             std::optional<std::string> proof_function;
+            std::vector<std::string> index_arguments;
             std::vector<std::string> proof_arguments;
             std::size_t cost = 1;
+        };
+
+        struct IndexInstantiation {
+            ValueEnvironment values;
+            std::map<std::string, std::string> sources;
         };
 
         constexpr std::size_t max_proof_search_cost = 3;
@@ -319,35 +329,118 @@ namespace fine {
                 return true;
             }
 
-            bool infer_value_arguments(syntax::ProofFunctionDecl const &function, IdentityType const &expected,
-                                       std::string const &left_source, std::string const &right_source,
-                                       ValueEnvironment &bindings,
-                                       std::map<std::string, std::string> &source_bindings) {
-                if (kind_of(function.result_type.carrier) != expected.carrier)
+            bool value_pattern_ready(syntax::ValueExpr const &pattern,
+                                     std::map<std::string, ValueKind> const &parameters,
+                                     ValueEnvironment const &bindings) {
+                if (pattern.kind == syntax::ValueExpr::Kind::name && parameters.contains(pattern.name))
+                    return bindings.contains(pattern.name);
+                return std::all_of(pattern.elements.begin(), pattern.elements.end(),
+                                   [&](syntax::ValueExpr const &element) {
+                                       return value_pattern_ready(element, parameters, bindings);
+                                   });
+            }
+
+            bool match_index_pattern(syntax::ValueExpr const &pattern, z3::expr const &target,
+                                     std::string const &target_source,
+                                     std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings,
+                                     std::map<std::string, std::string> &source_bindings, bool &added) {
+                std::size_t before = bindings.size();
+                if (!bind_result_index(pattern, target, target_source, parameters, bindings, source_bindings))
                     return false;
-                std::map<std::string, ValueKind> parameters;
-                for (auto const &parameter : function.parameters)
-                    parameters.emplace(parameter.name, kind_of(parameter.type));
-                if (!bind_result_index(function.result_type.left, expected.left, left_source, parameters, bindings,
-                                       source_bindings) ||
-                    !bind_result_index(function.result_type.right, expected.right, right_source, parameters, bindings,
-                                       source_bindings))
-                    return false;
-                if (bindings.size() != function.parameters.size())
+                added = added || bindings.size() != before;
+                if (!value_pattern_ready(pattern, parameters, bindings))
+                    return true;
+                ProofEnvironment no_proofs;
+                std::vector<std::string> no_proof_order;
+                std::vector<z3::expr> no_absorbed;
+                ValueTerm instantiated = elaborate_value(pattern, bindings, no_proofs, no_proof_order, no_absorbed);
+                return same_ast(context_, instantiated.expression, target);
+            }
+
+            bool match_identity_pattern(syntax::ProofType const &pattern, ProofEvidence const &target,
+                                        std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings,
+                                        std::map<std::string, std::string> &source_bindings, bool &added) {
+                return kind_of(pattern.carrier) == target.type.carrier &&
+                       match_index_pattern(pattern.left, target.type.left, target.left_source, parameters, bindings,
+                                           source_bindings, added) &&
+                       match_index_pattern(pattern.right, target.type.right, target.right_source, parameters, bindings,
+                                           source_bindings, added);
+            }
+
+            bool complete_index_instantiation(syntax::ProofFunctionDecl const &function, IdentityType const &expected,
+                                              IndexInstantiation const &instantiation) {
+                if (instantiation.values.size() != function.parameters.size())
                     return false;
                 ProofEnvironment no_proofs;
                 std::vector<std::string> no_proof_order;
                 std::vector<z3::expr> no_absorbed;
-                IdentityType instantiated =
-                    elaborate_identity(function.result_type, bindings, no_proofs, no_proof_order, no_absorbed);
-                return same_type(context_, instantiated, expected);
+                IdentityType result = elaborate_identity(function.result_type, instantiation.values, no_proofs,
+                                                         no_proof_order, no_absorbed);
+                return same_type(context_, result, expected);
+            }
+
+            std::string index_instantiation_key(syntax::ProofFunctionDecl const &function,
+                                                IndexInstantiation const &instantiation) {
+                std::ostringstream key;
+                for (auto const &parameter : function.parameters) {
+                    key << parameter.name << '=';
+                    if (auto found = instantiation.values.find(parameter.name); found != instantiation.values.end())
+                        key << Z3_get_ast_id(context_, found->second.expression);
+                    key << ';';
+                }
+                return key.str();
+            }
+
+            std::vector<IndexInstantiation>
+            infer_value_arguments(syntax::ProofFunctionDecl const &function, IdentityType const &expected,
+                                  std::string const &left_source, std::string const &right_source,
+                                  ProofEnvironment const &proofs, std::vector<std::string> const &proof_order) {
+                if (kind_of(function.result_type.carrier) != expected.carrier)
+                    return {};
+                std::map<std::string, ValueKind> parameters;
+                for (auto const &parameter : function.parameters)
+                    parameters.emplace(parameter.name, kind_of(parameter.type));
+                IndexInstantiation initial;
+                if (!bind_result_index(function.result_type.left, expected.left, left_source, parameters,
+                                       initial.values, initial.sources) ||
+                    !bind_result_index(function.result_type.right, expected.right, right_source, parameters,
+                                       initial.values, initial.sources))
+                    return {};
+
+                std::vector<IndexInstantiation> completed;
+                std::set<std::string> visited;
+                auto search = [&](auto &&self, IndexInstantiation instantiation) -> void {
+                    std::string key = index_instantiation_key(function, instantiation);
+                    if (!visited.insert(key).second)
+                        return;
+                    if (complete_index_instantiation(function, expected, instantiation)) {
+                        completed.push_back(std::move(instantiation));
+                        return;
+                    }
+                    for (auto const &parameter : function.proof_parameters) {
+                        for (auto const &proof_name : proof_order) {
+                            auto found = proofs.find(proof_name);
+                            if (found == proofs.end())
+                                continue;
+                            IndexInstantiation extended = instantiation;
+                            bool added = false;
+                            if (match_identity_pattern(parameter.type, found->second, parameters, extended.values,
+                                                       extended.sources, added) &&
+                                added)
+                                self(self, std::move(extended));
+                        }
+                    }
+                };
+                search(search, std::move(initial));
+                return completed;
             }
 
             ProofEvidence elaborate_proof_application(syntax::ProofExpr const &expression, IdentityType expected,
                                                       ValueEnvironment const &values, ProofEnvironment const &proofs,
                                                       std::vector<std::string> const &proof_order,
                                                       std::vector<z3::expr> const &absorbed, std::string name,
-                                                      std::string const &run) {
+                                                      std::string const &run, std::string left_source,
+                                                      std::string right_source) {
                 auto found = proof_functions_.find(expression.name);
                 if (found == proof_functions_.end()) {
                     if (functions_.contains(expression.name))
@@ -381,6 +474,9 @@ namespace fine {
                     reject(expression.span,
                            "proof application `" + print_proof(expression) + "` has the wrong identity result type");
 
+                std::vector<std::string> index_sources;
+                for (auto const &argument : expression.value_arguments)
+                    index_sources.push_back(print_value(argument));
                 std::vector<std::string> argument_sources;
                 for (std::size_t i = 0; i < function.proof_parameters.size(); ++i) {
                     if (expression.proof_arguments[i].kind == syntax::ProofExpr::Kind::hole)
@@ -400,10 +496,12 @@ namespace fine {
                         "A named proof-level function is applied to checked virtual evidence; no runtime call exists",
                         {RainfallRecorder::string_field("function", function.name),
                          RainfallRecorder::string_field("body", print_proof(expression)),
+                         RainfallRecorder::raw_field("index_arguments", RainfallRecorder::string_array(index_sources)),
                          RainfallRecorder::raw_field("proof_arguments",
                                                      RainfallRecorder::string_array(argument_sources)),
                          RainfallRecorder::boolean_field("runtime_call_created", false)});
-                return {std::move(name), std::move(expected), "apply:" + function.name, expression.span};
+                return {std::move(name), std::move(expected),    "apply:" + function.name,
+                        expression.span, std::move(left_source), std::move(right_source)};
             }
 
             std::vector<ProofCandidate>
@@ -418,80 +516,84 @@ namespace fine {
                 for (auto const &candidate_name : proof_order) {
                     auto found = proofs.find(candidate_name);
                     if (found != proofs.end() && same_type(context_, found->second.type, expected))
-                        candidates.push_back({candidate_name, "exact-local", candidate_name, std::nullopt, {}, 1});
+                        candidates.push_back({candidate_name, "exact-local", candidate_name, std::nullopt, {}, {}, 1});
                 }
                 if (same_ast(context_, expected.left, expected.right))
-                    candidates.push_back({"refl(" + left_source + ")", "refl", std::nullopt, std::nullopt, {}, 1});
+                    candidates.push_back({"refl(" + left_source + ")", "refl", std::nullopt, std::nullopt, {}, {}, 1});
 
                 for (auto const &function_name : proof_function_order_) {
                     syntax::ProofFunctionDecl const &function = *proof_functions_.at(function_name);
-                    ValueEnvironment indices;
-                    std::map<std::string, std::string> index_sources;
-                    if (!infer_value_arguments(function, expected, left_source, right_source, indices, index_sources))
-                        continue;
-
-                    ProofEnvironment no_proofs;
-                    std::vector<std::string> no_proof_order;
-                    std::vector<z3::expr> no_absorbed;
-                    std::vector<std::vector<ProofCandidate>> argument_frontiers;
-                    bool applicable = true;
-                    for (auto const &parameter : function.proof_parameters) {
-                        IdentityType argument_type =
-                            elaborate_identity(parameter.type, indices, no_proofs, no_proof_order, no_absorbed);
-                        std::string argument_left = print_value_substituted(parameter.type.left, index_sources);
-                        std::string argument_right = print_value_substituted(parameter.type.right, index_sources);
-                        auto frontier =
-                            enumerate_proof_candidates(parameter.type, argument_type, argument_left, argument_right,
-                                                       values, proofs, proof_order, absorbed, budget - 1);
-                        if (frontier.empty()) {
-                            applicable = false;
-                            break;
-                        }
-                        argument_frontiers.push_back(std::move(frontier));
-                    }
-                    if (!applicable)
-                        continue;
-
-                    std::vector<std::vector<ProofCandidate>> combinations(1);
-                    for (auto const &frontier : argument_frontiers) {
-                        std::vector<std::vector<ProofCandidate>> next;
-                        for (auto const &combination : combinations)
-                            for (auto const &argument : frontier) {
-                                auto extended = combination;
-                                extended.push_back(argument);
-                                next.push_back(std::move(extended));
+                    auto instantiations =
+                        infer_value_arguments(function, expected, left_source, right_source, proofs, proof_order);
+                    for (auto const &instantiation : instantiations) {
+                        ProofEnvironment no_proofs;
+                        std::vector<std::string> no_proof_order;
+                        std::vector<z3::expr> no_absorbed;
+                        std::vector<std::vector<ProofCandidate>> argument_frontiers;
+                        bool applicable = true;
+                        for (auto const &parameter : function.proof_parameters) {
+                            IdentityType argument_type = elaborate_identity(parameter.type, instantiation.values,
+                                                                            no_proofs, no_proof_order, no_absorbed);
+                            std::string argument_left =
+                                print_value_substituted(parameter.type.left, instantiation.sources);
+                            std::string argument_right =
+                                print_value_substituted(parameter.type.right, instantiation.sources);
+                            auto frontier =
+                                enumerate_proof_candidates(parameter.type, argument_type, argument_left, argument_right,
+                                                           values, proofs, proof_order, absorbed, budget - 1);
+                            if (frontier.empty()) {
+                                applicable = false;
+                                break;
                             }
-                        combinations = std::move(next);
-                    }
-                    for (auto const &arguments : combinations) {
-                        std::size_t cost = 1;
-                        std::vector<std::string> argument_sources;
-                        for (auto const &argument : arguments) {
-                            cost += argument.cost;
-                            argument_sources.push_back(argument.source);
+                            argument_frontiers.push_back(std::move(frontier));
                         }
-                        if (cost > budget)
+                        if (!applicable)
                             continue;
-                        std::ostringstream source;
-                        source << function.name;
-                        if (!function.parameters.empty()) {
-                            source << '[';
-                            for (std::size_t i = 0; i < function.parameters.size(); ++i) {
+
+                        std::vector<std::vector<ProofCandidate>> combinations(1);
+                        for (auto const &frontier : argument_frontiers) {
+                            std::vector<std::vector<ProofCandidate>> next;
+                            for (auto const &combination : combinations)
+                                for (auto const &argument : frontier) {
+                                    auto extended = combination;
+                                    extended.push_back(argument);
+                                    next.push_back(std::move(extended));
+                                }
+                            combinations = std::move(next);
+                        }
+                        for (auto const &arguments : combinations) {
+                            std::size_t cost = 1;
+                            std::vector<std::string> argument_sources;
+                            for (auto const &argument : arguments) {
+                                cost += argument.cost;
+                                argument_sources.push_back(argument.source);
+                            }
+                            if (cost > budget)
+                                continue;
+                            std::ostringstream source;
+                            source << function.name;
+                            std::vector<std::string> index_arguments;
+                            if (!function.parameters.empty()) {
+                                source << '[';
+                                for (std::size_t i = 0; i < function.parameters.size(); ++i) {
+                                    if (i)
+                                        source << ", ";
+                                    std::string const &argument = instantiation.sources.at(function.parameters[i].name);
+                                    source << argument;
+                                    index_arguments.push_back(argument);
+                                }
+                                source << ']';
+                            }
+                            source << '(';
+                            for (std::size_t i = 0; i < argument_sources.size(); ++i) {
                                 if (i)
                                     source << ", ";
-                                source << index_sources.at(function.parameters[i].name);
+                                source << argument_sources[i];
                             }
-                            source << ']';
+                            source << ')';
+                            candidates.push_back({source.str(), "proof-application", std::nullopt, function.name,
+                                                  std::move(index_arguments), std::move(argument_sources), cost});
                         }
-                        source << '(';
-                        for (std::size_t i = 0; i < argument_sources.size(); ++i) {
-                            if (i)
-                                source << ", ";
-                            source << argument_sources[i];
-                        }
-                        source << ')';
-                        candidates.push_back({source.str(), "proof-application", std::nullopt, function.name,
-                                              std::move(argument_sources), cost});
                     }
                 }
                 return candidates;
@@ -509,7 +611,12 @@ namespace fine {
                         reject(expression.span, "unknown proof `" + expression.name + "`");
                     if (!same_type(context_, found->second.type, expected))
                         reject(expression.span, "proof `" + expression.name + "` has the wrong identity type");
-                    return {std::move(name), std::move(expected), "alias:" + expression.name, expression.span};
+                    return {std::move(name),
+                            std::move(expected),
+                            "alias:" + expression.name,
+                            expression.span,
+                            print_value(expected_syntax.left),
+                            print_value(expected_syntax.right)};
                 }
                 if (expression.kind == syntax::ProofExpr::Kind::reflexivity) {
                     ValueTerm witness = elaborate_value(expression.value, values, proofs, proof_order, absorbed);
@@ -517,11 +624,17 @@ namespace fine {
                         !same_ast(context_, witness.expression, expected.right))
                         reject(expression.span,
                                "`refl` requires both identity endpoints to elaborate to its exact value");
-                    return {std::move(name), std::move(expected), "refl", expression.span};
+                    return {std::move(name),
+                            std::move(expected),
+                            "refl",
+                            expression.span,
+                            print_value(expected_syntax.left),
+                            print_value(expected_syntax.right)};
                 }
                 if (expression.kind == syntax::ProofExpr::Kind::application)
-                    return elaborate_proof_application(expression, std::move(expected), values, proofs, proof_order,
-                                                       absorbed, std::move(name), run);
+                    return elaborate_proof_application(
+                        expression, std::move(expected), values, proofs, proof_order, absorbed, std::move(name), run,
+                        print_value(expected_syntax.left), print_value(expected_syntax.right));
 
                 if (options_.require_materialized_proofs)
                     reject(expression.span, "proof hole remains after materialization");
@@ -560,6 +673,8 @@ namespace fine {
                             data.push_back(RainfallRecorder::string_field("proof", *candidate.local_proof));
                         if (candidate.proof_function) {
                             data.push_back(RainfallRecorder::string_field("function", *candidate.proof_function));
+                            data.push_back(RainfallRecorder::raw_field(
+                                "index_arguments", RainfallRecorder::string_array(candidate.index_arguments)));
                             data.push_back(RainfallRecorder::raw_field(
                                 "proof_arguments", RainfallRecorder::string_array(candidate.proof_arguments)));
                         }
@@ -608,7 +723,12 @@ namespace fine {
                     formation = "search:proof-application:" + *selected.proof_function;
                 else
                     formation = "search:refl";
-                return {std::move(name), std::move(expected), std::move(formation), expression.span};
+                return {std::move(name),
+                        std::move(expected),
+                        std::move(formation),
+                        expression.span,
+                        print_value(expected_syntax.left),
+                        print_value(expected_syntax.right)};
             }
 
             void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed, std::vector<std::string> within,
@@ -653,7 +773,8 @@ namespace fine {
                     if (!names.insert(parameter.name).second)
                         reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
                     IdentityType type = elaborate_identity(parameter.type, indices, proofs, proof_order, absorbed);
-                    ProofEvidence evidence(parameter.name, std::move(type), "proof-function-parameter", parameter.span);
+                    ProofEvidence evidence(parameter.name, std::move(type), "proof-function-parameter", parameter.span,
+                                           print_value(parameter.type.left), print_value(parameter.type.right));
                     if (rainfall_)
                         parameter_sources.push_back(
                             rainfall_->source_node(parameter.type.node_id, parameter.type.span, "proof-type.identity"));
@@ -715,7 +836,8 @@ namespace fine {
                     if (!names.insert(coeffect.name).second)
                         reject(coeffect.span, "duplicate parameter `" + coeffect.name + "`");
                     IdentityType type = elaborate_identity(coeffect.type, values, proofs, proof_order, absorbed);
-                    ProofEvidence evidence(coeffect.name, std::move(type), "coeffect", coeffect.span);
+                    ProofEvidence evidence(coeffect.name, std::move(type), "coeffect", coeffect.span,
+                                           print_value(coeffect.type.left), print_value(coeffect.type.right));
                     std::string source;
                     if (rainfall_) {
                         source =
@@ -842,7 +964,8 @@ namespace fine {
                         reject(expression.span, "caller proof `" + proof_name + "` does not satisfy coeffect `" +
                                                     expression.name + "." + coeffect.name + "`");
                     ProofEvidence supplied(coeffect.name, std::move(demand), "caller:" + proof_name,
-                                           evidence_found->second.span);
+                                           evidence_found->second.span, evidence_found->second.left_source,
+                                           evidence_found->second.right_source);
                     auto [inserted, ok] = callee_proofs.emplace(coeffect.name, std::move(supplied));
                     callee_proof_order.push_back(coeffect.name);
                     absorb(inserted->second, callee_absorbed, {"call:" + expression.name}, "resolved-coeffect");

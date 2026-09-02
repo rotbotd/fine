@@ -82,6 +82,34 @@
             exit 1
           fi
 
+          transitivity_output="$($out/bin/fine run "$src/fine/fixtures/identity-transitivity.fine")"
+          echo "$transitivity_output"
+          grep -F "verified proof function: trans" <<<"$transitivity_output"
+          grep -F "filled proof hole: composed <- trans[left, middle, right](p, q) (typed search)" \
+            <<<"$transitivity_output"
+
+          transitivity_materialized="$(mktemp)"
+          $out/bin/fine materialize "$src/fine/fixtures/identity-transitivity.fine" \
+            > "$transitivity_materialized"
+          cmp "$src/fine/fixtures/identity-transitivity-materialized.fine" \
+            "$transitivity_materialized"
+          transitivity_rerun="$($out/bin/fine run "$transitivity_materialized")"
+          grep -F "formed proof: composed : Id(Bool, left, right) (virtual)" \
+            <<<"$transitivity_rerun"
+          if grep -F "filled proof hole:" <<<"$transitivity_rerun"; then
+            echo "materialized transitivity proof unexpectedly searched again" >&2
+            exit 1
+          fi
+
+          transitivity_gap="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-transitivity-gap.fine" \
+              >"$transitivity_gap" 2>&1; then
+            echo "transitivity search accepted a missing second child" >&2
+            exit 1
+          fi
+          grep -F 'proof hole `impossible` has no well-typed candidate in bounded grammar' \
+            "$transitivity_gap"
+
           empty_hole="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-empty-proof-hole.fine" \
               >"$empty_hole" 2>&1; then
@@ -232,6 +260,30 @@
           assert closed["operation"] == "proof-core.run.close"
           assert closed["data"]["proof_functions_verified"] == 2
           assert closed["data"]["runtime_proof_values"] == 0
+          PY
+
+          transitivity_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/identity-transitivity.fine" \
+            > "$transitivity_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/identity-transitivity.fine" "$transitivity_rain"
+          ${pkgs.python3}/bin/python - "$transitivity_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          candidates = [e for e in events if e["operation"] == "proof.search.candidate"]
+          assert len(candidates) == 1
+          candidate = candidates[0]["data"]
+          assert candidate["body"] == "trans[left, middle, right](p, q)"
+          assert candidate["function"] == "trans"
+          assert candidate["index_arguments"] == ["left", "middle", "right"]
+          assert candidate["proof_arguments"] == ["p", "q"]
+          assert candidate["cost"] == 3
+          assert "wrong" not in candidate["proof_arguments"]
+          selection = next(e for e in events if e["operation"] == "proof.search.select")
+          assert selection["data"]["body"] == candidate["body"]
+          close = next(e for e in events if e["operation"] == "proof.search.close")
+          assert close["data"]["residual_candidates"] == []
+          assert events[-1]["data"]["runtime_proof_values"] == 0
           PY
 
           projection="$(mktemp)"
