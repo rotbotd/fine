@@ -12,4 +12,8 @@ const output = await promisify(zstdCompress)(input, {
 });
 
 await writeFile(target, output);
+await writeFile(
+  new URL("./dist/zstd-check.txt.zst", import.meta.url),
+  await promisify(zstdCompress)(Buffer.from("fine-zstd-ok")),
+);
 console.log(`zstd: ${input.length} -> ${output.length} bytes`);

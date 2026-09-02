@@ -3935,3 +3935,20 @@ curl -H 'Accept-Encoding: zstd' -D - -o /dev/null \
 # Content-Encoding: zstd
 # Content-Length: 2555916
 ```
+
+The public gateway did not forward the browser's Zstandard negotiation to the
+origin. It instead fetched the uncompressed 10.6 MiB module, recompressed it to a
+3,550,655-byte edge response, marked that response `DYNAMIC`, and delivered it at
+about 12 KiB/s in a 295-second measurement. The loopback publication socket moved
+the precompressed object at 187 MiB/s, isolating that failure from both Python and
+Vite.
+
+Fine therefore exposes the precompressed module as the explicit
+`fine.wasm.zst` asset. Before initializing Emscripten, the browser fetches a tiny
+Zstandard-encoded sentinel. If decoding yields `fine-zstd-ok`, Emscripten's
+`locateFile` selects the explicit object; otherwise it retains the ordinary Wasm
+path. The explicit extension also changes the gateway's treatment: its first
+response was a cache miss with the exact 2,555,916-byte payload, and the next was
+a Cloudflare hit delivered in 2.08 seconds at 1.23 MiB/s. The transferred bytes
+matched the build's `.zst` file exactly. This is the completed delivery fix; Vite
+alone was not one.

@@ -17,9 +17,9 @@ let diagnostics = "";
 server.stdout.on("data", (chunk) => { diagnostics += chunk; });
 server.stderr.on("data", (chunk) => { diagnostics += chunk; });
 
-function request(headers = {}) {
+function request(path = "/fine.wasm", headers = {}) {
   return new Promise((resolve, reject) => {
-    const outgoing = http.get({ host: "127.0.0.1", port, path: "/fine.wasm", headers }, (response) => {
+    const outgoing = http.get({ host: "127.0.0.1", port, path, headers }, (response) => {
       const chunks = [];
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => resolve({ headers: response.headers, body: Buffer.concat(chunks) }));
@@ -41,7 +41,8 @@ async function waitForServer() {
 
 try {
   const plain = await waitForServer();
-  const compressed = await request({ "Accept-Encoding": "zstd" });
+  const compressed = await request("/fine.wasm", { "Accept-Encoding": "zstd" });
+  const explicit = await request("/fine.wasm.zst");
   const expectedPlain = await readFile("dist/fine.wasm");
   const expectedCompressed = await readFile("dist/fine.wasm.zst");
 
@@ -53,6 +54,8 @@ try {
     throw new Error(`expected zstd content encoding, got ${compressed.headers["content-encoding"]}`);
   if (!compressed.body.equals(expectedCompressed))
     throw new Error("zstd response differs from the precompressed module");
+  if (explicit.headers["content-encoding"] !== "zstd" || !explicit.body.equals(expectedCompressed))
+    throw new Error("explicit zstd Wasm response is not the precompressed module");
   console.log(`serve smoke passed: ${plain.body.length} -> ${compressed.body.length} bytes`);
 } finally {
   server.kill("SIGTERM");

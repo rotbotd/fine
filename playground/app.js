@@ -85,7 +85,18 @@ const fineLanguage = StreamLanguage.define({
   },
 });
 
+let compressedWasm = false;
+try {
+  const probe = await fetch("./zstd-check.txt.zst", { cache: "no-store" });
+  compressedWasm = probe.ok && await probe.text() === "fine-zstd-ok";
+} catch {
+  // Browsers without HTTP Zstandard support use the ordinary Wasm response.
+}
+
 const fine = await createFine({
+  locateFile(file) {
+    return compressedWasm && file === "fine.wasm" ? "./fine.wasm.zst" : file;
+  },
   print(line) {
     capture?.stdout.push(line);
   },

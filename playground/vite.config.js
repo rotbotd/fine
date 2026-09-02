@@ -15,11 +15,15 @@ function precompressedZstd() {
         } catch {
           return next();
         }
-        if (!pathname.endsWith(".wasm"))
+        const explicitlyEncoded = pathname.endsWith(".zst");
+        const decodedPathname = explicitlyEncoded ? pathname.slice(0, -4) : pathname;
+        const isWasm = decodedPathname.endsWith(".wasm");
+        const isProbe = decodedPathname.endsWith("zstd-check.txt");
+        if (!isWasm && !isProbe)
           return next();
 
         const outputRoot = path.resolve(server.config.root, server.config.build.outDir);
-        const relative = pathname.replace(/^\/+/, "");
+        const relative = decodedPathname.replace(/^\/+/, "");
         const plain = path.resolve(outputRoot, relative);
         if (!plain.startsWith(`${outputRoot}${path.sep}`))
           return next();
@@ -27,7 +31,8 @@ function precompressedZstd() {
         const acceptsZstd = String(request.headers["accept-encoding"] ?? "")
           .split(/\s*,\s*/)
           .includes("zstd");
-        const selected = acceptsZstd ? `${plain}.zst` : plain;
+        const sendsZstd = explicitlyEncoded || acceptsZstd;
+        const selected = sendsZstd ? `${plain}.zst` : plain;
 
         let size;
         try {
@@ -37,8 +42,8 @@ function precompressedZstd() {
         }
 
         response.statusCode = 200;
-        response.setHeader("Content-Type", "application/wasm");
-        if (acceptsZstd)
+        response.setHeader("Content-Type", isWasm ? "application/wasm" : "text/plain; charset=utf-8");
+        if (sendsZstd)
           response.setHeader("Content-Encoding", "zstd");
         response.setHeader("Content-Length", size);
         response.setHeader("Vary", "Accept-Encoding");
