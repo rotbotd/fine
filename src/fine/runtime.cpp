@@ -58,6 +58,12 @@ namespace fine {
         using ValueEnvironment = std::map<std::string, ValueTerm>;
         using ProofEnvironment = std::map<std::string, ProofEvidence>;
 
+        struct ProofCandidate {
+            std::string source;
+            std::string production;
+            std::optional<std::string> local_proof;
+        };
+
         bool same_ast(z3::context &context, z3::expr const &left, z3::expr const &right) {
             return Z3_is_eq_ast(context, left, right);
         }
@@ -149,6 +155,7 @@ namespace fine {
                         {RainfallRecorder::string_field("status", "verified"),
                          RainfallRecorder::number_field("functions_verified", result_.functions_verified),
                          RainfallRecorder::number_field("proofs_formed", result_.proofs_formed),
+                         RainfallRecorder::number_field("proof_holes_filled", result_.proof_holes_filled),
                          RainfallRecorder::number_field("coeffects_resolved", result_.coeffects_resolved),
                          RainfallRecorder::number_field("runtime_proof_values", 0)});
                 }
@@ -165,10 +172,18 @@ namespace fine {
             std::optional<RainfallRecorder> rainfall_;
             std::map<std::string, syntax::FunctionDecl const *> functions_;
             ExecutionResult result_;
-            std::map<std::size_t, std::string> materializations_;
+            std::map<std::pair<std::size_t, std::size_t>, std::string> materializations_;
 
             [[noreturn]] static void reject(syntax::SourceSpan span, std::string message) {
                 throw SemanticError(span, std::move(message));
+            }
+
+            void request_materialization(std::size_t begin, std::size_t end,
+                                         std::string text, syntax::SourceSpan span) {
+                auto [found, inserted] = materializations_.emplace(
+                    std::pair{begin, end}, text);
+                if (!inserted && found->second != text)
+                    reject(span, "two materializations disagree at one source range");
             }
 
             z3::sort sort(ValueKind kind) {
@@ -239,12 +254,16 @@ namespace fine {
             }
 
             ProofEvidence elaborate_proof(syntax::ProofExpr const &expression,
+                                          syntax::ProofType const &expected_syntax,
                                           IdentityType expected,
                                           ValueEnvironment const &values,
                                           ProofEnvironment const &proofs,
                                           std::vector<std::string> const &proof_order,
                                           std::vector<z3::expr> const &absorbed,
-                                          std::string name) {
+                                          std::string name,
+                                          std::string const &run,
+                                          std::string const &proof_source,
+                                          std::string const &type_source) {
                 if (expression.kind == syntax::ProofExpr::Kind::name) {
                     auto found = proofs.find(expression.name);
                     if (found == proofs.end())
@@ -253,12 +272,100 @@ namespace fine {
                         reject(expression.span, "proof `" + expression.name + "` has the wrong identity type");
                     return {std::move(name), std::move(expected), "alias:" + expression.name, expression.span};
                 }
-                ValueTerm witness = elaborate_value(expression.value, values, proofs, proof_order, absorbed);
-                if (witness.kind != expected.carrier ||
-                    !same_ast(context_, witness.expression, expected.left) ||
-                    !same_ast(context_, witness.expression, expected.right))
-                    reject(expression.span, "`refl` requires both identity endpoints to elaborate to its exact value");
-                return {std::move(name), std::move(expected), "refl", expression.span};
+                if (expression.kind == syntax::ProofExpr::Kind::reflexivity) {
+                    ValueTerm witness = elaborate_value(expression.value, values, proofs, proof_order, absorbed);
+                    if (witness.kind != expected.carrier ||
+                        !same_ast(context_, witness.expression, expected.left) ||
+                        !same_ast(context_, witness.expression, expected.right))
+                        reject(expression.span, "`refl` requires both identity endpoints to elaborate to its exact value");
+                    return {std::move(name), std::move(expected), "refl", expression.span};
+                }
+
+                if (options_.require_materialized_proofs)
+                    reject(expression.span, "proof hole remains after materialization");
+
+                std::vector<ProofCandidate> candidates;
+                for (auto const &candidate_name : proof_order) {
+                    auto found = proofs.find(candidate_name);
+                    if (found != proofs.end() && same_type(context_, found->second.type, expected))
+                        candidates.push_back({candidate_name, "exact-local", candidate_name});
+                }
+                if (same_ast(context_, expected.left, expected.right))
+                    candidates.push_back({"refl(" + print_value(expected_syntax.left) + ")", "refl", std::nullopt});
+
+                std::string proposition;
+                std::string hole = "proof-hole:" + proof_source;
+                std::vector<std::string> candidate_events;
+                if (rainfall_) {
+                    proposition = rainfall_->term(expected.left == expected.right,
+                                                  "proof-hole-proposition");
+                    rainfall_->record(
+                        "object", "proof.search.open", {"run:" + run, hole},
+                        "fine.typed-proof-search",
+                        "A source proof hole opens with a finite grammar determined by its expected identity type",
+                        {RainfallRecorder::string_field("id", hole),
+                         RainfallRecorder::string_field("source", proof_source),
+                         RainfallRecorder::string_field("type_source", type_source),
+                         RainfallRecorder::string_field("binding", name),
+                         RainfallRecorder::string_field("expected_type", print_identity(expected_syntax)),
+                         RainfallRecorder::string_field("proposition", proposition),
+                         RainfallRecorder::raw_field("grammar", "[\"exact-local\",\"refl\"]"),
+                         RainfallRecorder::boolean_field("ill_typed_candidates_enumerated", false)});
+                    for (auto const &candidate : candidates) {
+                        std::vector<RainfallField> data = {
+                            RainfallRecorder::string_field("hole", hole),
+                            RainfallRecorder::string_field("body", candidate.source),
+                            RainfallRecorder::string_field("production", candidate.production),
+                            RainfallRecorder::string_field("expected_type", print_identity(expected_syntax)),
+                            RainfallRecorder::boolean_field("exact_type", true),
+                            RainfallRecorder::boolean_field("runtime_value_created", false),
+                        };
+                        if (candidate.local_proof)
+                            data.push_back(RainfallRecorder::string_field("proof", *candidate.local_proof));
+                        candidate_events.push_back(rainfall_->record(
+                            "derive", "proof.search.candidate", {"run:" + run, hole},
+                            "fine.typed-proof-search",
+                            "A well-typed Fine proof production entered the finite frontier; mismatched productions are absent",
+                            data));
+                    }
+                }
+
+                if (candidates.empty())
+                    reject(expression.span, "proof hole `" + name +
+                                                "` has no well-typed candidate in grammar [exact-local, refl]");
+
+                ProofCandidate const &selected = candidates.front();
+                request_materialization(expression.span.begin.offset, expression.span.end.offset,
+                                        selected.source, expression.span);
+                ++result_.proof_holes_filled;
+                if (rainfall_) {
+                    std::string selection = rainfall_->record(
+                        "transition", "proof.search.select", {"run:" + run, hole},
+                        "fine.typed-proof-search",
+                        "The first deterministic well-typed source proof is selected for checking and materialization",
+                        {RainfallRecorder::string_field("hole", hole),
+                         RainfallRecorder::string_field("candidate", candidate_events.front()),
+                         RainfallRecorder::string_field("body", selected.source),
+                         RainfallRecorder::string_field("production", selected.production)});
+                    std::vector<std::string> residual(candidate_events.begin() + 1, candidate_events.end());
+                    rainfall_->record(
+                        "transition", "proof.search.close", {"run:" + run, hole},
+                        "fine.typed-proof-search",
+                        "The typed hole has a checked source witness and its unchosen finite frontier remains explicit",
+                        {RainfallRecorder::string_field("hole", hole),
+                         RainfallRecorder::string_field("selection", selection),
+                         RainfallRecorder::string_field("selected_candidate", candidate_events.front()),
+                         RainfallRecorder::raw_field("residual_candidates",
+                                                     RainfallRecorder::string_array(residual)),
+                         RainfallRecorder::string_field("status", "selected"),
+                         RainfallRecorder::boolean_field("materialization_requested", true)});
+                }
+                output_ << "filled proof hole: " << name << " <- " << selected.source
+                        << " (typed search)\n";
+                std::string formation = selected.local_proof
+                                            ? "search:exact-local:" + *selected.local_proof
+                                            : "search:refl";
+                return {std::move(name), std::move(expected), std::move(formation), expression.span};
             }
 
             void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed,
@@ -476,9 +583,8 @@ namespace fine {
                         insertion << chosen[i].first << " = " << chosen[i].second;
                     }
                     insertion << ']';
-                    auto [at, inserted] = materializations_.emplace(expression.call_argument_end, insertion.str());
-                    if (!inserted && at->second != insertion.str())
-                        reject(expression.span, "two coeffect materializations disagree at one source offset");
+                    request_materialization(expression.call_argument_end, expression.call_argument_end,
+                                            insertion.str(), expression.span);
                 }
                 ValueTerm result = elaborate_value(function.body, callee_values, callee_proofs,
                                                    callee_proof_order, callee_absorbed);
@@ -498,8 +604,8 @@ namespace fine {
                                                                   values, proofs, proof_order, absorbed); },
                                statement);
                 }
-                for (auto const &[offset, text] : materializations_)
-                    result_.materializations.push_back({offset, text});
+                for (auto const &[range, text] : materializations_)
+                    result_.materializations.push_back({range.first, range.second, text});
             }
 
             void execute_statement(syntax::LetDecl const &declaration, std::string const &run,
@@ -523,15 +629,21 @@ namespace fine {
                                    std::vector<z3::expr> &absorbed) {
                 ensure_fresh(declaration.name, declaration.span, values, proofs);
                 IdentityType expected = elaborate_identity(declaration.type, values, proofs, proof_order, absorbed);
-                ProofEvidence evidence = elaborate_proof(declaration.value, std::move(expected), values,
-                                                         proofs, proof_order, absorbed, declaration.name);
                 std::string proof_source;
                 std::string type_source;
                 if (rainfall_) {
                     proof_source = rainfall_->source_node(declaration.value.node_id, declaration.value.span,
-                                                          "proof.expression");
+                                                          declaration.value.kind == syntax::ProofExpr::Kind::hole
+                                                              ? "proof.expression.hole"
+                                                              : "proof.expression");
                     type_source = rainfall_->source_node(declaration.type.node_id, declaration.type.span,
                                                          "proof-type.identity");
+                }
+                ProofEvidence evidence = elaborate_proof(declaration.value, declaration.type,
+                                                         std::move(expected), values, proofs,
+                                                         proof_order, absorbed, declaration.name,
+                                                         run, proof_source, type_source);
+                if (rainfall_) {
                     std::string proposition = rainfall_->term(evidence.type.left == evidence.type.right,
                                                               "identity-proposition");
                     rainfall_->record(
@@ -607,14 +719,17 @@ namespace fine {
     std::string apply_materializations(std::string_view source,
                                        std::vector<Materialization> materializations) {
         std::sort(materializations.begin(), materializations.end(),
-                  [](auto const &left, auto const &right) { return left.offset < right.offset; });
+                  [](auto const &left, auto const &right) {
+                      return std::pair{left.begin, left.end} < std::pair{right.begin, right.end};
+                  });
         std::ostringstream output;
         std::size_t cursor = 0;
         for (auto const &materialization : materializations) {
-            if (materialization.offset < cursor || materialization.offset > source.size())
-                throw std::runtime_error("invalid or overlapping coeffect materialization");
-            output << source.substr(cursor, materialization.offset - cursor) << materialization.text;
-            cursor = materialization.offset;
+            if (materialization.begin < cursor || materialization.begin > materialization.end ||
+                materialization.end > source.size())
+                throw std::runtime_error("invalid or overlapping source materialization");
+            output << source.substr(cursor, materialization.begin - cursor) << materialization.text;
+            cursor = materialization.end;
         }
         output << source.substr(cursor);
         return output.str();

@@ -34,18 +34,33 @@ Exit test: `identity-coeffect.fine` passes; removing its proof fails at the call
 removing the function coeffect fails its guarantee; and `reject-proof-as-value`
 shows proof evidence cannot enter execution.
 
-## Next: a proof hole worth searching
+## Closed: typed identity holes
 
-- [ ] Add a typed proof hole whose expected type is an identity.
-- [ ] Give it a finite, type-directed grammar containing exact local evidence,
-      `refl`, and named proof applications; ill-typed candidates must be absent
-      before enumeration.
-- [ ] Record each frontier/candidate/residual in Rainfall without presenting Z3
-      traffic as a source proof.
-- [ ] Materialize one synthesized proof term and demonstrate a later run with no
-      proof search.
-- [ ] Add identity symmetry and transitivity only when the hole fixture forces
-      them; do not grow a general tactic language first.
+- [x] Add `?` with an expected identity proof type.
+- [x] Enumerate exact local evidence followed by applicable `refl`; exclude
+      ill-typed local proofs before they become candidates.
+- [x] Record opened holes, typed candidates, exact selections, and residual
+      finite frontiers separately from Z3 observer traffic.
+- [x] Replace both proof holes and implicit coeffects, then reparse and rerun
+      with both searches forbidden.
+- [x] Reject a hole whose type admits neither local evidence nor reflexivity.
+
+Exit test: `identity-holes.fine` constructs one `refl`, selects one local proof,
+retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
+`reject-empty-proof-hole.fine` fails with an empty typed grammar.
+
+## Next: named proof functions
+
+- [ ] Add proof-level function declarations whose parameters and result are
+      proof evidence and which cannot enter runtime value calls.
+- [ ] Make identity symmetry the first application-only hole: it must be
+      impossible to close by exact local selection or `refl`.
+- [ ] Add type-directed application candidates only when the instantiated
+      result has the exact expected proof type.
+- [ ] Add transitivity only after symmetry materializes and reruns without
+      search; retain its two input proofs distinctly in Rainfall.
+- [ ] Bound recursive application grammar so a cyclic proof-function set
+      terminates without adding a tactic language or global theorem search.
 
 ## Later, only after identity search earns it
 

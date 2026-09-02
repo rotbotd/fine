@@ -44,6 +44,11 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     terms: dict[str, dict[str, Any]] = {}
     holes: dict[str, dict[str, Any]] = {}
     arm_witnesses: dict[str, dict[str, Any]] = {}
+    proof_holes: dict[str, dict[str, Any]] = {}
+    proof_candidates: dict[str, dict[str, Any]] = {}
+    proof_candidates_by_hole: dict[str, list[str]] = {}
+    proof_selections: dict[str, dict[str, Any]] = {}
+    proof_holes_closed: set[str] = set()
     term_handles: set[int] = set()
     term_lift_validations: set[str] = set()
     event_ids: set[str] = set()
@@ -196,6 +201,84 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             _require(data.get("rendering_hash") == terms[term].get("rendering_hash"),
                      f"event {sequence}: exact lift validates a different rendering")
             term_lift_validations.add(term)
+        elif operation == "proof.search.open":
+            hole = data.get("id")
+            source_id = data.get("source")
+            type_source = data.get("type_source")
+            _require(isinstance(hole, str) and hole not in proof_holes,
+                     f"event {sequence}: missing or reused proof hole ID")
+            _require(source_id in source_nodes and type_source in source_nodes,
+                     f"event {sequence}: proof hole names unknown source syntax")
+            source_node = source_nodes[source_id]
+            _require(source_node.get("syntax_kind") == "proof.expression.hole" and
+                     source_nodes[type_source].get("syntax_kind") == "proof-type.identity",
+                     f"event {sequence}: proof hole source has the wrong syntax kind")
+            span = source_node["span"]
+            _require(source[span["begin"]["offset"]:span["end"]["offset"]] == b"?",
+                     f"event {sequence}: proof hole source does not select `?`")
+            _require(isinstance(data.get("binding"), str) and data["binding"] and
+                     isinstance(data.get("expected_type"), str) and
+                     data["expected_type"].startswith("Id(") and
+                     data.get("proposition") in terms and
+                     data.get("grammar") == ["exact-local", "refl"] and
+                     data.get("ill_typed_candidates_enumerated") is False,
+                     f"event {sequence}: malformed typed identity proof hole")
+            proof_holes[hole] = data
+            proof_candidates_by_hole[hole] = []
+        elif operation == "proof.search.candidate":
+            hole = data.get("hole")
+            _require(hole in proof_holes and hole not in proof_holes_closed,
+                     f"event {sequence}: proof candidate names no open proof hole")
+            _require(isinstance(data.get("body"), str) and data["body"] and
+                     data.get("production") in {"exact-local", "refl"} and
+                     data.get("expected_type") == proof_holes[hole]["expected_type"] and
+                     data.get("exact_type") is True and
+                     data.get("runtime_value_created") is False,
+                     f"event {sequence}: malformed or ill-typed proof candidate")
+            if data["production"] == "exact-local":
+                _require(data.get("proof") == data["body"],
+                         f"event {sequence}: local proof candidate loses its source binding")
+            else:
+                _require("proof" not in data and data["body"].startswith("refl(") and
+                         data["body"].endswith(")"),
+                         f"event {sequence}: reflexivity candidate is not Fine proof syntax")
+            _require(event_id not in proof_candidates,
+                     f"event {sequence}: reused proof candidate event")
+            proof_candidates[event_id] = data
+            proof_candidates_by_hole[hole].append(event_id)
+        elif operation == "proof.search.select":
+            hole = data.get("hole")
+            candidate_id = data.get("candidate")
+            candidate = proof_candidates.get(candidate_id)
+            _require(hole in proof_holes and hole not in proof_selections and
+                     hole not in proof_holes_closed and candidate is not None and
+                     candidate.get("hole") == hole,
+                     f"event {sequence}: proof selection names no prior candidate")
+            _require(data.get("body") == candidate.get("body") and
+                     data.get("production") == candidate.get("production"),
+                     f"event {sequence}: proof selection changes its candidate")
+            proof_selections[hole] = event
+        elif operation == "proof.search.close":
+            hole = data.get("hole")
+            selection = proof_selections.get(hole)
+            selected_candidate = data.get("selected_candidate")
+            residual = data.get("residual_candidates")
+            _require(hole in proof_holes and hole not in proof_holes_closed and
+                     selection is not None and data.get("selection") == selection["event_id"] and
+                     selected_candidate == selection["data"].get("candidate"),
+                     f"event {sequence}: proof search close has no matching selection")
+            _require(isinstance(residual, list) and len(residual) == len(set(residual)) and
+                     all(candidate in proof_candidates and
+                         proof_candidates[candidate].get("hole") == hole
+                         for candidate in residual),
+                     f"event {sequence}: malformed residual proof frontier")
+            _require(selected_candidate not in residual and
+                     [selected_candidate, *residual] == proof_candidates_by_hole[hole],
+                     f"event {sequence}: proof search close loses or reorders its finite frontier")
+            _require(data.get("status") == "selected" and
+                     data.get("materialization_requested") is True,
+                     f"event {sequence}: proof search did not request source materialization")
+            proof_holes_closed.add(hole)
         elif operation == "synth.hole.declare":
             hole = data.get("id")
             _require(isinstance(hole, str) and hole not in holes,
@@ -309,6 +392,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
              "replay does not exact-validate every generated Fine term")
     _require(not match_run or match_witness_count == 1,
              "match synthesis replay has no unique verified match witness")
+    _require(proof_holes_closed == set(proof_holes),
+             "typed proof search replay leaves an open proof hole")
 
     allowed = {"exact", "desugared", "generated", "internal_z3"}
     for index, edge in enumerate(evidence):
@@ -332,6 +417,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
         "source_nodes": len(source_nodes),
         "terms": len(terms),
         "source_term_edges": len(evidence),
+        "proof_holes": len(proof_holes),
     }
 
 

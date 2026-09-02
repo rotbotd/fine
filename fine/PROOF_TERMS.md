@@ -55,3 +55,21 @@ The first slice must:
 
 No predicate or general proposition syntax may be added merely to make the
 example look larger.
+
+## Second admission test
+
+The first source proof search is deliberately smaller than coeffect resolution:
+one typed identity hole, one finite grammar. It must:
+
+1. exclude mismatched local evidence before enumeration;
+2. choose exact local evidence before an applicable `refl` candidate;
+3. synthesize `refl(left)` when no exact local evidence exists and both endpoints
+   elaborate to exact same-manager identity;
+4. fail with an empty typed grammar when neither production applies;
+5. retain every typed candidate, selection, and residual frontier by explicit
+   event reference in Rainfall;
+6. replace the source hole, reparse, and rerun with all proof and coeffect search
+   forbidden.
+
+Named proof functions are not smuggled into this grammar. Symmetry and
+transitivity are the next consumer and must arrive as typed source applications.

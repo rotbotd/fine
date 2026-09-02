@@ -24,7 +24,8 @@ namespace fine {
     };
 
     struct Materialization {
-        std::size_t offset = 0;
+        std::size_t begin = 0;
+        std::size_t end = 0;
         std::string text;
     };
 
@@ -32,11 +33,13 @@ namespace fine {
         std::vector<Materialization> materializations;
         std::size_t functions_verified = 0;
         std::size_t proofs_formed = 0;
+        std::size_t proof_holes_filled = 0;
         std::size_t coeffects_resolved = 0;
     };
 
     struct ExecutionOptions {
         bool require_explicit_coeffects = false;
+        bool require_materialized_proofs = false;
     };
 
     ExecutionResult execute(syntax::Document const &document, std::ostream &output,

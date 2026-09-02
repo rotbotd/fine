@@ -75,7 +75,7 @@ namespace fine::syntax {
     };
 
     struct ProofExpr {
-        enum class Kind { name, reflexivity };
+        enum class Kind { name, reflexivity, hole };
 
         Kind kind = Kind::name;
         SourceSpan span;

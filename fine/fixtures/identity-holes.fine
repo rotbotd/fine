@@ -1,0 +1,16 @@
+function hold(left: Int, right: Int) -> Int
+  needs [same: Id(Int, left, right)]
+  ensures { result == right; }
+{
+  left
+}
+
+run identity_holes {
+  let x: Int = 7;
+  let y: Int = 8;
+  proof other: Id(Int, y, y) = refl(y);
+  proof self: Id(Int, x, x) = ?;
+  proof copied: Id(Int, x, x) = ?;
+  let answer: Int = hold(x, x);
+  assert answer == x;
+}

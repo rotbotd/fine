@@ -45,6 +45,19 @@ build/proof-core/fine run explicit.fine
 `fine materialize` writes an explicit `using [same = p]` argument, reparses it,
 and rechecks it with implicit resolution disabled before returning source.
 
+Typed identity holes use `?` at the proof level. Their finite grammar contains
+only exact local evidence and applicable reflexivity:
+
+```fine
+proof self: Id(Int, x, x) = ?;   // materializes as refl(x)
+proof copied: Id(Int, x, x) = ?; // materializes as self
+```
+
+Ill-typed local proofs are excluded before enumeration. Rainfall records the
+opened hole, every typed candidate, the selected candidate, and the complete
+residual frontier. Materialization replaces each `?`, reparses, and reruns with
+both proof and coeffect search forbidden before returning source.
+
 The former Bool-predicate implementation remains runnable from tag
 `pre-pat-1d7222a23`. The exact survival and deletion map is in
 [`PROOF_TERMS.md`](PROOF_TERMS.md); current invariants are in

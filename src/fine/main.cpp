@@ -73,6 +73,7 @@ namespace {
             std::ostringstream check_output;
             fine::ExecutionOptions options;
             options.require_explicit_coeffects = true;
+            options.require_materialized_proofs = true;
             fine::execute(reparsed, check_output, nullptr, nullptr, {}, options);
             std::cout << materialized;
             return EXIT_SUCCESS;

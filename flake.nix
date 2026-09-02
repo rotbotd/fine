@@ -41,6 +41,36 @@
           materialized_output="$($out/bin/fine run "$materialized")"
           grep -F "resolved coeffect: replace.same <- p (explicit)" <<<"$materialized_output"
 
+          hole_output="$($out/bin/fine run "$src/fine/fixtures/identity-holes.fine")"
+          echo "$hole_output"
+          grep -F "filled proof hole: self <- refl(x) (typed search)" <<<"$hole_output"
+          grep -F "filled proof hole: copied <- self (typed search)" <<<"$hole_output"
+          grep -F "resolved coeffect: hold.same <- self (lexical search)" <<<"$hole_output"
+
+          holes_materialized="$(mktemp)"
+          $out/bin/fine materialize "$src/fine/fixtures/identity-holes.fine" \
+            > "$holes_materialized"
+          cmp "$src/fine/fixtures/identity-holes-materialized.fine" \
+            "$holes_materialized"
+          holes_materialized_output="$($out/bin/fine run "$holes_materialized")"
+          grep -F "formed proof: self : Id(Int, x, x) (virtual)" \
+            <<<"$holes_materialized_output"
+          grep -F "resolved coeffect: hold.same <- self (explicit)" \
+            <<<"$holes_materialized_output"
+          if grep -F "filled proof hole:" <<<"$holes_materialized_output"; then
+            echo "materialized identity proof unexpectedly searched again" >&2
+            exit 1
+          fi
+
+          empty_hole="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-empty-proof-hole.fine" \
+              >"$empty_hole" 2>&1; then
+            echo "empty proof-hole grammar unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'proof hole `impossible` has no well-typed candidate in grammar [exact-local, refl]' \
+            "$empty_hole"
+
           missing="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-missing-coeffect.fine" >"$missing" 2>&1; then
             echo "missing coeffect unexpectedly passed" >&2
@@ -97,6 +127,36 @@
           declarations = [e for e in events if e["operation"] == "term.declare"]
           validations = [e for e in events if e["operation"] == "term.lift.validate"]
           assert len(declarations) == len(validations) and declarations
+          PY
+
+          hole_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/identity-holes.fine" > "$hole_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/identity-holes.fine" "$hole_rain"
+          ${pkgs.python3}/bin/python - "$hole_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          holes = [e for e in events if e["operation"] == "proof.search.open"]
+          candidates = [e for e in events if e["operation"] == "proof.search.candidate"]
+          selections = [e for e in events if e["operation"] == "proof.search.select"]
+          closes = [e for e in events if e["operation"] == "proof.search.close"]
+          assert len(holes) == len(selections) == len(closes) == 2
+          assert all(e["producer"]["component"] == "fine.typed-proof-search"
+                     for e in holes + candidates + selections + closes)
+          assert [e["data"]["body"] for e in candidates] == ["refl(x)", "self", "refl(x)"]
+          assert all(e["data"]["exact_type"] is True for e in candidates)
+          assert all(e["data"]["runtime_value_created"] is False for e in candidates)
+          assert not any(e["data"]["body"] == "other" for e in candidates)
+          assert closes[0]["data"]["residual_candidates"] == []
+          assert len(closes[1]["data"]["residual_candidates"]) == 1
+          forms = [e for e in events if e["operation"] == "proof.identity.form"]
+          assert [e["data"]["formation"] for e in forms] == [
+              "refl", "search:refl", "search:exact-local:self"
+          ]
+          closed = events[-1]
+          assert closed["operation"] == "proof-core.run.close"
+          assert closed["data"]["proof_holes_filled"] == 2
+          assert closed["data"]["runtime_proof_values"] == 0
           PY
 
           projection="$(mktemp)"

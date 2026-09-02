@@ -1,0 +1,5 @@
+run empty_proof_hole {
+  let x: Int = 7;
+  let y: Int = 8;
+  proof impossible: Id(Int, x, y) = ?;
+}

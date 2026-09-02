@@ -72,17 +72,17 @@ implicit resolution disabled. Controls reject a missing coeffect, an unjustified
 function, and a proof name used as an `Int`. Both the run boundary and runtime
 close report zero proof values.
 
-## Slice 1 — typed identity holes (next)
+## Slice 1 — typed identity holes (closed)
 
 Add a source hole whose expected type is already known to be an identity proof.
 The first grammar has only two constructors: select exact local evidence, or form
 `refl(value)` when the expected endpoints are the same manager-local value. A
 candidate that cannot have the expected proof type must never enter enumeration.
 
-Rainfall will give proof search its own events: hole opened, typed production
-considered, candidate checked, candidate rejected or selected, and residual
-frontier. These events must point to source proof nodes; ordinary Z3 observer
-traffic remains adjacent evidence rather than being relabeled as synthesis.
+Rainfall gives proof search its own events: hole opened, typed production
+considered, candidate selected, and residual frontier. These events point back
+to the source hole; ordinary Z3 observer traffic remains adjacent evidence
+rather than being relabeled as synthesis.
 
 Exit conditions:
 
@@ -92,10 +92,16 @@ Exit conditions:
 - materialization replaces the hole with the selected source term;
 - the materialized file reparses and passes with proof search forbidden.
 
-This is the slice that can start immediately. It tests the actual Fine gimmick
-without first inventing inductive propositions, tactics, or a large term language.
+Closed by `identity-holes.fine`: `self` materializes as `refl(x)`, `copied`
+selects `self`, and the earlier `other : Id(Int, y, y)` never appears in the
+candidate stream. The close events retain zero and one residual candidates
+respectively. `reject-empty-proof-hole.fine` has distinct exact endpoints and
+fails with no well-typed production.
 
-## Slice 2 — named proof functions and composition
+This slice tests the actual Fine gimmick without first inventing inductive
+propositions, tactics, or a large term language.
+
+## Slice 2 — named proof functions and composition (next)
 
 Identity search becomes useful when its grammar can apply declared proof-level
 functions such as symmetry and transitivity. These declarations live at the

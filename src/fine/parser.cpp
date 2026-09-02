@@ -61,7 +61,7 @@ namespace fine::syntax {
                         result.push_back({Token::Kind::symbol, std::string(two), {begin, position()}});
                         continue;
                     }
-                    if (std::string_view("(){}[],:;=").find(static_cast<char>(c)) != std::string_view::npos) {
+                    if (std::string_view("(){}[],:;=?").find(static_cast<char>(c)) != std::string_view::npos) {
                         advance();
                         result.push_back({Token::Kind::symbol, std::string(1, static_cast<char>(c)),
                                           {begin, position()}});
@@ -312,6 +312,14 @@ namespace fine::syntax {
             }
 
             ProofExpr proof_expression() {
+                if (at("?")) {
+                    Token token = take();
+                    ProofExpr result;
+                    result.kind = ProofExpr::Kind::hole;
+                    result.span = token.span;
+                    result.node_id = next_node_id_++;
+                    return result;
+                }
                 Token token = identifier("proof expression");
                 ProofExpr result;
                 result.span = token.span;
