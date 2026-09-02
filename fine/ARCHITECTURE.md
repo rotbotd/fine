@@ -86,6 +86,14 @@ Hole replacements and implicit `using` insertions share one ordered source edit
 list. The resulting document is reparsed and rerun with both proof-hole search
 and implicit coeffect search forbidden before it is emitted.
 
+`--proof-selector z3` changes only selection. Fine still computes the complete
+typed deterministic frontier first. It compacts the ground productions found
+in those trees into a recursive datatype whose checking functions retain the
+carrier, exact endpoint AST IDs, child types, and total cost. Z3 returns a ground
+constructor tree; Fine lifts it to source and requires the source and cost to
+name one exact reference candidate. The model cannot add a production, change a
+type, or define the residual frontier.
+
 ## Rainfall boundary
 
 The existing manager-local term registry and `fine.generated-term.v1` renderer
@@ -101,6 +109,11 @@ frontier at `proof.search.close`. Candidate event IDs, rather than callback
 order, connect the selection and close. Replay validation checks that the
 selected candidate plus the residual list exactly exhaust the enumerated
 frontier and that every opened proof hole closes.
+
+Model selection adds `proof.model.grammar`, `proof.model.solve`, and
+`proof.model.lift` as separate events. Replay requires the grammar to cite the
+complete reference frontier, the solve to cite that grammar, the lift to cite a
+typed candidate, and the later selection to use exactly that candidate.
 
 A proof source node is not falsely attached to a Z3 proof term. Z3 receives the
 proposition which the source proof licenses; Fine retains the proof's own static

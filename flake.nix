@@ -101,6 +101,19 @@
             exit 1
           fi
 
+          z3_transitivity_output="$($out/bin/fine run --proof-selector z3 \
+            "$src/fine/fixtures/identity-transitivity.fine")"
+          echo "$z3_transitivity_output"
+          grep -F "filled proof hole: composed <- trans[left, middle, right](p, q) (Z3 datatype model)" \
+            <<<"$z3_transitivity_output"
+
+          z3_transitivity_materialized="$(mktemp)"
+          $out/bin/fine materialize --proof-selector z3 \
+            "$src/fine/fixtures/identity-transitivity.fine" \
+            > "$z3_transitivity_materialized"
+          cmp "$src/fine/fixtures/identity-transitivity-materialized.fine" \
+            "$z3_transitivity_materialized"
+
           transitivity_gap="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-transitivity-gap.fine" \
               >"$transitivity_gap" 2>&1; then
@@ -284,6 +297,34 @@
           close = next(e for e in events if e["operation"] == "proof.search.close")
           assert close["data"]["residual_candidates"] == []
           assert events[-1]["data"]["runtime_proof_values"] == 0
+          PY
+
+          z3_transitivity_rain="$(mktemp)"
+          $out/bin/fine rain --proof-selector z3 \
+            "$src/fine/fixtures/identity-transitivity.fine" \
+            > "$z3_transitivity_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/identity-transitivity.fine" "$z3_transitivity_rain"
+          ${pkgs.python3}/bin/python - "$z3_transitivity_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          grammar = next(e for e in events if e["operation"] == "proof.model.grammar")
+          solve = next(e for e in events if e["operation"] == "proof.model.solve")
+          lifted = next(e for e in events if e["operation"] == "proof.model.lift")
+          selected = next(e for e in events if e["operation"] == "proof.search.select")
+          assert grammar["data"]["max_cost"] == 3
+          assert grammar["data"]["productions"] == [
+              "apply:trans[left, middle, right]/2", "local:p", "local:q"
+          ]
+          assert len(grammar["data"]["reference_candidates"]) == 1
+          assert solve["data"]["grammar_event"] == grammar["event_id"]
+          assert solve["data"]["model_value"] == "(apply-trans local-p local-q)"
+          assert solve["data"]["cost"] == 3
+          assert lifted["data"]["solve_event"] == solve["event_id"]
+          assert lifted["data"]["body"] == "trans[left, middle, right](p, q)"
+          assert lifted["data"]["in_reference_frontier"] is True
+          assert lifted["data"]["reparse_required"] is True
+          assert selected["data"]["candidate"] == lifted["data"]["candidate"]
           PY
 
           projection="$(mktemp)"

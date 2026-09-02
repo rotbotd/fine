@@ -117,3 +117,32 @@ so the fixed bound rejects it rather than accepting one-sided support.
 This inference is deliberately finite and syntax-owned. An index absent from a
 result is learned only by exact matching against lexical proof evidence, never by
 mining an SMT proof or guessing a semantically equal pretty-printing.
+
+## Bounded datatype-model selector
+
+`--proof-selector z3` uses Z3 only after deterministic enumeration has produced
+the complete typed frontier. Fine walks those candidate trees and compacts their
+distinct ground productions into one recursive datatype. Local evidence and
+reflexivity become nullary constructors; each ground named proof-function
+application becomes a constructor with one recursive field per proof argument.
+Recursive `carrier`, `src`, `dst`, `cost`, and `well` functions enforce the same
+exact child types and total cost bound as the enumerator.
+
+For `identity-transitivity.fine`, the compact grammar is precisely:
+
+```text
+apply:trans[left, middle, right]/2
+local:p
+local:q
+```
+
+Z3 assigns the hole `(apply-trans local-p local-q)`. `ProofLift` maps constructor
+identities—not printed guesses—to `trans[left, middle, right](p, q)`. Fine then
+requires that source and cost to match an exact deterministic candidate before
+requesting materialization. `fine materialize --proof-selector z3` replaces the
+hole, reparses the complete document, and reruns with search forbidden.
+
+This is deliberately not yet a faster replacement for enumeration: the
+deterministic frontier still supplies the reference grammar and residual list.
+The slice establishes the ownership, model, lift, and recheck boundaries before
+any attempt to generate a larger grammar without enumerating all complete trees.

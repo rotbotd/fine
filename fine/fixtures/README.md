@@ -24,7 +24,9 @@
 - `identity-transitivity.fine` forces backward search to recover a middle index
   absent from the goal by matching exact local proof types. The only cost-three
   tree is `trans[left, middle, right](p, q)`; Rainfall retains the middle index
-  and the two child proofs separately.
+  and the two child proofs separately. With `--proof-selector z3`, the compacted
+  recursive datatype model is `(apply-trans local-p local-q)` and lifts to that
+  same source tree.
 - `identity-transitivity-materialized.fine` is that exact two-child tree and
   reruns with proof search forbidden.
 - `reject-transitivity-gap.fine` omits the second local child. Its reconstructible

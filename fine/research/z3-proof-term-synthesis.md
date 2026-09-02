@@ -134,3 +134,22 @@ Spacer remains outside this path. A safe Spacer answer is a sufficient
 invariant and can project away constructor support; prior Fine experiments
 already demonstrated that loss. Compiler-owned induction and proof
 materialization remain necessary for recursive propositions.
+
+## Integrated result
+
+The first product slice now lives in `src/fine/proof_model_selector.cpp`. Rather
+than reimplementing Fine typing inside an unrelated solver grammar, it compacts
+the already enumerated typed candidate trees into ground recursive productions.
+The datatype interpreter tracks carrier token, exact endpoint AST IDs, child
+requirements, well-formedness, and total cost. The returned constructor AST is
+lifted structurally and must match one exact source-and-cost pair in the
+deterministic frontier.
+
+On `identity-transitivity.fine`, Z3 returns
+`(apply-trans local-p local-q)` and Fine lifts it to
+`trans[left, middle, right](p, q)`. `fine materialize --proof-selector z3`
+reparses and rechecks that complete source with search forbidden. Rainfall
+records the three boundary objects separately. This is a semantic integration
+result, not yet a performance result: complete deterministic enumeration still
+precedes compaction, and future work may only remove that prerequisite if it
+preserves the same exact grammar and frontier claims.

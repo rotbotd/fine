@@ -1,6 +1,7 @@
 add_executable(fine-bin
   main.cpp
   parser.cpp
+  proof_model_selector.cpp
   rainfall.cpp
   rainfall_lift.cpp
   runtime.cpp

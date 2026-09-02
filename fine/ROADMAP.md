@@ -139,6 +139,17 @@ retains `p` and `q` distinctly in the single cost-three tree. Removing `q` leave
 only a cost-four reconstruction and fails, so search cannot accept marginal
 support from one premise. Both materialized fixtures rerun without search.
 
+The bounded model-selector follow-up is also closed. Fine compacts the exact
+deterministic candidate trees into ground recursive datatype productions, asks
+Z3 for a `well` tree at cost at most three, and lifts by datatype constructor
+identity. On the transitivity fixture the model is exactly
+`(apply-trans local-p local-q)`, lifting to the sole reference candidate. Rainfall
+keeps grammar, model solve, lift, ordinary selection, and residual closure as
+separate events; materialization reparses and reruns without either search. The
+enumerator remains the reference and still computes the full frontier in this
+slice, so this closes the semantic integration boundary rather than a
+scalability claim.
+
 ## Slice 3 — proof-only elimination
 
 Introduction and absorption should carry the language until a fixture genuinely

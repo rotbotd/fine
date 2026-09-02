@@ -58,6 +58,24 @@ opened hole, every typed candidate, the selected candidate, and the complete
 residual frontier. Materialization replaces each `?`, reparses, and reruns with
 both proof and coeffect search forbidden before returning source.
 
+The optional Z3 proof selector compacts that same finite frontier into a
+recursive datatype grammar. It asks Z3 for a bounded ground constructor tree,
+lifts the model value back to Fine proof syntax, and rejects it unless it is an
+exact member of the deterministic reference frontier:
+
+```sh
+build/proof-core/fine run --proof-selector z3 \
+  fine/fixtures/identity-transitivity.fine
+build/proof-core/fine rain --proof-selector z3 \
+  fine/fixtures/identity-transitivity.fine > trace.jsonl
+build/proof-core/fine materialize --proof-selector z3 \
+  fine/fixtures/identity-transitivity.fine > explicit.fine
+```
+
+The final command reparses and rechecks `explicit.fine` with proof search
+forbidden. The default remains deterministic enumeration so the complete
+frontier stays a stable reference rather than an accidental solver model.
+
 The former Bool-predicate implementation remains runnable from tag
 `pre-pat-1d7222a23`. The exact survival and deletion map is in
 [`PROOF_TERMS.md`](PROOF_TERMS.md); current invariants are in

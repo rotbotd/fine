@@ -36,38 +36,36 @@ namespace {
         return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
     }
 
-    int run_file(char const *path, bool rainfall = false, RainRequest const *request = nullptr) {
+    int run_file(char const *path, bool rainfall = false, RainRequest const *request = nullptr,
+                 fine::ExecutionOptions options = {}) {
         std::string source = read_file(path);
         try {
             fine::syntax::Document document = fine::syntax::parse(source);
             if (!rainfall) {
-                fine::execute(document, std::cout);
+                fine::execute(document, std::cout, nullptr, nullptr, {}, options);
                 return EXIT_SUCCESS;
             }
-            fine::SourceSnapshot snapshot = fine::make_source_snapshot(
-                path, source, request ? request->revision : 0,
-                request ? request->document_id : std::string{});
+            fine::SourceSnapshot snapshot = fine::make_source_snapshot(path, source, request ? request->revision : 0,
+                                                                       request ? request->document_id : std::string{});
             std::ostringstream ordinary_output;
             fine::execute(document, ordinary_output, &std::cout, &snapshot,
-                          request ? request->generation : std::string{});
+                          request ? request->generation : std::string{}, options);
             return EXIT_SUCCESS;
-        }
-        catch (fine::syntax::ParseError const &error) {
+        } catch (fine::syntax::ParseError const &error) {
             std::cerr << error.format(path, source) << '\n';
             return EXIT_FAILURE;
-        }
-        catch (fine::SemanticError const &error) {
+        } catch (fine::SemanticError const &error) {
             std::cerr << error.format(path, source) << '\n';
             return EXIT_FAILURE;
         }
     }
 
-    int materialize_file(char const *path) {
+    int materialize_file(char const *path, fine::ExecutionOptions first_options = {}) {
         std::string source = read_file(path);
         try {
             fine::syntax::Document document = fine::syntax::parse(source);
             std::ostringstream first_output;
-            fine::ExecutionResult result = fine::execute(document, first_output);
+            fine::ExecutionResult result = fine::execute(document, first_output, nullptr, nullptr, {}, first_options);
             std::string materialized = fine::apply_materializations(source, result.materializations);
             fine::syntax::Document reparsed = fine::syntax::parse(materialized);
             std::ostringstream check_output;
@@ -77,12 +75,10 @@ namespace {
             fine::execute(reparsed, check_output, nullptr, nullptr, {}, options);
             std::cout << materialized;
             return EXIT_SUCCESS;
-        }
-        catch (fine::syntax::ParseError const &error) {
+        } catch (fine::syntax::ParseError const &error) {
             std::cerr << error.format(path, source) << '\n';
             return EXIT_FAILURE;
-        }
-        catch (fine::SemanticError const &error) {
+        } catch (fine::SemanticError const &error) {
             std::cerr << error.format(path, source) << '\n';
             return EXIT_FAILURE;
         }
@@ -97,30 +93,50 @@ int main(int argc, char **argv) try {
         return run_file(argv[2], true);
     if (argc == 3 && std::string_view(argv[1]) == "materialize")
         return materialize_file(argv[2]);
-    if (argc == 9 && std::string_view(argv[1]) == "rain" &&
-        std::string_view(argv[2]) == "--document" &&
-        std::string_view(argv[4]) == "--revision" &&
-        std::string_view(argv[6]) == "--generation") {
+    if (argc == 5 && std::string_view(argv[2]) == "--proof-selector" && std::string_view(argv[3]) == "z3") {
+        fine::ExecutionOptions options;
+        options.proof_selector = fine::ProofSelector::z3_model;
+        if (std::string_view(argv[1]) == "run")
+            return run_file(argv[4], false, nullptr, options);
+        if (std::string_view(argv[1]) == "rain")
+            return run_file(argv[4], true, nullptr, options);
+        if (std::string_view(argv[1]) == "materialize")
+            return materialize_file(argv[4], options);
+    }
+    if (argc == 9 && std::string_view(argv[1]) == "rain" && std::string_view(argv[2]) == "--document" &&
+        std::string_view(argv[4]) == "--revision" && std::string_view(argv[6]) == "--generation") {
         RainRequest request{argv[3], 0, argv[7]};
-        if (request.document_id.empty() || request.generation.empty() ||
-            !parse_revision(argv[5], request.revision)) {
+        if (request.document_id.empty() || request.generation.empty() || !parse_revision(argv[5], request.revision)) {
             std::cerr << "fine: invalid rain snapshot request\n";
             return EXIT_FAILURE;
         }
         return run_file(argv[8], true, &request);
     }
+    if (argc == 11 && std::string_view(argv[1]) == "rain" && std::string_view(argv[2]) == "--proof-selector" &&
+        std::string_view(argv[3]) == "z3" && std::string_view(argv[4]) == "--document" &&
+        std::string_view(argv[6]) == "--revision" && std::string_view(argv[8]) == "--generation") {
+        RainRequest request{argv[5], 0, argv[9]};
+        if (request.document_id.empty() || request.generation.empty() || !parse_revision(argv[7], request.revision)) {
+            std::cerr << "fine: invalid rain snapshot request\n";
+            return EXIT_FAILURE;
+        }
+        fine::ExecutionOptions options;
+        options.proof_selector = fine::ProofSelector::z3_model;
+        return run_file(argv[10], true, &request, options);
+    }
     std::cerr << "usage: fine run <source.fine>\n"
                  "       fine rain <source.fine>\n"
                  "       fine materialize <source.fine>\n"
+                 "       fine {run|rain|materialize} --proof-selector z3 <source.fine>\n"
                  "       fine rain --document <id> --revision <n> "
+                 "--generation <id> <source.fine>\n"
+                 "       fine rain --proof-selector z3 --document <id> --revision <n> "
                  "--generation <id> <source.fine>\n";
     return EXIT_FAILURE;
-}
-catch (z3::exception const &error) {
+} catch (z3::exception const &error) {
     std::cerr << "z3: " << error.msg() << '\n';
     return EXIT_FAILURE;
-}
-catch (std::exception const &error) {
+} catch (std::exception const &error) {
     std::cerr << "fine: " << error.what() << '\n';
     return EXIT_FAILURE;
 }

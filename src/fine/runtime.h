@@ -40,9 +40,12 @@ namespace fine {
         std::size_t coeffects_resolved = 0;
     };
 
+    enum class ProofSelector { deterministic, z3_model };
+
     struct ExecutionOptions {
         bool require_explicit_coeffects = false;
         bool require_materialized_proofs = false;
+        ProofSelector proof_selector = ProofSelector::deterministic;
     };
 
     ExecutionResult execute(syntax::Document const &document, std::ostream &output,

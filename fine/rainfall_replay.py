@@ -50,6 +50,9 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     proof_selections: dict[str, dict[str, Any]] = {}
     proof_holes_closed: set[str] = set()
     proof_functions: dict[str, dict[str, Any]] = {}
+    proof_model_grammars: dict[str, dict[str, Any]] = {}
+    proof_model_solves: dict[str, dict[str, Any]] = {}
+    proof_model_lifts: dict[str, dict[str, Any]] = {}
     term_handles: set[int] = set()
     term_lift_validations: set[str] = set()
     event_ids: set[str] = set()
@@ -297,6 +300,49 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      f"event {sequence}: reused proof candidate event")
             proof_candidates[event_id] = data
             proof_candidates_by_hole[hole].append(event_id)
+        elif operation == "proof.model.grammar":
+            hole = data.get("hole")
+            grammar = data.get("grammar")
+            productions = data.get("productions")
+            references = data.get("reference_candidates")
+            _require(hole in proof_holes and hole not in proof_holes_closed and
+                     isinstance(grammar, str) and grammar and
+                     grammar not in proof_model_grammars and
+                     data.get("max_cost") == proof_holes[hole]["max_cost"] and
+                     isinstance(productions, list) and productions and
+                     all(isinstance(production, str) and production
+                         for production in productions) and
+                     references == proof_candidates_by_hole[hole],
+                     f"event {sequence}: malformed proof model grammar")
+            proof_model_grammars[grammar] = event
+        elif operation == "proof.model.solve":
+            hole = data.get("hole")
+            grammar_event = events_by_id.get(data.get("grammar_event"))
+            _require(hole in proof_holes and hole not in proof_holes_closed and
+                     grammar_event is not None and
+                     grammar_event.get("operation") == "proof.model.grammar" and
+                     grammar_event["data"].get("hole") == hole and
+                     data.get("grammar") == grammar_event["data"].get("grammar") and
+                     data.get("status") == "sat" and
+                     isinstance(data.get("model_value"), str) and
+                     data["model_value"] and
+                     isinstance(data.get("cost"), int) and
+                     0 < data["cost"] <= proof_holes[hole]["max_cost"] and
+                     hole not in proof_model_solves,
+                     f"event {sequence}: malformed proof datatype model result")
+            proof_model_solves[hole] = event
+        elif operation == "proof.model.lift":
+            hole = data.get("hole")
+            solve_event = events_by_id.get(data.get("solve_event"))
+            candidate = proof_candidates.get(data.get("candidate"))
+            _require(hole in proof_model_solves and hole not in proof_model_lifts and
+                     solve_event is proof_model_solves[hole] and
+                     candidate is not None and candidate.get("hole") == hole and
+                     data.get("body") == candidate.get("body") and
+                     data.get("in_reference_frontier") is True and
+                     data.get("reparse_required") is True,
+                     f"event {sequence}: proof model lift escaped its Fine frontier")
+            proof_model_lifts[hole] = event
         elif operation == "proof.search.select":
             hole = data.get("hole")
             candidate_id = data.get("candidate")
@@ -308,6 +354,9 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             _require(data.get("body") == candidate.get("body") and
                      data.get("production") == candidate.get("production"),
                      f"event {sequence}: proof selection changes its candidate")
+            if hole in proof_model_lifts:
+                _require(data.get("candidate") == proof_model_lifts[hole]["data"].get("candidate"),
+                         f"event {sequence}: proof selection differs from lifted model")
             proof_selections[hole] = event
         elif operation == "proof.search.close":
             hole = data.get("hole")
@@ -323,8 +372,9 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                          proof_candidates[candidate].get("hole") == hole
                          for candidate in residual),
                      f"event {sequence}: malformed residual proof frontier")
-            _require(selected_candidate not in residual and
-                     [selected_candidate, *residual] == proof_candidates_by_hole[hole],
+            expected_residual = [candidate for candidate in proof_candidates_by_hole[hole]
+                                 if candidate != selected_candidate]
+            _require(selected_candidate not in residual and residual == expected_residual,
                      f"event {sequence}: proof search close loses or reorders its finite frontier")
             _require(data.get("status") == "selected" and
                      data.get("materialization_requested") is True,
@@ -445,6 +495,10 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
              "match synthesis replay has no unique verified match witness")
     _require(proof_holes_closed == set(proof_holes),
              "typed proof search replay leaves an open proof hole")
+    _require(set(proof_model_grammars) ==
+             {event["data"]["grammar"] for event in proof_model_solves.values()} and
+             set(proof_model_solves) == set(proof_model_lifts),
+             "proof model replay leaves an unsolved or unlifted grammar")
 
     allowed = {"exact", "desugared", "generated", "internal_z3"}
     for index, edge in enumerate(evidence):

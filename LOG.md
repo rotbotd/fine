@@ -3601,3 +3601,148 @@ nix flake check
 nix build --no-link --print-out-paths
 # /nix/store/1v9ivq1vp4f5891l0ig9rh4b8dzfjvfi-fine-0.1.0
 ```
+
+## 2026-09-02 — bounded Z3 datatype-model proof selector
+
+Closed the model-selector follow-up to deterministic proof-function composition.
+The default enumerator remains the reference and still constructs the complete
+bounded typed frontier. The new `--proof-selector z3` path compacts the ground
+productions appearing in those candidate trees into a recursive datatype rather
+than presenting Z3 with one nullary constructor per complete answer. Local proofs
+and reflexivity are leaves. A ground named proof-function application is one
+constructor with a recursive field for every proof argument.
+
+The implementation is isolated in `src/fine/proof_model_selector.{h,cpp}` rather
+than adding another solver subsystem to the already large `runtime.cpp`. Its
+grammar records a carrier token and the existing manager-local Z3 AST IDs of
+each identity endpoint. It defines recursive functions over the generated
+proof datatype:
+
+```text
+carrier : Proof -> Int
+src     : Proof -> Int
+dst     : Proof -> Int
+cost    : Proof -> Int
+well    : Proof -> Bool
+```
+
+Each application case fixes its result type and requires every recursive child
+to be `well` with the exact expected carrier and endpoint IDs. Cost is one plus
+the costs of all children. The model query fixes the requested carrier, source,
+destination, and maximum cost three. Thus Z3 chooses constructor structure but
+cannot invent a Fine term, an index, a local source owner, or an endpoint.
+
+`ProofCandidate` now retains its exact `IdentityType` and child candidate trees
+in addition to the already visible source, indices, child source strings, and
+cost. Runtime compaction deduplicates ground application productions by function,
+source indices, result type, and ordered argument types. The model is lifted by
+matching datatype constructor declaration identity, recursively lifting its
+fields, and rendering the corresponding Fine application. Printed model text is
+recorded for inspection but is never parsed to decide the source tree. The lifted
+source and evaluated model cost must equal one candidate in the complete
+deterministic frontier or the run fails.
+
+The transitivity grammar compacts to exactly:
+
+```text
+apply:trans[left, middle, right]/2
+local:p
+local:q
+```
+
+Z3 returns:
+
+```text
+(apply-trans local-p local-q)
+```
+
+and structural lifting returns:
+
+```fine
+trans[left, middle, right](p, q)
+```
+
+Ten repeated runs selected that same unique cost-three tree. The selector also
+handled the two-hole identity fixture, creating separate datatype names in one
+solver context; it chose `refl(x)` for the first hole and exact local `self` for
+the second. Symmetry selected the existing first source tree rather than its
+nested residual alternative, but the correctness rule is only that any model
+selection must occur in the exact reference frontier. Residual ordering is now
+defined as original deterministic order with the selected event removed, so a
+valid non-first model selection cannot falsify replay bookkeeping.
+
+The CLI additions are:
+
+```sh
+fine run --proof-selector z3 FILE
+fine rain --proof-selector z3 FILE
+fine materialize --proof-selector z3 FILE
+fine rain --proof-selector z3 --document ID --revision N --generation ID FILE
+```
+
+The materialization command performs the required whole-document boundary: run
+model selection, lift and replace the source hole, parse the resulting source,
+and rerun with both proof and coeffect search forbidden before emitting it. The
+transitivity result is byte-identical to the deterministic checked-in materialized
+fixture.
+
+Rainfall separates `proof.model.grammar`, `proof.model.solve`, and
+`proof.model.lift`. The grammar event cites the exact deterministic candidate
+events and compact production list; solve cites the grammar and retains model
+value and cost; lift cites the solve and exact candidate. Ordinary selection
+must then name that lifted candidate. Replay rejects an incomplete grammar/solve/
+lift chain, a model cost outside the declared bound, a lifted body outside the
+reference frontier, or a later selection which silently changes the model's
+choice.
+
+One correction happened during review: the first datatype interpreter tracked
+only endpoint AST IDs. Those IDs are manager-global and therefore already
+sort-discriminating, but the grammar's `carrier` field was otherwise unused. I
+added the recursive carrier function and exact carrier constraints at the root
+and every application child rather than relying on that incidental Z3 identity
+property.
+
+One test-script failure was retained. The new live-snapshot command and Rainfall
+validation succeeded, but a follow-up Python assertion incorrectly read
+`events[0]["data"]["identity"]`; the first event is the document declaration,
+not the snapshot declaration, so it raised `KeyError: 'identity'`. Selecting the
+`source.snapshot.declare` event verified document `doc:test`, revision 7, and the
+exact source hash.
+
+Observed checks before the implementation commit:
+
+```sh
+clang-format -i src/fine/main.cpp src/fine/runtime.cpp \
+  src/fine/proof_model_selector.cpp src/fine/proof_model_selector.h
+cmake --build .build -j2
+# success
+
+.build/fine run --proof-selector z3 \
+  fine/fixtures/identity-transitivity.fine
+# filled proof hole: composed <- trans[left, middle, right](p, q)
+#   (Z3 datatype model)
+
+.build/fine materialize --proof-selector z3 \
+  fine/fixtures/identity-transitivity.fine |
+  diff -u fine/fixtures/identity-transitivity-materialized.fine -
+# no diff
+
+.build/fine rain --proof-selector z3 \
+  fine/fixtures/identity-transitivity.fine > /tmp/trans-z3-rain.jsonl
+python fine/rainfall_validate.py fine/fixtures/identity-transitivity.fine \
+  /tmp/trans-z3-rain.jsonl
+# valid rainfall: events=85, source_nodes=21, terms=14,
+# source_term_edges=3, proof_holes=1
+
+nix flake check
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/xhp9cya1dqgwf94jahw7xvlmkzrlzapd-fine-0.1.0
+```
+
+This closes the semantic integration boundary, not a scalability result. Fine
+still enumerates all complete candidates before compaction, both to supply the
+reference frontier and to prevent a second grammar from growing inside the
+solver backend. A later direct grammar generator may remove that cost only if
+its productions, source ownership, exact type checks, and frontier claims remain
+observationally identical to the deterministic reference.

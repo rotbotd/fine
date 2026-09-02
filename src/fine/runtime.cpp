@@ -1,5 +1,6 @@
 #include "runtime.h"
 
+#include "proof_model_selector.h"
 #include "rainfall.h"
 
 #include "c++/z3++.h"
@@ -69,6 +70,8 @@ namespace fine {
             std::vector<std::string> index_arguments;
             std::vector<std::string> proof_arguments;
             std::size_t cost = 1;
+            std::optional<IdentityType> type;
+            std::vector<ProofCandidate> children;
         };
 
         struct IndexInstantiation {
@@ -240,6 +243,7 @@ namespace fine {
             std::vector<std::string> proof_function_order_;
             ExecutionResult result_;
             std::map<std::pair<std::size_t, std::size_t>, std::string> materializations_;
+            std::size_t proof_model_index_ = 0;
 
             [[noreturn]] static void reject(syntax::SourceSpan span, std::string message) {
                 throw SemanticError(span, std::move(message));
@@ -435,6 +439,66 @@ namespace fine {
                 return completed;
             }
 
+            proof_model::Type proof_model_type(IdentityType const &type) {
+                return {static_cast<unsigned>(type.carrier) + 1, Z3_get_ast_id(context_, type.left),
+                        Z3_get_ast_id(context_, type.right)};
+            }
+
+            std::string proof_model_type_key(proof_model::Type const &type) {
+                return std::to_string(type.carrier) + ":" + std::to_string(type.left) + ":" +
+                       std::to_string(type.right);
+            }
+
+            void collect_proof_model_production(ProofCandidate const &candidate, proof_model::Grammar &grammar,
+                                                std::set<std::string> &seen) {
+                if (!candidate.type)
+                    throw std::logic_error("typed proof candidate lost its result type");
+                proof_model::Production production;
+                production.result = proof_model_type(*candidate.type);
+                std::string key;
+                if (candidate.local_proof) {
+                    production.kind = proof_model::ProductionKind::local;
+                    production.source = candidate.source;
+                    key = "local:" + candidate.source + ":" + proof_model_type_key(production.result);
+                }
+                else if (!candidate.proof_function) {
+                    production.kind = proof_model::ProductionKind::reflexivity;
+                    production.source = candidate.source;
+                    key = "refl:" + candidate.source + ":" + proof_model_type_key(production.result);
+                }
+                else {
+                    production.kind = proof_model::ProductionKind::application;
+                    production.function = *candidate.proof_function;
+                    production.index_arguments = candidate.index_arguments;
+                    key = "apply:" + production.function;
+                    for (auto const &index : production.index_arguments)
+                        key += ":index:" + index;
+                    key += ":result:" + proof_model_type_key(production.result);
+                    for (auto const &child : candidate.children) {
+                        if (!child.type)
+                            throw std::logic_error("typed proof application lost a child type");
+                        production.arguments.push_back(proof_model_type(*child.type));
+                        key += ":argument:" + proof_model_type_key(production.arguments.back());
+                    }
+                }
+                if (seen.insert(key).second)
+                    grammar.productions.push_back(std::move(production));
+                for (auto const &child : candidate.children)
+                    collect_proof_model_production(child, grammar, seen);
+            }
+
+            proof_model::Grammar make_proof_model_grammar(std::vector<ProofCandidate> const &candidates,
+                                                          IdentityType const &expected) {
+                proof_model::Grammar grammar;
+                grammar.id = "hole-" + std::to_string(proof_model_index_++);
+                grammar.expected = proof_model_type(expected);
+                grammar.max_cost = max_proof_search_cost;
+                std::set<std::string> seen;
+                for (auto const &candidate : candidates)
+                    collect_proof_model_production(candidate, grammar, seen);
+                return grammar;
+            }
+
             ProofEvidence elaborate_proof_application(syntax::ProofExpr const &expression, IdentityType expected,
                                                       ValueEnvironment const &values, ProofEnvironment const &proofs,
                                                       std::vector<std::string> const &proof_order,
@@ -516,10 +580,12 @@ namespace fine {
                 for (auto const &candidate_name : proof_order) {
                     auto found = proofs.find(candidate_name);
                     if (found != proofs.end() && same_type(context_, found->second.type, expected))
-                        candidates.push_back({candidate_name, "exact-local", candidate_name, std::nullopt, {}, {}, 1});
+                        candidates.push_back(
+                            {candidate_name, "exact-local", candidate_name, std::nullopt, {}, {}, 1, expected, {}});
                 }
                 if (same_ast(context_, expected.left, expected.right))
-                    candidates.push_back({"refl(" + left_source + ")", "refl", std::nullopt, std::nullopt, {}, {}, 1});
+                    candidates.push_back(
+                        {"refl(" + left_source + ")", "refl", std::nullopt, std::nullopt, {}, {}, 1, expected, {}});
 
                 for (auto const &function_name : proof_function_order_) {
                     syntax::ProofFunctionDecl const &function = *proof_functions_.at(function_name);
@@ -591,8 +657,10 @@ namespace fine {
                                 source << argument_sources[i];
                             }
                             source << ')';
+                            std::vector<ProofCandidate> children = arguments;
                             candidates.push_back({source.str(), "proof-application", std::nullopt, function.name,
-                                                  std::move(index_arguments), std::move(argument_sources), cost});
+                                                  std::move(index_arguments), std::move(argument_sources), cost,
+                                                  expected, std::move(children)});
                         }
                     }
                 }
@@ -692,37 +760,123 @@ namespace fine {
                                                 "` has no well-typed candidate in bounded grammar "
                                                 "[exact-local, refl, proof-application]");
 
-                ProofCandidate const &selected = candidates.front();
+                std::size_t selected_index = 0;
+                std::optional<proof_model::Grammar> model_grammar;
+                std::optional<proof_model::Result> model_selection;
+                if (options_.proof_selector == ProofSelector::z3_model) {
+                    model_grammar = make_proof_model_grammar(candidates, expected);
+                    model_selection = proof_model::select(context_, *model_grammar);
+                    if (model_selection->status != proof_model::Status::sat)
+                        reject(expression.span,
+                               "Z3 proof model selector failed for `" + name + "`: " + model_selection->reason);
+                    auto found = std::find_if(candidates.begin(), candidates.end(), [&](ProofCandidate const &item) {
+                        return item.source == model_selection->source && item.cost == model_selection->cost;
+                    });
+                    if (found == candidates.end())
+                        reject(expression.span,
+                               "Z3 proof model lifted a tree outside the deterministic Fine frontier: `" +
+                                   model_selection->source + "`");
+                    selected_index = static_cast<std::size_t>(found - candidates.begin());
+                }
+
+                ProofCandidate const &selected = candidates[selected_index];
                 request_materialization(expression.span.begin.offset, expression.span.end.offset, selected.source,
                                         expression.span);
                 ++result_.proof_holes_filled;
                 if (rainfall_) {
+                    if (model_grammar && model_selection) {
+                        std::vector<std::string> productions;
+                        for (auto const &production : model_grammar->productions) {
+                            if (production.kind == proof_model::ProductionKind::application) {
+                                std::ostringstream description;
+                                description << "apply:" << production.function;
+                                if (!production.index_arguments.empty()) {
+                                    description << '[';
+                                    for (std::size_t i = 0; i < production.index_arguments.size(); ++i) {
+                                        if (i)
+                                            description << ", ";
+                                        description << production.index_arguments[i];
+                                    }
+                                    description << ']';
+                                }
+                                description << '/' << production.arguments.size();
+                                productions.push_back(description.str());
+                            }
+                            else {
+                                productions.push_back(
+                                    (production.kind == proof_model::ProductionKind::local ? "local:" : "refl:") +
+                                    production.source);
+                            }
+                        }
+                        std::string grammar_event = rainfall_->record(
+                            "object", "proof.model.grammar", {"run:" + run, hole}, "fine.proof-model-selector",
+                            "The exact deterministic Fine frontier is compacted into ground recursive datatype "
+                            "productions without changing its bound or source owners",
+                            {RainfallRecorder::string_field("hole", hole),
+                             RainfallRecorder::string_field("grammar", model_grammar->id),
+                             RainfallRecorder::number_field("max_cost", model_grammar->max_cost),
+                             RainfallRecorder::raw_field("productions", RainfallRecorder::string_array(productions)),
+                             RainfallRecorder::raw_field("reference_candidates",
+                                                         RainfallRecorder::string_array(candidate_events))});
+                        std::string solve_event = rainfall_->record(
+                            "derive", "proof.model.solve", {"run:" + run, hole, grammar_event},
+                            "fine.proof-model-selector",
+                            "Z3 assigns the bounded recursive proof datatype a ground constructor tree",
+                            {RainfallRecorder::string_field("hole", hole),
+                             RainfallRecorder::string_field("grammar_event", grammar_event),
+                             RainfallRecorder::string_field("grammar", model_grammar->id),
+                             RainfallRecorder::string_field("status", "sat"),
+                             RainfallRecorder::string_field("model_value", model_selection->model_value),
+                             RainfallRecorder::number_field("cost", model_selection->cost)});
+                        rainfall_->record(
+                            "transform", "proof.model.lift", {"run:" + run, hole, solve_event},
+                            "fine.proof-model-selector",
+                            "The model constructor tree lifts to Fine source and matches one exact reference "
+                            "candidate before materialization",
+                            {RainfallRecorder::string_field("hole", hole),
+                             RainfallRecorder::string_field("solve_event", solve_event),
+                             RainfallRecorder::string_field("body", model_selection->source),
+                             RainfallRecorder::string_field("candidate", candidate_events[selected_index]),
+                             RainfallRecorder::boolean_field("in_reference_frontier", true),
+                             RainfallRecorder::boolean_field("reparse_required", true)});
+                    }
+                    std::string const &selected_event = candidate_events[selected_index];
                     std::string selection = rainfall_->record(
                         "transition", "proof.search.select", {"run:" + run, hole}, "fine.typed-proof-search",
-                        "The first deterministic well-typed source proof is selected for checking and materialization",
+                        options_.proof_selector == ProofSelector::z3_model
+                            ? "The Z3 datatype model selects one exact reference candidate for materialization"
+                            : "The first deterministic well-typed source proof is selected for checking and "
+                              "materialization",
                         {RainfallRecorder::string_field("hole", hole),
-                         RainfallRecorder::string_field("candidate", candidate_events.front()),
+                         RainfallRecorder::string_field("candidate", selected_event),
                          RainfallRecorder::string_field("body", selected.source),
                          RainfallRecorder::string_field("production", selected.production)});
-                    std::vector<std::string> residual(candidate_events.begin() + 1, candidate_events.end());
+                    std::vector<std::string> residual;
+                    for (std::size_t i = 0; i < candidate_events.size(); ++i)
+                        if (i != selected_index)
+                            residual.push_back(candidate_events[i]);
                     rainfall_->record(
                         "transition", "proof.search.close", {"run:" + run, hole}, "fine.typed-proof-search",
                         "The typed hole has a checked source witness and its unchosen finite frontier remains explicit",
                         {RainfallRecorder::string_field("hole", hole),
                          RainfallRecorder::string_field("selection", selection),
-                         RainfallRecorder::string_field("selected_candidate", candidate_events.front()),
+                         RainfallRecorder::string_field("selected_candidate", selected_event),
                          RainfallRecorder::raw_field("residual_candidates", RainfallRecorder::string_array(residual)),
                          RainfallRecorder::string_field("status", "selected"),
                          RainfallRecorder::boolean_field("materialization_requested", true)});
                 }
-                output_ << "filled proof hole: " << name << " <- " << selected.source << " (typed search)\n";
+                output_ << "filled proof hole: " << name << " <- " << selected.source << " ("
+                        << (options_.proof_selector == ProofSelector::z3_model ? "Z3 datatype model" : "typed search")
+                        << ")\n";
                 std::string formation;
                 if (selected.local_proof)
-                    formation = "search:exact-local:" + *selected.local_proof;
+                    formation = "exact-local:" + *selected.local_proof;
                 else if (selected.proof_function)
-                    formation = "search:proof-application:" + *selected.proof_function;
+                    formation = "proof-application:" + *selected.proof_function;
                 else
-                    formation = "search:refl";
+                    formation = "refl";
+                formation =
+                    (options_.proof_selector == ProofSelector::z3_model ? "search:z3-model:" : "search:") + formation;
                 return {std::move(name),
                         std::move(expected),
                         std::move(formation),
