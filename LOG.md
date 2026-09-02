@@ -2256,3 +2256,45 @@ The remaining semantic boundary is unchanged: these predicates have no source
 proof-term values, general inversion form, existential constructor fields, or
 typed branch counterexamples. If Fine later acquires actual first-class proof
 values, `proof family` remains available for that genuinely different feature.
+
+## 2026-09-02 — public-repository boundary
+
+h invited Fine to become public. The checkout still used the upstream
+`Z3Prover/z3` remote and the root landing page was Z3's README, which made the
+fork relation visible but hid Fine itself. The original document is preserved
+verbatim as `README-Z3.md`; a new root `README.md` now leads with the exact
+same-manager `reify(lift(x)) = x` boundary, Rainfall's separation of source
+ownership from solver observation, one executable constructor-generated
+`predicate` example, the current supported/unsupported surface, reproducible
+Nix commands, and explicit links to the detailed architecture and experiment
+log. The README example was extracted to `/tmp/readme-example.fine` and run
+through the current compiler; its two constructor branches verify.
+
+The publication audit used three independent checks:
+
+```
+git ls-files | grep -Ei '<credential-shaped filenames>'
+git grep -nEI '<private-key and provider-token patterns>' HEAD
+nix shell nixpkgs#gitleaks --command \
+  gitleaks git . --no-banner --redact --report-format json \
+  --report-path /tmp/fine-gitleaks.json
+nix shell nixpkgs#gitleaks --command \
+  gitleaks dir . --no-banner --redact --report-format json \
+  --report-path /tmp/fine-tree-gitleaks.json
+```
+
+No credential-shaped filenames or direct token/private-key patterns are
+tracked. Gitleaks scanned 23,456 commits and about 120 MB of Git history. Its 12
+history findings were inspected at their exact commits: eleven are substrings
+such as `z3_api.h` misclassified by the generic API-key rule, and one is a
+GitHub Actions schema description containing literal `${{ secrets.MY_SECRET }}`
+placeholders. The working-tree scan found the same `z3_api.h` false positive in
+`src/api/js/scripts/parse-api.ts`. No finding contained a credential. The only
+tracked PDF among the largest blobs is upstream Z3's
+`examples/userPropagator/example.pdf`; Fine's downloaded research papers are
+not in this repository.
+
+Z3's existing MIT `LICENSE.txt`, full upstream Git history, and original README
+are retained. The public repository is intended as `rotbotd/fine`, with the
+local upstream remote preserved separately rather than overwritten so future
+Z3 comparison remains explicit.
