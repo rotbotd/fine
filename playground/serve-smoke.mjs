@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import http from "node:http";
 
 const port = 30000 + (process.pid % 20000);
@@ -17,7 +17,7 @@ let diagnostics = "";
 server.stdout.on("data", (chunk) => { diagnostics += chunk; });
 server.stderr.on("data", (chunk) => { diagnostics += chunk; });
 
-function request(path = "/fine.wasm", headers = {}) {
+function request(path, headers = {}) {
   return new Promise((resolve, reject) => {
     const outgoing = http.get({ host: "127.0.0.1", port, path, headers }, (response) => {
       const chunks = [];
@@ -28,10 +28,10 @@ function request(path = "/fine.wasm", headers = {}) {
   });
 }
 
-async function waitForServer() {
+async function waitForServer(wasmPath) {
   for (let attempt = 0; attempt < 100; ++attempt) {
     try {
-      return await request();
+      return await request(wasmPath);
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
@@ -40,11 +40,16 @@ async function waitForServer() {
 }
 
 try {
-  const plain = await waitForServer();
-  const compressed = await request("/fine.wasm", { "Accept-Encoding": "zstd" });
-  const explicit = await request("/fine.wasm.zst");
-  const expectedPlain = await readFile("dist/fine.wasm");
-  const expectedCompressed = await readFile("dist/fine.wasm.zst");
+  const files = await readdir("dist");
+  const wasmName = files.find((file) => /^fine-[0-9a-f]+\.wasm$/.test(file));
+  if (!wasmName)
+    throw new Error("versioned Wasm asset is missing");
+  const wasmPath = `/${wasmName}`;
+  const plain = await waitForServer(wasmPath);
+  const compressed = await request(wasmPath, { "Accept-Encoding": "zstd" });
+  const explicit = await request(`${wasmPath}.zst`);
+  const expectedPlain = await readFile(`dist/${wasmName}`);
+  const expectedCompressed = await readFile(`dist/${wasmName}.zst`);
 
   if (!plain.body.equals(expectedPlain))
     throw new Error("plain Wasm response differs from the built module");

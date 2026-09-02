@@ -3952,3 +3952,18 @@ response was a cache miss with the exact 2,555,916-byte payload, and the next wa
 a Cloudflare hit delivered in 2.08 seconds at 1.23 MiB/s. The transferred bytes
 matched the build's `.zst` file exactly. This is the completed delivery fix; Vite
 alone was not one.
+
+The first deployment exposed a separate cache-identity bug: the previously fixed
+`/app.js` URL remained a valid four-hour gateway hit, so a new page could still
+execute the old loader. Vite now hashes its JavaScript and CSS entry names. The
+Wasm content hash also enters the Emscripten module, ordinary Wasm, and compressed
+Wasm filenames; `generated-assets.js` binds those names into the app at build
+time. A new compiler therefore cannot be paired with a stale loader or module,
+and old immutable assets remain harmless until the gateway evicts them.
+
+The clean final artifact is
+`/nix/store/qnzgk7v2wy3wzf3l6y7ii2w4cvwg296b-fine-playground-0.1.0`. Its page
+selects `/assets/index-B8sDGEHz.js`, which selects
+`/fine-a138be9b1e4c.wasm.zst`. After one 32.16-second cache fill, a public repeat
+was a gateway hit: 2,555,916 exact bytes in 2.41 seconds at 1.06 MiB/s. The
+compressed object hash matched the Nix artifact.

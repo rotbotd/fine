@@ -1,7 +1,7 @@
-import createFine from "./fine.mjs";
 import { basicSetup, EditorView } from "codemirror";
 import { defaultHighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
+import { compressedWasm, createFine, ordinaryWasm } from "./generated-assets.js";
 
 const sourceHost = document.querySelector("#source");
 const run = document.querySelector("#run");
@@ -85,17 +85,19 @@ const fineLanguage = StreamLanguage.define({
   },
 });
 
-let compressedWasm = false;
+let useCompressedWasm = false;
 try {
   const probe = await fetch("./zstd-check.txt.zst", { cache: "no-store" });
-  compressedWasm = probe.ok && await probe.text() === "fine-zstd-ok";
+  useCompressedWasm = probe.ok && await probe.text() === "fine-zstd-ok";
 } catch {
   // Browsers without HTTP Zstandard support use the ordinary Wasm response.
 }
 
 const fine = await createFine({
   locateFile(file) {
-    return compressedWasm && file === "fine.wasm" ? "./fine.wasm.zst" : file;
+    if (file !== "fine.wasm")
+      return file;
+    return useCompressedWasm ? compressedWasm : ordinaryWasm;
   },
   print(line) {
     capture?.stdout.push(line);

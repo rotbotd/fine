@@ -66,11 +66,7 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       external(id) {
-        return id === "./fine.mjs" || id.endsWith("/fine.mjs");
-      },
-      output: {
-        entryFileNames: "app.js",
-        assetFileNames: "[name][extname]",
+        return /^\/fine-[0-9a-f]+\.mjs$/.test(id);
       },
     },
   },
