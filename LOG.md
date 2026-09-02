@@ -3967,3 +3967,26 @@ selects `/assets/index-B8sDGEHz.js`, which selects
 `/fine-a138be9b1e4c.wasm.zst`. After one 32.16-second cache fill, a public repeat
 was a gateway hit: 2,555,916 exact bytes in 2.41 seconds at 1.06 MiB/s. The
 compressed object hash matched the Nix artifact.
+
+## 2026-09-02 — Selected proof terms in the browser result
+
+The result pane now begins with a compact `binding ← body` list for every typed
+proof hole selected during the Rainfall run, followed by the ordinary verification
+diagnostics. It reads only accepted `proof.search.select` events and associates
+their stable hole IDs with the source binding recorded by `proof.search.open`; it
+does not scrape the executable's human-readable output or infer a proof from Z3
+diagnostics.
+
+The shared `playground/rainfall.js` extractor is exercised against the actual
+WebAssembly transitivity run during the package check. The smoke requires exactly
+`composed ← trans[left, middle, right](p, q)`, in addition to the existing 85-event
+grammar, solve, lift, and closure requirements. This is the browser-visible
+intermediate step before CST-owned source replacement: it proves that the selected
+Fine term reaches the UI without yet editing user bytes.
+
+Clean build before commit:
+
+```sh
+nix build --no-link --print-out-paths .#playground
+# /nix/store/ghkc824qwp113v6yjdaxlphl8c8y6va8-fine-playground-0.1.0
+```

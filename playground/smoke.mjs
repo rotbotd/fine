@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import path from "node:path";
+import { selectedProofHoles } from "./rainfall.js";
 
 const root = path.resolve(process.argv[2]);
 const samplePath = path.resolve(process.argv[3] ?? path.join(root, "sample.fine"));
@@ -36,4 +37,9 @@ const events = stdout.map((line) => JSON.parse(line));
 for (const operation of ["proof.model.grammar", "proof.model.solve", "proof.model.lift", "proof-core.run.close"])
   if (!events.some((event) => event.operation === operation))
     throw new Error(`missing Rainfall operation: ${operation}`);
+const selections = selectedProofHoles(stdout);
+if (selections.length !== 1
+    || selections[0].binding !== "composed"
+    || selections[0].body !== "trans[left, middle, right](p, q)")
+  throw new Error(`unexpected selected proof holes: ${JSON.stringify(selections)}`);
 console.log(`wasm smoke passed with ${events.length} Rainfall events`);

@@ -2,6 +2,7 @@ import { basicSetup, EditorView } from "codemirror";
 import { defaultHighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { compressedWasm, createFine, ordinaryWasm } from "./generated-assets.js";
+import { selectedProofHoles } from "./rainfall.js";
 
 const sourceHost = document.querySelector("#source");
 const run = document.querySelector("#run");
@@ -160,13 +161,19 @@ async function execute() {
   fine.FS.writeFile(path, editor.state.doc.toString());
   try {
     const ordinary = invoke(["run", "--proof-selector", "z3", path]);
-    result.textContent = [...ordinary.stdout, ...ordinary.stderr].join("\n") || `(exit ${ordinary.code})`;
+    const diagnostics = [...ordinary.stdout, ...ordinary.stderr].join("\n") || `(exit ${ordinary.code})`;
+    result.textContent = diagnostics;
     if (ordinary.code !== 0) {
       status.textContent = "failed";
       return;
     }
 
     const rain = invoke(["rain", "--proof-selector", "z3", path]);
+    const selections = selectedProofHoles(rain.stdout);
+    const filled = selections.length > 0
+      ? selections.map(({ binding, body }) => `${binding} ← ${body}`).join("\n")
+      : "(none)";
+    result.textContent = `filled holes\n${filled}\n\nverification\n${diagnostics}`;
     rainfall.textContent = showRainfall(rain.stdout);
     if (rain.stderr.length > 0)
       rainfall.textContent += `${rainfall.textContent ? "\n\n" : ""}${rain.stderr.join("\n")}`;
