@@ -225,9 +225,7 @@ compiler confirmed. Rainfall keeps the individual IH template, availability
 resource, and total IH separately, and the binder handles for Step and Marked
 remain unequal. The diagonal false control fails at `root`. This closes total
 target-field identity, not name transport: the two fields deliberately share a
-freshness domain. The next fixture must make their requirements unequal so the
-typing binder cannot directly instantiate the Step field and opening
-equivariance is actually consumed.
+freshness domain.
 
 The arbitrary-field mechanism now has a real locally nameless consumer at the
 evidence boundary. `predicate-cofinite-support-induction.fine` represents
@@ -271,9 +269,7 @@ unsatisfiable, stops on the first refuted constructor, and never adds the theore
 to fixedpoint. `predicate-reusable-proof.fine` makes reuse necessary by feeding
 the admitted `Step` invariant to a nonrecursive `Request` induction; without the
 proof its sole branch refutes. This removes the declaration-order obstruction to
-proving typing/predicate-respecting opening equivariance. The next fixture must
-use that mechanism with genuinely different Step and typing freshness views so
-neither total field can be instantiated directly in the other's domain.
+proving typing/predicate-respecting opening equivariance.
 
 The first such predicate-respecting renaming attempt found and closed a lower
 binder-identity bug. One-layer inversion/construction now freshens every
@@ -286,6 +282,21 @@ renaming, not the cofinite abstraction theorem. The full scratch `Marked`
 renaming proof now reaches and refutes `abs_case` instead of disappearing in
 that captured application search, isolating the remaining total-field transport
 obligation.
+
+The bounded unequal-domain discriminator is now closed.
+`predicate-unequal-fresh-transport.fine` gives `Transport.close` a recursive
+field only at names `>= cutoff + 2`, but fixes the constructor result at
+`cutoff + 1`. Its total IH therefore cannot be instantiated at the result name.
+The verified branch uses the separately admitted `Named` renaming theorem to
+move predicate evidence across the gap, then constructs the boxed result.
+Deleting that theorem refutes `close`; deleting the resulting
+`transport_named` theorem refutes a later `Request` consumer. Rainfall keeps the
+`+2` total field, `+1` construction, both admissions, and the exact use edge.
+This proves that Fine can route predicate evidence across unequal freshness
+domains; it deliberately does not call the toy one-constructor `open` function
+the locally nameless theorem. The remaining exit is to reproduce the same route
+for real `Tm.open_at`, where a fresh intermediary and open/rename commute and
+support bounds are unavoidable.
 
 ## Later language test: an elementary topos without ceremony
 

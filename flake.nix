@@ -618,6 +618,86 @@
           grep -F "refuted-predicate-induction: use_named_rename" \
             <<<"$no_renaming_proof_output"
           grep -F "failed-constructor: requested" <<<"$no_renaming_proof_output"
+          unequal_fresh="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-unequal-fresh-transport.fine")"
+          echo "$unequal_fresh"
+          grep -F "verified-proof: named_rename" <<<"$unequal_fresh"
+          grep -F "verified-proof: transport_named" <<<"$unequal_fresh"
+          grep -F "verified-predicate-induction: use_transport" <<<"$unequal_fresh"
+          unequal_fresh_false="$(mktemp)"
+          if $out/bin/fine run \
+            "$src/fine/fixtures/predicate-unequal-fresh-transport-false.fine" \
+            >"$unequal_fresh_false" 2>&1; then
+            echo "admitted the wrong name after fresh-name transport" >&2
+            exit 1
+          fi
+          grep -F "refuted-proof: transport_named" "$unequal_fresh_false"
+          grep -F "failed-constructor: opened" "$unequal_fresh_false"
+          no_named_transport="$(mktemp)"
+          ${pkgs.python3}/bin/python - \
+            "$src/fine/fixtures/predicate-unequal-fresh-transport.fine" \
+            "$no_named_transport" <<'PY'
+          import pathlib, sys
+          source = pathlib.Path(sys.argv[1]).read_text()
+          start = source.index("proof named_rename")
+          end = source.index("\nview BranchFresh", start)
+          pathlib.Path(sys.argv[2]).write_text(source[:start] + source[end + 1:])
+          PY
+          if $out/bin/fine run "$no_named_transport" >"$no_named_transport.out" 2>&1; then
+            echo "fresh-name transport verified without its renaming theorem" >&2
+            exit 1
+          fi
+          grep -F "refuted-proof: transport_named" "$no_named_transport.out"
+          grep -F "failed-constructor: close" "$no_named_transport.out"
+          unequal_fresh_rain="$(mktemp)"
+          $out/bin/fine rain \
+            "$src/fine/fixtures/predicate-unequal-fresh-transport.fine" \
+            >"$unequal_fresh_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/predicate-unequal-fresh-transport.fine" \
+            "$unequal_fresh_rain"
+          ${pkgs.python3}/bin/python - "$unequal_fresh_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          terms = {event["data"]["id"]: event["data"]["text"]
+                   for event in events if event["operation"] == "term.declare"}
+          admissions = [event["data"]["proof"] for event in events
+                        if event["operation"] == "proof.admit"]
+          assert admissions == ["named_rename", "transport_named"]
+          total = next(event for event in events
+                       if event["operation"] == "predicate-induction.arbitrary.total-hypothesis"
+                       and event["within"][0] == "proof:transport_named")
+          total_text = terms[total["data"]["total_hypothesis"]]
+          assert "Fine.predicate.Transport.close.arbitrary0" in total_text
+          assert 'numeral("2",_s_Int)' in total_text
+          construction = next(event for event in events
+                              if event["operation"] == "predicate-induction.goal.construct"
+                              and event["within"][0] == "proof:transport_named"
+                              and event["data"]["constructor"] == "close")
+          construction_text = terms[construction["data"]["construction"]]
+          assert 'numeral("1",_s_Int)' in construction_text
+          uses = [event for event in events if event["operation"] == "proof.use"
+                  and event["within"][:2] == ["proof:transport_named", "branch:close"]
+                  and "phase" not in event["data"]]
+          assert [event["data"]["proof"] for event in uses] == ["named_rename"]
+          close = next(event for event in events
+                       if event["operation"] == "predicate-induction.branch.result"
+                       and event["within"] == ["proof:transport_named", "branch:close"])
+          assert close["data"]["status"] == "unsat"
+          PY
+          no_transport_proof="$(mktemp)"
+          ${pkgs.python3}/bin/python - \
+            "$src/fine/fixtures/predicate-unequal-fresh-transport.fine" \
+            "$no_transport_proof" <<'PY'
+          import pathlib, sys
+          source = pathlib.Path(sys.argv[1]).read_text()
+          start = source.index("proof transport_named")
+          end = source.index("\npredicate Request", start)
+          pathlib.Path(sys.argv[2]).write_text(source[:start] + source[end + 1:])
+          PY
+          no_transport_output="$($out/bin/fine run "$no_transport_proof")"
+          grep -F "refuted-predicate-induction: use_transport" <<<"$no_transport_output"
+          grep -F "failed-constructor: requested" <<<"$no_transport_output"
           append_proof="$($out/bin/fine run \
             "$src/fine/fixtures/proof-append-length.fine")"
           echo "$append_proof"

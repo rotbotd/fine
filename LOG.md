@@ -2928,3 +2928,103 @@ nix flake check
 nix build --no-link --print-out-paths
 # /nix/store/wnsxa8h5iivxq6dwbkj2vv6z0zz2vacn-fine-0.0.1
 ```
+
+## 2026-09-02 — unequal freshness transport and the environment-renaming null
+
+The full `Marked(term) -> Marked(rename(term, source, target))` scratch proof
+from the alpha-localization slice still failed only at its cofinite `abs_case`.
+I first made the standard fresh-intermediary argument executable rather than
+adding another special binder primitive. The scratch `/tmp/marked-env.fine`
+introduced a recursive finite `Renaming` environment, `rename_with`, and the
+structural theorem
+
+```
+rename_with(open_at(term, depth, fresh), put(fresh, other, environment))
+  == open_at(rename_with(term, environment), depth, other)
+```
+
+under the real `fresh >= support_cutoff(term) + 1` premise. The theorem itself
+verified by Fine's direct-field datatype induction. The intended cofinite branch
+would instantiate its total IH once with the extended environment, thereby
+performing both the outer renaming and the fresh-name change without an
+unbounded sequence of unary rename theorems.
+
+That formulation is retained as a null, not promoted. Adding the universally
+closed theorem to the later predicate-induction query made even `Marked`'s
+`bound_case` exceed 60 seconds. A diagnostic two-second solver timeout confirmed
+that the no-helper file reached only `abs_case`, while the helper theorem made
+`bound_case` itself return `unknown: timeout`. I also spiked an explicit
+single/multi-pattern surface locally. The strongest tested multi-pattern paired
+`open_at(rename_with(term, put(source,target,rest)), depth, other)` with
+`open_at(term, depth, fresh)` and covered every quantified parameter exactly.
+It remained pathological in the branch solver. All parser/runtime changes for
+that spike were reverted. This is the same concrete failure mode as the earlier
+opening-equivariance loop: a valid universal recursive-function equality is not
+yet a usable branch resource merely because it has been proved and admitted.
+The next full locally nameless attempt needs either a better bounded
+instantiation boundary or a source formulation whose required ground terms are
+already present; giving the search more fuel is not accepted.
+
+I then isolated the actual semantic step from that matching problem in
+`predicate-unequal-fresh-transport.fine`. It has three named parts:
+
+1. `Transport.opened` supplies real finite derivations at any name for a raw
+   one-hole body.
+2. `Transport.close` owns a total recursive field only for names at or above
+   `support_cutoff(body) + 2`, while its result is fixed at the disjoint name
+   `support_cutoff(body) + 1` and boxes that opening.
+3. `named_rename`, proved separately by predicate induction, transports the
+   total IH's `Named(branch_name, open(body, branch_name))` evidence to the
+   smaller result name before the `Named.boxed_case` construction closes.
+
+The domains are syntactically unequal, so the earlier same-domain trick of
+instantiating the IH at the target binder is impossible. The fixture verifies
+both reusable proofs and a later nonrecursive `Request` consumer. Deleting
+`named_rename` refutes exactly `Transport.close`; deleting `transport_named`
+refutes `Request.requested`. The false proof asks for `Named(name + 1, term)` and
+fails at `Transport.opened`. This is a bounded model of the evidence route, not
+the full `Tm.open_at` theorem.
+
+The 538-event Rainfall run validates. It retains the `close` field's schema
+binder, declared `cutoff + 2` witness, requirement, recursive premise, exact IH,
+and total universal IH separately. The goal construction visibly contains
+`cutoff + 1`. `named_rename` is admitted before `transport_named`, used in the
+exact `proof:transport_named/branch:close` scope, and neither theorem enters
+fixedpoint. The install check asserts those term texts and edges as well as both
+deletion controls and the false proof.
+
+Direct development commands:
+
+```
+build/fine/fine run /tmp/predicate-unequal-fresh-transport.fine
+# verified-proof: named_rename
+# verified-proof: transport_named
+# verified-predicate-induction: use_transport
+
+build/fine/fine run /tmp/unequal-no-named.fine
+# refuted-proof: transport_named
+# failed-constructor: close
+
+build/fine/fine run /tmp/predicate-unequal-fresh-transport-false.fine
+# refuted-proof: transport_named
+# failed-constructor: opened
+
+build/fine/fine rain /tmp/predicate-unequal-fresh-transport.fine \
+  > /tmp/unequal.rain
+python3 fine/rainfall_validate.py \
+  /tmp/predicate-unequal-fresh-transport.fine /tmp/unequal.rain
+# valid rainfall: events=538, source_nodes=125, terms=122, source_term_edges=95
+```
+
+The first Nix install-check build failed only in the new Rainfall assertion: it
+counted both the availability-phase and final branch-phase `named_rename` uses,
+while the assertion expected only the latter. The trace was correct. The test
+now filters out events carrying a `phase` field and requires the one final use.
+After that test correction:
+
+```
+nix build --no-link --print-out-paths
+# /nix/store/21rs99d2hrdly7f32lqpy99kri4v0i40-fine-0.0.1
+nix flake check
+# all checks passed
+```

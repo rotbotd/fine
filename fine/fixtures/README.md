@@ -156,6 +156,16 @@ and the construction retains the unbound source branch fields. Deleting the
 proof makes the later nonrecursive `Request` consumer refute; the false control
 tries to change the name index without renaming the term and fails at `here`.
 
+`predicate-unequal-fresh-transport.fine` is the first deliberately unequal
+freshness-domain consumer. `Transport.close` owns a total recursive field for
+every name at least `support_cutoff(body) + 2`, while its closed result is named
+at exactly `support_cutoff(body) + 1`. The result name therefore cannot be fed
+straight back to the field. The branch instantiates the total IH at a larger
+name, uses the separately admitted `Named` renaming theorem, and constructs the
+boxed result at the smaller name. Removing `named_rename` refutes exactly
+`Transport.close`; removing `transport_named` refutes the later `Request`
+consumer. The false proof asks for the next name and fails at `opened`.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.

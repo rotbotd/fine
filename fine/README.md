@@ -190,6 +190,15 @@ predicate's other constructors are registered with fixedpoint either. Full local
 nameless opening/support and its
 freshness/equivariance proof remain the next test.
 
+The bounded `predicate-unequal-fresh-transport.fine` fixture now forces the
+next piece in isolation: its recursive field accepts only names at or above
+`cutoff + 2`, while the enclosing result uses `cutoff + 1`. A total IH at the
+larger name is transported through an independently verified `Named` renaming
+proof before the result is constructed. Deleting either reusable proof makes
+the corresponding branch fail. This demonstrates cross-domain predicate
+evidence transport; the real `Tm.open_at` commute/support argument and full STLC
+preservation remain outside the fixture.
+
 For recursive finite support, a view may include a declared carrier witness.
 `predicate-cofinite-support-induction.fine` uses Peano `Name`s and a
 `Support` cutoff: the excluded names form a finite initial segment and

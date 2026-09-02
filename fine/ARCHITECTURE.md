@@ -184,6 +184,18 @@ The template binder remains independent of the witness.
 This is a compiler-owned induction rule, not a fixedpoint interpretation of the
 arbitrary field.
 
+The first cross-domain use is intentionally smaller than the full locally
+nameless theorem. In `predicate-unequal-fresh-transport.fine`, the recursive
+field ranges over names above `cutoff + 2`, while the constructor result uses
+the disjoint name `cutoff + 1`. Its total IH yields `Named` evidence at the
+larger name; a separately verified predicate-renaming theorem transports that
+evidence before one-layer construction boxes the smaller-name result. Deleting
+the renaming theorem refutes the exact `close` branch. Rainfall retains the
+`+2` requirement and universal IH separately from the `+1` goal construction,
+as well as the proof admission/use. This closes the evidence-routing problem
+for unequal domains without claiming that the toy `open` function supplies the
+commute and support lemmas required by real locally nameless syntax.
+
 The derivation witness erases after branch construction rather than becoming a
 runtime GADT. Rainfall retains the constructor result, result-specialized query,
 and each exact recursive-premise/induction-hypothesis pair as compiler-owned
