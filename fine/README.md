@@ -48,5 +48,6 @@ and rechecks it with implicit resolution disabled before returning source.
 The former Bool-predicate implementation remains runnable from tag
 `pre-pat-1d7222a23`. The exact survival and deletion map is in
 [`PROOF_TERMS.md`](PROOF_TERMS.md); current invariants are in
-[`ARCHITECTURE.md`](ARCHITECTURE.md); experiments and closed decisions remain in
-the append-only root [`LOG.md`](../LOG.md).
+[`ARCHITECTURE.md`](ARCHITECTURE.md); the ordered executable slices are in
+[`ROADMAP.md`](ROADMAP.md); experiments and closed decisions remain in the
+append-only root [`LOG.md`](../LOG.md).

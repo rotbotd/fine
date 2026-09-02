@@ -3173,3 +3173,32 @@ nix flake check --print-build-logs
 nix build --no-link --print-out-paths
 # /nix/store/67091p1ghr4qjs6hf5fp6blaq8vxvhjw-fine-0.1.0
 ```
+
+## 2026-09-02: proof-term roadmap from the branch-cut discussion
+
+Added `fine/ROADMAP.md` to preserve the design sequence that produced the
+proof-term branch rather than leaving it scattered across chat. The decisive
+failure was representational: the former `Step(a, b) : Bool` could be submitted
+to Z3 and used by compiler-owned induction machinery, but it supplied no Fine
+inhabitant that could be synthesized, inspected, or materialized. Experiments on
+the preserved branch had already shown that Spacer summaries project away
+constructor support, so reading them back as derivations would be dishonest.
+
+The roadmap fixes four boundaries before ordering features: disjoint value and
+proof levels; automatic proposition absorption while retaining source evidence;
+caller-local proof coeffects; and a Fine-owned typed proof grammar with Z3 used
+to reject candidates and discharge obligations rather than manufacture source
+proofs. It also records the chosen proof-irrelevant cutoff: no equality between
+proofs, no runtime observation of evidence, and no proof-to-value elimination,
+while distinct evidence may retain distinct source provenance in Rainfall.
+
+The ordered vertical slices are: the already closed identity-coeffect boundary;
+typed identity holes; named proof functions and composition; proof-only
+elimination; indexed inductive propositions formed as derivations; locally
+nameless STLC with total cofinite proof fields and explicit opening transport;
+cancellable search/frontier/materialization editor transactions; and selective
+recovery of value-language consumers. Each slice has a positive fixture,
+rejecting control, Rainfall ownership requirement, materialization requirement,
+and verification-only rerun as its exit condition. Explicit non-goals prevent
+the old predicate system, a Z3 term universe, global theorem search, or solver
+proof reconstruction from returning by architectural drift.
