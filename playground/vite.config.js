@@ -9,9 +9,6 @@ function precompressedZstd() {
       server.middlewares.use((request, response, next) => {
         if (request.method !== "GET" && request.method !== "HEAD")
           return next();
-        if (!String(request.headers["accept-encoding"] ?? "").split(/\s*,\s*/).includes("zstd"))
-          return next();
-
         let pathname;
         try {
           pathname = decodeURIComponent(new URL(request.url, "http://fine.local").pathname);
@@ -23,26 +20,32 @@ function precompressedZstd() {
 
         const outputRoot = path.resolve(server.config.root, server.config.build.outDir);
         const relative = pathname.replace(/^\/+/, "");
-        const compressed = path.resolve(outputRoot, `${relative}.zst`);
-        if (!compressed.startsWith(`${outputRoot}${path.sep}`))
+        const plain = path.resolve(outputRoot, relative);
+        if (!plain.startsWith(`${outputRoot}${path.sep}`))
           return next();
+
+        const acceptsZstd = String(request.headers["accept-encoding"] ?? "")
+          .split(/\s*,\s*/)
+          .includes("zstd");
+        const selected = acceptsZstd ? `${plain}.zst` : plain;
 
         let size;
         try {
-          size = statSync(compressed).size;
+          size = statSync(selected).size;
         } catch {
           return next();
         }
 
         response.statusCode = 200;
         response.setHeader("Content-Type", "application/wasm");
-        response.setHeader("Content-Encoding", "zstd");
+        if (acceptsZstd)
+          response.setHeader("Content-Encoding", "zstd");
         response.setHeader("Content-Length", size);
         response.setHeader("Vary", "Accept-Encoding");
         response.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
         if (request.method === "HEAD")
           return response.end();
-        createReadStream(compressed).pipe(response);
+        createReadStream(selected).pipe(response);
       });
     },
   };

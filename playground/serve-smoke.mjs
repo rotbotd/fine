@@ -47,6 +47,8 @@ try {
 
   if (!plain.body.equals(expectedPlain))
     throw new Error("plain Wasm response differs from the built module");
+  if (!String(plain.headers["cache-control"] ?? "").startsWith("public"))
+    throw new Error(`plain Wasm response is not cacheable: ${plain.headers["cache-control"]}`);
   if (compressed.headers["content-encoding"] !== "zstd")
     throw new Error(`expected zstd content encoding, got ${compressed.headers["content-encoding"]}`);
   if (!compressed.body.equals(expectedCompressed))

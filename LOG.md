@@ -3904,9 +3904,12 @@ The build precompresses `fine.wasm` with Node's Zstandard implementation at leve
 19. A narrow Vite preview middleware serves that exact file only when the request
 advertises `Accept-Encoding: zstd`; it sets `Content-Encoding: zstd`, preserves
 the `application/wasm` media type, varies the response by encoding, and otherwise
-falls through to the original module. The 10,662,220-byte Wasm becomes 2,555,916
-bytes on the wire. A client without Zstandard support still receives the original
-bytes.
+serves the original module with the same explicit shared-cache policy. The latter
+matters because the public gateway does its own content negotiation: it can cache
+the origin bytes and emit Zstandard at the edge rather than pulling 11 MiB through
+the tunnel for every visitor. The 10,662,220-byte Wasm becomes 2,555,916 bytes on
+the direct negotiated path. A client without Zstandard support still receives the
+original bytes.
 
 `playground/serve-smoke.mjs` starts the same Vite command used by the service and
 checks both paths byte-for-byte: the plain response must equal `fine.wasm`, while
