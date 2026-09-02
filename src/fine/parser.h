@@ -130,11 +130,32 @@ namespace fine::syntax {
         Type type;
     };
 
+    // A constrained view names an erased proposition over one existing native
+    // carrier. `value` is bound to the carrier inside each requirement.
+    struct ViewDecl {
+        SourceSpan span;
+        std::string name;
+        std::vector<Parameter> parameters;
+        Type carrier;
+        std::vector<Expr> requirements;
+        std::size_t node_id = 0;
+    };
+
+    struct ArbitraryPremise {
+        SourceSpan span;
+        std::string binder;
+        std::string view_name;
+        std::vector<Expr> view_arguments;
+        std::vector<Expr> premises;
+        std::size_t node_id = 0;
+    };
+
     struct ProofConstructor {
         SourceSpan span;
         std::string name;
         std::vector<Parameter> parameters;
         std::vector<Expr> premises;
+        std::vector<ArbitraryPremise> arbitrary_premises;
         Expr result;
     };
 
@@ -213,8 +234,8 @@ namespace fine::syntax {
         std::size_t node_id = 0;
     };
 
-    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, ProofFamilyDecl, FunctionDecl,
-                                     SynthDecl, CheckDecl, CounterexampleDecl>;
+    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, ViewDecl, ProofFamilyDecl,
+                                     FunctionDecl, SynthDecl, CheckDecl, CounterexampleDecl>;
 
     struct Document {
         SourceSpan span;

@@ -113,8 +113,27 @@ exact indices of every recursive premise. Each resulting branch is a separate
 ordinary SMT refutation query. Rainfall keeps the constructor result and every
 premise/hypothesis pair before the proof witness erases; it does not reconstruct
 branches from Spacer's projected learned lemmas. This slice excludes explicit
-proof matches, existential or cofinite constructor fields, and typed branch
-counterexamples.
+proof matches, existential constructor fields, and typed branch counterexamples.
+
+The first non-Horn proof field is explicit rather than smuggled through a body
+variable:
+
+```fine
+arbitrary fresh: FreshApart(excluded) {
+  Step(opened(before, fresh), opened(after, fresh), excluded);
+}
+```
+
+`FreshApart` is a named `view ... over Name` proposition and creates no wrapper
+sort. Fine keeps the arbitrary name, instantiated view requirement, opened
+recursive atom, and resulting induction hypothesis as separate terms. It checks
+that the view is inhabited for every constructor-parameter assignment before
+using the requirement as a branch assumption, preventing an empty view from
+proving anything. The field is never lowered to Horn; consequently membership
+and fixedpoint-invariant queries reject a family containing it, and none of the
+family's other constructors are registered with fixedpoint either. Full locally
+nameless opening/support and its
+freshness/equivariance proof remain the next test.
 
 The first interruptible synthesis fixture fixes an exhaustive datatype match
 while leaving one whole arm as `?payload`. Rainfall gives that source node a

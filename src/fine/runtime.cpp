@@ -76,10 +76,23 @@ namespace fine {
         };
 
         struct ProofConstructorInfo {
+            struct ArbitraryField {
+                std::string binder;
+                std::string view_name;
+                z3::expr binder_term;
+                z3::expr requirement;
+                std::vector<z3::expr> premise_terms;
+                std::vector<std::vector<z3::expr>> recursive_premise_indices;
+
+                explicit ArbitraryField(z3::context &context)
+                    : binder_term(context), requirement(context) {}
+            };
+
             std::string name;
             std::vector<z3::expr> parameters;
             std::vector<z3::expr> result_indices;
             std::vector<std::vector<z3::expr>> recursive_premise_indices;
+            std::vector<ArbitraryField> arbitrary_fields;
             std::size_t premise_count = 0;
         };
 
@@ -88,8 +101,17 @@ namespace fine {
             std::vector<TypePtr> index_types;
             z3::func_decl relation;
             std::vector<ProofConstructorInfo> constructors;
+            bool horn_complete = true;
 
             explicit ProofFamilyInfo(z3::context &context) : relation(context) {}
+        };
+
+        struct ViewInfo {
+            std::string name;
+            std::vector<std::string> parameter_names;
+            std::vector<TypePtr> parameter_types;
+            TypePtr carrier;
+            std::vector<syntax::Expr> requirements;
         };
 
         struct Binding {
@@ -159,6 +181,7 @@ namespace fine {
             std::map<std::string, std::unique_ptr<DatatypeInfo>> datatypes_;
             std::map<std::string, std::pair<DatatypeInfo *, unsigned>> constructors_;
             std::map<std::string, std::unique_ptr<FunctionInfo>> functions_;
+            std::map<std::string, ViewInfo> views_;
             std::map<std::string, std::unique_ptr<ProofFamilyInfo>> proof_families_;
             std::map<std::string, Binding> bindings_;
             std::map<std::string, TypePtr> compound_types_;
@@ -232,6 +255,8 @@ namespace fine {
                                 kind = "decl.model";
                             else if constexpr (std::is_same_v<T, syntax::ProofDecl>)
                                 kind = "decl.proof";
+                            else if constexpr (std::is_same_v<T, syntax::ViewDecl>)
+                                kind = "decl.view";
                             else if constexpr (std::is_same_v<T, syntax::ProofFamilyDecl>)
                                 kind = "decl.proof-family";
                             else if constexpr (std::is_same_v<T, syntax::FunctionDecl>)
@@ -256,10 +281,22 @@ namespace fine {
                                     declare_expression_sources(argument.value);
                                 declare_expression_sources(item.gives);
                             }
+                            else if constexpr (std::is_same_v<T, syntax::ViewDecl>) {
+                                for (syntax::Expr const &requirement : item.requirements)
+                                    declare_expression_sources(requirement);
+                            }
                             else if constexpr (std::is_same_v<T, syntax::ProofFamilyDecl>) {
                                 for (syntax::ProofConstructor const &constructor : item.constructors) {
                                     for (syntax::Expr const &premise : constructor.premises)
                                         declare_expression_sources(premise);
+                                    for (syntax::ArbitraryPremise const &field : constructor.arbitrary_premises) {
+                                        rainfall_->source_node(field.node_id, field.span,
+                                                               "proof.arbitrary-field");
+                                        for (syntax::Expr const &argument : field.view_arguments)
+                                            declare_expression_sources(argument);
+                                        for (syntax::Expr const &premise : field.premises)
+                                            declare_expression_sources(premise);
+                                    }
                                     declare_expression_sources(constructor.result);
                                 }
                             }
@@ -619,6 +656,66 @@ namespace fine {
                 return result;
             }
 
+            void declare_view(syntax::ViewDecl const &declaration) {
+                if (views_.contains(declaration.name) || types_.contains(declaration.name) ||
+                    functions_.contains(declaration.name) || proof_families_.contains(declaration.name))
+                    reject(declaration.span, "duplicate type-level name `" + declaration.name + "`");
+
+                ViewInfo info;
+                info.name = declaration.name;
+                info.carrier = resolve_type(declaration.carrier);
+                if (info.carrier->kind == RuntimeType::Kind::table)
+                    reject(declaration.carrier.span,
+                           "a constrained view must keep one existing native Fine carrier");
+                info.requirements = declaration.requirements;
+
+                ExpressionEnvironment environment;
+                std::set<std::string> names;
+                for (std::size_t i = 0; i < declaration.parameters.size(); ++i) {
+                    syntax::Parameter const &parameter = declaration.parameters[i];
+                    if (parameter.name == "value")
+                        reject(parameter.span, "`value` is reserved for the constrained-view carrier");
+                    if (!names.insert(parameter.name).second)
+                        reject(parameter.span, "duplicate view parameter `" + parameter.name + "`");
+                    TypePtr type = resolve_type(parameter.type);
+                    if (type->kind == RuntimeType::Kind::table)
+                        reject(parameter.type.span, "view parameters must be native Fine values");
+                    z3::expr term = context_.constant(
+                        ("Fine.view." + declaration.name + ".arg" + std::to_string(i)).c_str(), type->sort);
+                    environment.emplace(parameter.name, TypedExpression{type, term});
+                    info.parameter_names.push_back(parameter.name);
+                    info.parameter_types.push_back(type);
+                }
+                z3::expr value = context_.constant(("Fine.view." + declaration.name + ".value").c_str(),
+                                                   info.carrier->sort);
+                environment.emplace("value", TypedExpression{info.carrier, value});
+
+                bool previous_capture = capture_source_edges_;
+                std::vector<std::string> previous_within = source_edge_within_;
+                capture_source_edges_ = true;
+                source_edge_within_ = {"view:" + declaration.name};
+                z3::expr requirements = context_.bool_val(true);
+                for (syntax::Expr const &requirement : declaration.requirements) {
+                    TypedExpression elaborated = elaborate_expression(requirement, environment);
+                    if (!same(elaborated.type, bool_type_))
+                        reject(requirement.span, "a constrained-view requirement must have type Bool");
+                    requirements = requirements && elaborated.expression;
+                }
+                capture_source_edges_ = previous_capture;
+                source_edge_within_ = std::move(previous_within);
+
+                views_.emplace(declaration.name, std::move(info));
+                if (rainfall_)
+                    rainfall_->record(
+                        "object", "fine.view.declare", {"view:" + declaration.name}, "fine.elaborator",
+                        "Named erased proposition over one existing native carrier; no wrapper sort is created",
+                        {RainfallRecorder::string_field("view", declaration.name),
+                         RainfallRecorder::string_field("carrier", views_.at(declaration.name).carrier->display),
+                         RainfallRecorder::string_field("requirements", rainfall_->term(requirements)),
+                         RainfallRecorder::number_field("parameters", declaration.parameters.size()),
+                         RainfallRecorder::boolean_field("wrapper_sort", false)});
+            }
+
             z3::expr value(syntax::Expr const &expression, TypePtr const &expected) {
                 switch (expression.kind) {
                 case syntax::Expr::Kind::boolean:
@@ -909,10 +1006,16 @@ namespace fine {
                 auto info = std::make_unique<ProofFamilyInfo>(context_);
                 info->name = declaration.name;
                 info->index_types = index_types;
+                info->horn_complete = std::none_of(
+                    declaration.constructors.begin(), declaration.constructors.end(),
+                    [](syntax::ProofConstructor const &constructor) {
+                        return !constructor.arbitrary_premises.empty();
+                    });
                 info->relation = context_.function(declaration.name.c_str(),
                                                    static_cast<unsigned>(index_sorts.size()), index_sorts.data(),
                                                    context_.bool_sort());
-                fixedpoint_.register_relation(info->relation);
+                if (info->horn_complete)
+                    fixedpoint_.register_relation(info->relation);
                 ProofFamilyInfo *stable = info.get();
                 proof_families_.emplace(declaration.name, std::move(info));
 
@@ -921,11 +1024,14 @@ namespace fine {
                 if (rainfall_)
                     rainfall_->record(
                         "object", "fine.proof-family.relation", {family_scope}, "fine.elaborator",
-                        "Erased indexed proposition represented by a native-sort least relation, not a proof-witness sort",
+                        stable->horn_complete
+                            ? "Erased indexed proposition represented by a native-sort least relation"
+                            : "Erased indexed proposition represented for induction by a compiler-owned constructor table and relation-shaped term handle; no constructor is registered with fixedpoint because one has an arbitrary field",
                         {RainfallRecorder::string_field("family", declaration.name),
                          RainfallRecorder::string_field("relation", stable->relation.name().str()),
                          RainfallRecorder::number_field("indices", stable->index_types.size()),
-                         RainfallRecorder::boolean_field("least_relation", true),
+                         RainfallRecorder::boolean_field("least_relation", stable->horn_complete),
+                         RainfallRecorder::boolean_field("horn_complete", stable->horn_complete),
                          RainfallRecorder::boolean_field("proof_witnesses_erased", true)});
 
                 for (syntax::ProofConstructor const &constructor : declaration.constructors) {
@@ -1003,27 +1109,142 @@ namespace fine {
                             retained_constructor.recursive_premise_indices.push_back(std::move(indices));
                         }
                     }
-                    z3::expr rule = constructor.premises.empty() ? conclusion : z3::implies(premises, conclusion);
-                    if (!formal_parameters.empty())
-                        rule = z3::forall(formal_parameters, rule);
-                    std::string rule_name = declaration.name + "." + constructor.name;
-                    fixedpoint_.add_rule(rule, context_.str_symbol(rule_name.c_str()));
-                    stable->constructors.push_back(std::move(retained_constructor));
 
-                    if (rainfall_) {
-                        rainfall_->source_term(declaration.node_id, declaration.span, "decl.proof-family", rule,
-                                               "generated", {family_scope});
-                        rainfall_->record(
-                            "derive", "fine.proof-constructor.rule", {family_scope}, "fine.elaborator",
-                            "Strictly-positive first-order constructor compiled to one least-relation Horn rule",
-                            {RainfallRecorder::string_field("family", declaration.name),
-                             RainfallRecorder::string_field("constructor", constructor.name),
-                             RainfallRecorder::string_field("rule", rainfall_->term(rule)),
-                             RainfallRecorder::string_field("conclusion", rainfall_->term(conclusion)),
-                             RainfallRecorder::number_field("premises", premise_terms.size()),
-                             RainfallRecorder::number_field("recursive_premises", recursive_premises),
-                             RainfallRecorder::boolean_field("proof_witness_erased", true)});
+                    for (std::size_t field_ordinal = 0;
+                         field_ordinal < constructor.arbitrary_premises.size(); ++field_ordinal) {
+                        syntax::ArbitraryPremise const &field = constructor.arbitrary_premises[field_ordinal];
+                        bool previous_capture = capture_source_edges_;
+                        std::vector<std::string> previous_within = source_edge_within_;
+                        capture_source_edges_ = true;
+                        source_edge_within_ = {family_scope};
+                        if (constructor.arbitrary_premises.size() != 1)
+                            reject(field.span,
+                                   "the first arbitrary-fresh slice admits exactly one such field per constructor");
+                        if (parameter_names.contains(field.binder))
+                            reject(field.span, "arbitrary-fresh name `" + field.binder +
+                                                   "` shadows a constructor parameter");
+                        auto found_view = views_.find(field.view_name);
+                        if (found_view == views_.end())
+                            reject(field.span, "unknown constrained view `" + field.view_name + "`");
+                        ViewInfo const &view = found_view->second;
+                        if (field.view_arguments.size() != view.parameter_types.size())
+                            reject(field.span, "constrained view `" + field.view_name + "` expects " +
+                                                   std::to_string(view.parameter_types.size()) + " arguments");
+
+                        std::vector<TypedExpression> view_arguments;
+                        for (std::size_t i = 0; i < field.view_arguments.size(); ++i) {
+                            TypedExpression argument = elaborate_expression(field.view_arguments[i], environment);
+                            if (!same(argument.type, view.parameter_types[i]))
+                                reject(field.view_arguments[i].span,
+                                       "constrained-view argument " + std::to_string(i + 1) + " must have type `" +
+                                           view.parameter_types[i]->display + "`");
+                            view_arguments.push_back(std::move(argument));
+                        }
+
+                        ProofConstructorInfo::ArbitraryField retained_field(context_);
+                        retained_field.binder = field.binder;
+                        retained_field.view_name = field.view_name;
+                        retained_field.binder_term = context_.constant(
+                            ("Fine.proof." + declaration.name + "." + constructor.name + ".arbitrary" +
+                             std::to_string(field_ordinal)).c_str(),
+                            view.carrier->sort);
+                        if (rainfall_)
+                            rainfall_->source_term(field.node_id, field.span, "proof.arbitrary-field",
+                                                   retained_field.binder_term, "generated", {family_scope});
+
+                        ExpressionEnvironment scoped_environment = environment;
+                        scoped_environment.emplace(
+                            field.binder, TypedExpression{view.carrier, retained_field.binder_term});
+                        ExpressionEnvironment requirement_environment;
+                        for (std::size_t i = 0; i < view.parameter_names.size(); ++i)
+                            requirement_environment.emplace(view.parameter_names[i], view_arguments[i]);
+                        requirement_environment.emplace(
+                            "value", TypedExpression{view.carrier, retained_field.binder_term});
+
+                        retained_field.requirement = context_.bool_val(true);
+                        for (syntax::Expr const &requirement : view.requirements) {
+                            TypedExpression elaborated = elaborate_expression(requirement, requirement_environment);
+                            if (!same(elaborated.type, bool_type_))
+                                throw std::runtime_error("validated view requirement changed type");
+                            retained_field.requirement = retained_field.requirement && elaborated.expression;
+                        }
+
+                        for (syntax::Expr const &scoped_premise : field.premises) {
+                            z3::expr elaborated = [&] {
+                                if (scoped_premise.kind != syntax::Expr::Kind::call ||
+                                    !proof_families_.contains(scoped_premise.name))
+                                    reject(scoped_premise.span,
+                                           "an arbitrary-fresh premise must call a declared proof family");
+                                TypedExpression result = elaborate_expression(scoped_premise, scoped_environment);
+                                if (!same(result.type, bool_type_))
+                                    reject(scoped_premise.span,
+                                           "an arbitrary-fresh premise must be an indexed proposition");
+                                return result.expression;
+                            }();
+                            if (scoped_premise.name != declaration.name)
+                                reject(scoped_premise.span,
+                                       "the first arbitrary-fresh slice requires a recursive premise on `" +
+                                           declaration.name + "`");
+                            retained_field.premise_terms.push_back(elaborated);
+                            std::vector<z3::expr> indices;
+                            for (unsigned i = 0; i < elaborated.num_args(); ++i)
+                                indices.push_back(elaborated.arg(i));
+                            retained_field.recursive_premise_indices.push_back(std::move(indices));
+                        }
+
+                        if (rainfall_)
+                            rainfall_->record(
+                                "derive", "fine.proof-constructor.arbitrary-field", {family_scope},
+                                "fine.elaborator",
+                                "Compiler-owned arbitrary-fresh proof field; its view requirement and recursive premise are retained and are deliberately not inserted into a Horn body",
+                                {RainfallRecorder::string_field("family", declaration.name),
+                                 RainfallRecorder::string_field("constructor", constructor.name),
+                                 RainfallRecorder::number_field("field_ordinal", field_ordinal),
+                                 RainfallRecorder::string_field("binder", field.binder),
+                                 RainfallRecorder::string_field("binder_term", rainfall_->term(retained_field.binder_term)),
+                                 RainfallRecorder::string_field("view", field.view_name),
+                                 RainfallRecorder::string_field("requirement", rainfall_->term(retained_field.requirement)),
+                                 RainfallRecorder::number_field("recursive_premises", retained_field.premise_terms.size()),
+                                 RainfallRecorder::boolean_field("lowered_to_horn", false)});
+                        retained_constructor.arbitrary_fields.push_back(std::move(retained_field));
+                        capture_source_edges_ = previous_capture;
+                        source_edge_within_ = std::move(previous_within);
                     }
+
+                    if (constructor.arbitrary_premises.empty()) {
+                        z3::expr rule = constructor.premises.empty() ? conclusion : z3::implies(premises, conclusion);
+                        if (!formal_parameters.empty())
+                            rule = z3::forall(formal_parameters, rule);
+                        if (stable->horn_complete) {
+                            std::string rule_name = declaration.name + "." + constructor.name;
+                            fixedpoint_.add_rule(rule, context_.str_symbol(rule_name.c_str()));
+                        }
+
+                        if (rainfall_) {
+                            rainfall_->source_term(declaration.node_id, declaration.span, "decl.proof-family", rule,
+                                                   "generated", {family_scope});
+                            std::vector<RainfallField> data{
+                                RainfallRecorder::string_field("family", declaration.name),
+                                RainfallRecorder::string_field("constructor", constructor.name),
+                                RainfallRecorder::string_field("conclusion", rainfall_->term(conclusion)),
+                                RainfallRecorder::number_field("premises", premise_terms.size()),
+                                RainfallRecorder::number_field("recursive_premises", recursive_premises),
+                                RainfallRecorder::boolean_field("lowered_to_horn", stable->horn_complete),
+                                RainfallRecorder::boolean_field("proof_witness_erased", true)};
+                            data.push_back(stable->horn_complete
+                                               ? RainfallRecorder::string_field("rule", rainfall_->term(rule))
+                                               : RainfallRecorder::string_field("branch_schema", rainfall_->term(rule)));
+                            rainfall_->record(
+                                "derive", stable->horn_complete ? "fine.proof-constructor.rule"
+                                                                : "fine.proof-constructor.branch",
+                                {family_scope}, "fine.elaborator",
+                                stable->horn_complete
+                                    ? "Strictly-positive first-order constructor compiled to one least-relation Horn rule"
+                                    : "First-order constructor retained for compiler-owned induction but not registered as a Horn rule because another constructor has an arbitrary field",
+                                data);
+                        }
+                    }
+                    stable->constructors.push_back(std::move(retained_constructor));
                 }
             }
 
@@ -1634,6 +1855,10 @@ namespace fine {
                 if (source_query.kind != syntax::Expr::Kind::call ||
                     !proof_families_.contains(source_query.name))
                     reject(source_query.span, "the ensured condition must be a direct proof-family call");
+                if (!proof_families_.at(source_query.name)->horn_complete)
+                    reject(source_query.span,
+                           "least-relation membership is unavailable because `" + source_query.name +
+                               "` has an arbitrary-fresh constructor retained outside Horn lowering");
 
                 std::string run_scope = "proof-check:" + declaration.name;
                 capture_source_edges_ = true;
@@ -1809,6 +2034,70 @@ namespace fine {
                                  RainfallRecorder::string_field("induction_hypothesis", rainfall_->term(hypothesis))});
                         }
                     }
+
+                    for (std::size_t field_ordinal = 0;
+                         field_ordinal < constructor.arbitrary_fields.size(); ++field_ordinal) {
+                        ProofConstructorInfo::ArbitraryField const &field =
+                            constructor.arbitrary_fields[field_ordinal];
+
+                        z3::expr_vector binders(context_);
+                        binders.push_back(field.binder_term);
+                        z3::expr availability = z3::exists(binders, field.requirement);
+                        if (!constructor.parameters.empty()) {
+                            z3::expr_vector constructor_parameters(context_);
+                            for (z3::expr const &parameter : constructor.parameters)
+                                constructor_parameters.push_back(parameter);
+                            availability = z3::forall(constructor_parameters, availability);
+                        }
+                        z3::solver availability_solver(context_);
+                        availability_solver.add(!availability);
+                        z3::check_result availability_result = availability_solver.check();
+                        if (availability_result == z3::unknown)
+                            reject(target.span,
+                                   "arbitrary-fresh availability for constructor `" + constructor.name +
+                                       "` was unknown: " + availability_solver.reason_unknown());
+                        bool available = availability_result == z3::unsat;
+                        if (rainfall_)
+                            rainfall_->record(
+                                "transition", "proof-induction.arbitrary.availability",
+                                {run_scope, branch_scope}, "z3.public-api",
+                                "Fine separately checks that every constructor-parameter assignment admits a carrier value satisfying the constrained view; this prevents vacuous arbitrary-fresh branches",
+                                {RainfallRecorder::string_field("constructor", constructor.name),
+                                 RainfallRecorder::number_field("field_ordinal", field_ordinal),
+                                 RainfallRecorder::string_field("binder", field.binder),
+                                 RainfallRecorder::string_field("view", field.view_name),
+                                 RainfallRecorder::string_field("requirement", rainfall_->term(field.requirement)),
+                                 RainfallRecorder::string_field("obligation", rainfall_->term(availability)),
+                                 RainfallRecorder::string_field("status", available ? "unsat" : "sat"),
+                                 RainfallRecorder::string_field("domain_outcome", available ? "available" : "empty")});
+                        if (!available)
+                            reject(target.span,
+                                   "constrained view `" + field.view_name + "` is empty for some parameters of `" +
+                                       constructor.name + "`; arbitrary-fresh induction would be vacuous");
+
+                        hypotheses = hypotheses && field.requirement;
+                        for (std::size_t i = 0; i < field.recursive_premise_indices.size(); ++i) {
+                            std::vector<z3::expr> const &indices = field.recursive_premise_indices[i];
+                            z3::expr hypothesis = instantiate(guarantees, indices);
+                            hypotheses = hypotheses && hypothesis;
+                            hypothesis_terms.push_back(hypothesis);
+                            if (rainfall_)
+                                rainfall_->record(
+                                    "derive", "proof-induction.arbitrary-hypothesis",
+                                    {run_scope, branch_scope}, "fine.induction",
+                                    "Exact recursive premise and induction hypothesis under one scoped arbitrary-fresh carrier value and its independently retained view requirement",
+                                    {RainfallRecorder::string_field("constructor", constructor.name),
+                                     RainfallRecorder::number_field("field_ordinal", field_ordinal),
+                                     RainfallRecorder::number_field("premise_ordinal", i),
+                                     RainfallRecorder::string_field("binder", field.binder),
+                                     RainfallRecorder::string_field("binder_term", rainfall_->term(field.binder_term)),
+                                     RainfallRecorder::string_field("view", field.view_name),
+                                     RainfallRecorder::string_field("requirement", rainfall_->term(field.requirement)),
+                                     RainfallRecorder::string_field("recursive_premise", rainfall_->term(field.premise_terms[i])),
+                                     RainfallRecorder::string_field("induction_hypothesis", rainfall_->term(hypothesis)),
+                                     RainfallRecorder::string_field("scope_owner", "fine-arbitrary-field")});
+                        }
+                    }
                     z3::expr branch_query = hypotheses && !branch_goal;
                     if (rainfall_) {
                         rainfall_->source_term(declaration.node_id, declaration.span, "decl.check", branch_query,
@@ -1821,7 +2110,8 @@ namespace fine {
                              RainfallRecorder::string_field("constructor_result", rainfall_->term(constructor_result)),
                              RainfallRecorder::string_field("goal", rainfall_->term(branch_goal)),
                              RainfallRecorder::string_field("counterexample_query", rainfall_->term(branch_query)),
-                             RainfallRecorder::number_field("recursive_hypotheses", hypothesis_terms.size())});
+                             RainfallRecorder::number_field("recursive_hypotheses", hypothesis_terms.size()),
+                             RainfallRecorder::number_field("arbitrary_fields", constructor.arbitrary_fields.size())});
                     }
 
                     z3::solver solver(context_);
@@ -1878,6 +2168,10 @@ namespace fine {
                     !proof_families_.contains(source_membership.name))
                     reject(source_membership.span,
                            "the invariant assumption must be a direct proof-family call");
+                if (!proof_families_.at(source_membership.name)->horn_complete)
+                    reject(source_membership.span,
+                           "fixedpoint invariant checking is unavailable because `" + source_membership.name +
+                               "` has an arbitrary-fresh constructor retained outside Horn lowering");
 
                 std::function<void(syntax::Expr const &)> reject_family_in_guarantee =
                     [&](syntax::Expr const &expression) {
@@ -2759,6 +3053,9 @@ namespace fine {
                     if (proof || synth || check)
                         reject(item->span, "this source slice admits one executable declaration");
                     proof = item;
+                }
+                else if (auto const *item = std::get_if<syntax::ViewDecl>(&declaration)) {
+                    declare_view(*item);
                 }
                 else if (auto const *item = std::get_if<syntax::ProofFamilyDecl>(&declaration)) {
                     declare_proof_family(*item);

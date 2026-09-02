@@ -1628,3 +1628,127 @@ nix build --no-link --print-out-paths
 
 The pre-commit tree realized as
 `/nix/store/5hfsri7hg1mpa1vy53axv1fz60facbby-fine-0.0.1`.
+
+## 2026-09-02 — arbitrary constrained proof field without Horn quantifier fraud
+
+Started the next locally nameless prerequisite at the exact polarity boundary
+fixed by the indexed-proof spike. A name occurring only in a Horn body is an
+existential witness, so the source does not encode cofinite quantification by
+adding another fixedpoint variable. Instead Fine now has one narrow proof-only
+function field:
+
+```fine
+view FreshApart(excluded: Name) over Name {
+  requires {
+    (value == excluded) == false;
+  }
+}
+
+constructor under_abs(before: Tm, after: Tm, excluded: Name) {
+  takes {
+    arbitrary fresh: FreshApart(excluded) {
+      Step(opened(before, fresh), opened(after, fresh), excluded);
+    }
+  }
+  gives Step(abs(before), abs(after), excluded);
+}
+```
+
+A `view` names an erased Bool proposition over one already-declared native
+carrier. Its parameters and reserved carrier name `value` elaborate in the
+ordinary Fine expression language. It creates no wrapper datatype or Z3 sort.
+The first and only value-level use site in this slice is an `arbitrary` proof
+field; general view-typed function parameters and caller entailment are still
+unimplemented.
+
+The arbitrary field retains a parse-local source object and a distinct strong
+same-manager carrier constant, view name, instantiated requirement, scoped
+recursive relation terms, and their exact index tuples. The field may not shadow
+an ordinary constructor parameter, must use a declared view at the exact argument
+types, and in this slice contains same-family recursive premises only. It is not
+inserted into a Horn body.
+
+The backend is all-or-nothing per proof family. If any constructor has an
+arbitrary field, Fine does not register the family relation or **any** of its
+constructors with fixedpoint. An intermediate implementation registered the
+first-order constructors and blocked public queries against the resulting
+partial relation. That was rejected: even unreachable through the CLI, the
+partial relation is a different mathematical object from the source family and
+would make its exact term handle lie. The final Rainfall relation event reports
+`horn_complete: false` and `least_relation: false`; ordinary constructors appear
+as `fine.proof-constructor.branch` with `lowered_to_horn: false`. Ground
+membership and fixedpoint invariant checks give a precise rejection.
+
+Proof-family induction consumes the compiler-owned constructor table. Before an
+arbitrary field becomes a branch assumption, Fine checks the separate
+availability formula
+
+```
+forall constructor_parameters. exists fresh. instantiated_view_requirement
+```
+
+by refuting its negation. This prevents an empty view from closing every branch
+vacuously. The branch itself keeps `fresh` free and assumes the view requirement,
+so the counterexample query covers every satisfying carrier value rather than
+selecting one solver witness. Each scoped recursive premise yields a distinct
+`proof-induction.arbitrary-hypothesis` event with the same binder and requirement
+handles. Rainfall also maps the arbitrary-field source object directly to the
+binder term, and records the availability formula/result separately from the
+branch result.
+
+The promoted executable fixture is
+`fine/fixtures/proof-family-arbitrary-fresh-induction.fine`. `Name` is the
+infinite native datatype `name(Int)`. The proxy `opened(body, fresh)` constructor
+makes the opened-body identity visible without pretending this is already the
+full locally nameless opening operation. Its `root` and `under_abs` branches both
+verify. The admitted Rainfall trace validates with 159 events, 43 source nodes,
+32 strong terms, and 36 source-term edges. It contains no
+`fine.proof-constructor.rule` event; `root` is retained as a non-Horn branch,
+`under_abs` retains one arbitrary field, the availability result is `available`,
+and the scoped premise/IH pair shares the exact binder and view-requirement
+handles from the constructor field.
+
+Two controls prevent flattering interpretations. `reject-empty-arbitrary-view.fine`
+uses the contradictory view `value == excluded && value != excluded`; Fine
+rejects it with `arbitrary-fresh induction would be vacuous` before checking the
+branch. `reject-arbitrary-fresh-membership.fine` attempts a ground fixedpoint
+query and is rejected because the family has a constructor outside Horn
+lowering. The existing two-recursive-premise first-order induction fixture still
+verifies all three branches after the parser and constructor-IR changes.
+
+Local commands:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/proof-family-arbitrary-fresh-induction.fine
+.build/fine rain fine/fixtures/proof-family-arbitrary-fresh-induction.fine \
+  > /tmp/proof-family-arbitrary-fresh-induction.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/proof-family-arbitrary-fresh-induction.fine \
+  /tmp/proof-family-arbitrary-fresh-induction.rain
+.build/fine run fine/fixtures/proof-family-induction-two-premises.fine
+```
+
+This closes the representation and vacuity controls, not the locally nameless
+exit. The fixture's `opened` constructor must still be replaced by actual
+open/support operations, and the source freshness/equivariance argument must
+remain explicit. Ordinary constrained-view arguments must later be discharged by
+entailment at callers. There is still no proof value, explicit proof match,
+existential constructor field, or typed branch counterexample.
+
+The first declarative build failed in the new trace assertion, not in Fine: the
+test expected the arbitrary carrier term to have exactly one source edge. It
+correctly has several—one from the arbitrary-field node and ordinary exact edges
+from each use of `fresh` in the requirement and opened recursive premise. The
+assertion now filters those edges by the declared `proof.arbitrary-field` syntax
+kind and requires exactly one owner edge while retaining the use-site edges.
+
+After correcting the ownership assertion, declarative validation passed:
+
+```
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The pre-commit tree realized as
+`/nix/store/zv7h07qqzi7a48lmvcavn6hv4c66sai2-fine-0.0.1`.

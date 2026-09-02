@@ -133,6 +133,68 @@
           assert len({event["data"]["recursive_premise"] for event in hypotheses}) == 2
           assert len({event["data"]["induction_hypothesis"] for event in hypotheses}) == 2
           PY
+          arbitrary_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-family-arbitrary-fresh-induction.fine" \
+            > "$arbitrary_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-family-arbitrary-fresh-induction.fine" "$arbitrary_rain"
+          ${pkgs.python3}/bin/python - "$arbitrary_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          one = lambda operation: next(event for event in events if event["operation"] == operation)
+          view = one("fine.view.declare")
+          assert view["data"]["view"] == "FreshApart"
+          assert view["data"]["carrier"] == "Name"
+          assert view["data"]["wrapper_sort"] is False
+          relation = one("fine.proof-family.relation")
+          assert relation["data"]["horn_complete"] is False
+          assert relation["data"]["least_relation"] is False
+          retained = one("fine.proof-constructor.branch")
+          assert retained["data"]["constructor"] == "root"
+          assert retained["data"]["lowered_to_horn"] is False
+          assert not any(event["operation"] == "fine.proof-constructor.rule" for event in events)
+          field = one("fine.proof-constructor.arbitrary-field")
+          assert field["data"]["constructor"] == "under_abs"
+          assert field["data"]["lowered_to_horn"] is False
+          binder_edges = [event for event in events
+                          if event["operation"] == "source.term.evidence"
+                          and event["data"]["term"] == field["data"]["binder_term"]]
+          source_kinds = {
+              event["data"]["id"]: event["data"]["syntax_kind"]
+              for event in events if event["operation"] == "source.node.declare"}
+          arbitrary_edges = [event for event in binder_edges
+                             if source_kinds[event["data"]["source"]] == "proof.arbitrary-field"]
+          assert len(arbitrary_edges) == 1
+          availability = one("proof-induction.arbitrary.availability")
+          assert availability["data"]["domain_outcome"] == "available"
+          hypothesis = one("proof-induction.arbitrary-hypothesis")
+          assert hypothesis["data"]["binder_term"] == field["data"]["binder_term"]
+          assert hypothesis["data"]["requirement"] == field["data"]["requirement"]
+          branch = next(event for event in events
+                        if event["operation"] == "proof-induction.branch.open"
+                        and event["data"]["constructor"] == "under_abs")
+          assert branch["data"]["arbitrary_fields"] == 1
+          assert branch["data"]["recursive_hypotheses"] == 1
+          result = next(event for event in events
+                        if event["operation"] == "proof-induction.branch.result"
+                        and event["data"]["constructor"] == "under_abs")
+          assert result["data"]["status"] == "unsat"
+          PY
+          empty_arbitrary="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-empty-arbitrary-view.fine" \
+            >"$empty_arbitrary" 2>&1; then
+            echo "expected an empty arbitrary view to be rejected" >&2
+            exit 1
+          fi
+          grep -F "arbitrary-fresh induction would be vacuous" "$empty_arbitrary"
+          partial_membership="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-arbitrary-fresh-membership.fine" \
+            >"$partial_membership" 2>&1; then
+            echo "expected partial Horn membership to be rejected" >&2
+            exit 1
+          fi
+          grep -F "has an arbitrary-fresh constructor retained outside Horn lowering" \
+            "$partial_membership"
           rejected_universal="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-proof-family-universal.fine" \
             >"$rejected_universal" 2>&1; then

@@ -73,10 +73,10 @@ because the least relation excludes index pairs produced by no constructor.
 Constructor introduction implications asserted to the ordinary SMT solver do
 not have that property and are not an admissible replacement.
 
-The implemented first-order surface is `proof family F(indices) { constructor
+The implemented Horn-complete surface is `proof family F(indices) { constructor
 C(parameters) { takes { atoms; } gives F(result_indices); } }`. Each family is
 registered as a Z3 fixedpoint relation over the native index sorts and each
-constructor becomes one universally closed Horn rule. Constructor parameters
+first-order constructor becomes one universally closed Horn rule. Constructor parameters
 must occur in the result indices; this deliberately excludes premise-only
 variables. A parameterless, assumption-free `check` containing exactly one
 ground family atom is a public least-relation membership query. It reports
@@ -84,6 +84,10 @@ ground family atom is a public least-relation membership query. It reports
 solver and produces no runtime proof value. Family atoms nested inside ordinary
 formulas, open membership queries, proof elimination, and derivation induction
 outside the explicit `inducts` form are not admitted yet.
+Ground membership and fixedpoint invariant queries are rejected for a family
+with any compiler-owned arbitrary field. Fine does not register any of that
+family's constructors with fixedpoint: an incomplete least relation would be a
+different object from the source family even if public queries were blocked.
 
 A second, still proof-erased consumer admits a parameterized `check` with
 exactly one assumed family atom and ordinary Fine guarantees. The compiler
@@ -107,20 +111,34 @@ the conjunction of those hypotheses with the negated branch goal is satisfiable.
 Every constructor branch must be unsatisfiable; constructors with premises from
 another family are rejected by this first slice.
 
+An arbitrary constrained field has the source form
+`arbitrary x: View(arguments) { recursive_atoms; }` inside a constructor's
+`takes` block. It is retained as a proof-only function field and is never put in
+the Horn body. During induction, `x` is a distinct free same-manager carrier
+term scoped to that field, the instantiated view proposition is an assumption,
+and every scoped recursive atom yields its own exact induction hypothesis. Fine
+also separately verifies `forall constructor_parameters. exists x.
+View(arguments, x)`; otherwise the branch would close vacuously. This is a
+compiler-owned induction rule, not a fixedpoint interpretation of the arbitrary
+field.
+
 The proof witness erases after branch construction rather than becoming a
 runtime GADT. Rainfall retains the constructor result, result-specialized query,
 and each exact recursive-premise/induction-hypothesis pair as compiler-owned
 evidence. This does not yet provide an explicit source match body, existential
-constructor fields, a cofinite branch, or a typed branch counterexample.
+constructor fields, a full locally nameless cofinite/equivariance proof, or a
+typed branch counterexample.
 
 A universally quantified constructor field stays explicit in the proof-family
 IR. In particular, putting the bound name only in a Horn rule body turns
 `forall fresh names` into a search for one working name. Fine must not perform
-that translation. The initial family slice rejects such fields; the locally
-nameless slice must instead elaborate cofinite quantification to an
-arbitrary-fresh branch and retain the freshness/equivariance obligation that
-makes that branch sound. This is an elaboration of the general family mechanism,
-not a primitive `cofinite` solver operation. The executable countertests are in
+that translation. Fine now retains the arbitrary carrier, its constrained-view
+requirement, scoped recursive premise, availability obligation, and induction
+hypothesis without Horn lowering. The remaining locally nameless slice must put
+the real opening and support operations into those objects and retain the
+freshness/equivariance argument that makes the source cofinite constructor
+sound. This is an elaboration of the general family mechanism, not a primitive
+`cofinite` solver operation. The polarity countertests remain in
 `fine/spikes/indexed-proof`.
 
 Erasure occurs only at the value/model boundary. Rainfall must first retain the
@@ -136,7 +154,9 @@ The intended surface is:
 
 ```fine
 view FreshFor(left: Tm, right: Tm) over Name {
-  requires fresh(value, support(left, right));
+  requires {
+    fresh(value, support(left, right));
+  }
 }
 ```
 
@@ -146,7 +166,11 @@ for the instantiated `requires` clause. A caller must discharge that obligation,
 and the callee receives it among its assumptions. Checking is by entailment, not
 by looking for a textually identical expression in an `assumes` block. Rainfall
 records the exact assumption or derived clause that discharged each view
-obligation.
+obligation. The first implemented use site is the proof-only
+`arbitrary x: FreshFor(...) { ... }` field: its proposition is supplied as an
+induction-branch resource only after Fine proves the view is inhabited for every
+constructor-parameter assignment. Ordinary function parameters with view types
+and caller-side entailment discharge remain unimplemented.
 
 Views are deliberately weaker than a general dependent type universe. They
 refine one existing native carrier with named erased propositions; they do not

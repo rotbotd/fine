@@ -128,8 +128,8 @@ fixedpoint answer, and erasure boundary. `reject-proof-family-universal.fine`
 rejects a constructor parameter absent from the result rather than treating a
 body-only Horn variable as a universal field. This query form remains membership
 only; derivation induction now has its own explicit `inducts(F(indices))` form.
-Source proof construction, arbitrary-fresh fields, constrained views, and
-general inversion remain later pieces.
+Source proof construction, general constrained-view parameters, and inversion
+remain later pieces.
 
 The first open consumer is also closed. A parameterized `check` may assume
 exactly one family atom and state ordinary Fine guarantees. Fine adds a fresh
@@ -164,6 +164,21 @@ constructors; the false control identifies `root` as the failing branch. This is
 real induction over Fine's constructor table, not a reconstruction from Spacer
 lemmas. It still has no explicit source match body, proof-term value,
 existential constructor field, cofinite branch, or lifted branch counterexample.
+
+The arbitrary-field mechanism is now executable without claiming the full
+locally nameless exit. `proof-family-arbitrary-fresh-induction.fine` declares a
+named `FreshApart` view over the existing native `Name` carrier and gives
+`under_abs` one `arbitrary fresh: FreshApart(excluded) { ... }` recursive field.
+Fine keeps the whole family out of fixedpoint once any constructor is non-Horn,
+rejects membership or fixedpoint-invariant queries for it, checks
+`forall constructor parameters. exists fresh. FreshApart(fresh, excluded)` to
+exclude vacuity, and then checks the constructor branch with the view requirement
+and exact opened recursive IH. Rainfall retains the view, arbitrary term,
+requirement, availability obligation, opened premise, and IH as distinct strong
+objects. The impossible-view control is rejected. The TODO remains open until
+the proxy `opened` constructor is replaced by actual locally nameless open/support
+operations and the freshness/equivariance argument is retained rather than
+assumed by naming the view.
 
 ## Later language test: an elementary topos without ceremony
 

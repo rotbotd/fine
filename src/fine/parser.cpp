@@ -15,8 +15,12 @@ namespace fine::syntax {
             let_kw,
             model_kw,
             proof_kw,
+            view_kw,
             family_kw,
             constructor_kw,
+            arbitrary_kw,
+            over_kw,
+            requires_kw,
             function_kw,
             synth_kw,
             check_kw,
@@ -70,8 +74,12 @@ namespace fine::syntax {
             case TokenKind::let_kw: return "`let`";
             case TokenKind::model_kw: return "`model`";
             case TokenKind::proof_kw: return "`proof`";
+            case TokenKind::view_kw: return "`view`";
             case TokenKind::family_kw: return "`family`";
             case TokenKind::constructor_kw: return "`constructor`";
+            case TokenKind::arbitrary_kw: return "`arbitrary`";
+            case TokenKind::over_kw: return "`over`";
+            case TokenKind::requires_kw: return "`requires`";
             case TokenKind::function_kw: return "`function`";
             case TokenKind::synth_kw: return "`synth`";
             case TokenKind::check_kw: return "`check`";
@@ -222,10 +230,18 @@ namespace fine::syntax {
                     return TokenKind::model_kw;
                 if (text == "proof")
                     return TokenKind::proof_kw;
+                if (text == "view")
+                    return TokenKind::view_kw;
                 if (text == "family")
                     return TokenKind::family_kw;
                 if (text == "constructor")
                     return TokenKind::constructor_kw;
+                if (text == "arbitrary")
+                    return TokenKind::arbitrary_kw;
+                if (text == "over")
+                    return TokenKind::over_kw;
+                if (text == "requires")
+                    return TokenKind::requires_kw;
                 if (text == "function")
                     return TokenKind::function_kw;
                 if (text == "synth")
@@ -277,6 +293,7 @@ namespace fine::syntax {
                     case TokenKind::proof_kw:
                         result.declarations.emplace_back(proof_or_family_decl());
                         break;
+                    case TokenKind::view_kw: result.declarations.emplace_back(view_decl()); break;
                     case TokenKind::function_kw: result.declarations.emplace_back(function_decl()); break;
                     case TokenKind::synth_kw: result.declarations.emplace_back(synth_decl()); break;
                     case TokenKind::check_kw: result.declarations.emplace_back(check_decl()); break;
@@ -422,6 +439,20 @@ namespace fine::syntax {
                                  std::move(gives)};
             }
 
+            ViewDecl view_decl() {
+                Token first = take(TokenKind::view_kw);
+                Token name = take(TokenKind::identifier, "after `view`");
+                std::vector<Parameter> parameters = this->parameters();
+                take(TokenKind::over_kw, "after the view parameters");
+                Type carrier = type();
+                take(TokenKind::left_brace, "after the view carrier");
+                std::vector<Expr> requirements =
+                    condition_block(TokenKind::requires_kw, "as the view proposition", false);
+                Token close = take(TokenKind::right_brace, "to close the view declaration");
+                return {joined(first.span, close.span), std::string(name.text), std::move(parameters),
+                        std::move(carrier), std::move(requirements)};
+            }
+
             ProofFamilyDecl proof_family_decl(Token first) {
                 Token name = take(TokenKind::identifier, "after `proof family`");
                 std::vector<Parameter> indices = parameters();
@@ -434,14 +465,53 @@ namespace fine::syntax {
                     Token constructor_name = take(TokenKind::identifier, "after `constructor`");
                     std::vector<Parameter> parameters = this->parameters();
                     take(TokenKind::left_brace, "after the constructor parameters");
-                    std::vector<Expr> premises = condition_block(TokenKind::takes_kw, "as the first constructor clause", true);
+                    take(TokenKind::takes_kw, "as the first constructor clause");
+                    take(TokenKind::left_brace, "after `takes`");
+                    std::vector<Expr> premises;
+                    std::vector<ArbitraryPremise> arbitrary_premises;
+                    while (current_.kind != TokenKind::right_brace) {
+                        if (current_.kind != TokenKind::arbitrary_kw) {
+                            premises.push_back(expr());
+                            take(TokenKind::semicolon, "after a proof-constructor premise");
+                            continue;
+                        }
+                        Token arbitrary = take(TokenKind::arbitrary_kw);
+                        Token binder = take(TokenKind::identifier, "as the arbitrary-fresh name");
+                        take(TokenKind::colon, "after the arbitrary-fresh name");
+                        Token view = take(TokenKind::identifier, "as a constrained view");
+                        take(TokenKind::left_paren, "after the constrained-view name");
+                        std::vector<Expr> arguments;
+                        while (current_.kind != TokenKind::right_paren) {
+                            arguments.push_back(expr());
+                            if (!accept(TokenKind::comma) && current_.kind != TokenKind::right_paren)
+                                fail("expected `,` or `)` after a constrained-view argument");
+                        }
+                        take(TokenKind::right_paren, "to close the constrained-view arguments");
+                        take(TokenKind::left_brace, "before the arbitrary-fresh premises");
+                        std::vector<Expr> scoped_premises;
+                        while (current_.kind != TokenKind::right_brace) {
+                            scoped_premises.push_back(expr());
+                            take(TokenKind::semicolon, "after an arbitrary-fresh premise");
+                        }
+                        Token close_arbitrary = take(TokenKind::right_brace,
+                                                     "to close the arbitrary-fresh premise");
+                        if (scoped_premises.empty())
+                            fail("an arbitrary-fresh field needs at least one recursive premise");
+                        ArbitraryPremise field{
+                            joined(arbitrary.span, close_arbitrary.span), std::string(binder.text),
+                            std::string(view.text), std::move(arguments), std::move(scoped_premises)};
+                        field.node_id = next_node_id_++;
+                        arbitrary_premises.push_back(std::move(field));
+                    }
+                    take(TokenKind::right_brace, "to close `takes`");
                     take(TokenKind::gives_kw, "after `takes`");
                     Expr result = expr();
                     take(TokenKind::semicolon, "after the constructor result");
                     Token close_constructor = take(TokenKind::right_brace, "to close the constructor");
                     constructors.push_back({joined(constructor.span, close_constructor.span),
                                             std::string(constructor_name.text), std::move(parameters),
-                                            std::move(premises), std::move(result)});
+                                            std::move(premises), std::move(arbitrary_premises),
+                                            std::move(result)});
                 }
                 if (constructors.empty())
                     fail("a proof family needs at least one constructor");
