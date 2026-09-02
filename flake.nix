@@ -20,11 +20,16 @@
       };
       playgroundServer = pkgs.writeShellApplication {
         name = "fine-playground-service";
-        runtimeInputs = [ pkgs.python3 ];
+        runtimeInputs = [ pkgs.nodejs_22 ];
         text = ''
-          exec python -m http.server "''${PORT:-4174}" \
-            --bind 127.0.0.1 \
-            --directory ${self.packages.${system}.playground}
+          exec ${self.packages.${system}.playground}/server/node_modules/.bin/vite \
+            preview \
+            --config ${self.packages.${system}.playground}/server/vite.config.js \
+            --configLoader native \
+            --outDir ${self.packages.${system}.playground}/site \
+            --host 127.0.0.1 \
+            --port "''${PORT:-4174}" \
+            --strictPort
         '';
       };
     in {
@@ -396,24 +401,31 @@
         pname = "fine-playground";
         version = "0.1.0";
         src = ./playground;
-        npmDepsHash = "sha256-t9A5fFAlRTfdL8HvekInKcGARsVnKd7t/XvSydRtowo=";
+        npmDepsHash = "sha256-q0/aG3fAf1teDpTDSVqXxHqAJGzqZ+Lh2bg8o+3ll9M=";
         npmBuildScript = "build";
+
+        preBuild = ''
+          mkdir -p public
+          cp ${./fine/fixtures/identity-transitivity.fine} public/sample.fine
+          cp ${self.packages.${system}.playground-wasm}/fine.mjs \
+            ${self.packages.${system}.playground-wasm}/fine.wasm public/
+        '';
 
         doCheck = true;
         checkPhase = ''
           runHook preCheck
           node smoke.mjs ${self.packages.${system}.playground-wasm} \
             ${./fine/fixtures/identity-transitivity.fine}
+          node serve-smoke.mjs
           runHook postCheck
         '';
 
         installPhase = ''
           runHook preInstall
-          mkdir -p "$out"
-          cp index.html dist/app.js style.css "$out/"
-          cp ${./fine/fixtures/identity-transitivity.fine} "$out/sample.fine"
-          cp ${self.packages.${system}.playground-wasm}/fine.mjs \
-            ${self.packages.${system}.playground-wasm}/fine.wasm "$out/"
+          mkdir -p "$out/site" "$out/server"
+          cp -r dist/. "$out/site/"
+          cp -r node_modules "$out/server/"
+          cp package.json vite.config.js "$out/server/"
           runHook postInstall
         '';
       };

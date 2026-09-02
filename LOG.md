@@ -3891,3 +3891,41 @@ nix build --no-link --print-out-paths .#playground
 # /nix/store/gfdsbipw2cygkqcvn3f6c9k6s31zwjh4-fine-playground-0.1.0
 # package check: wasm smoke passed with 85 Rainfall events
 ```
+
+## 2026-09-02 — Vite delivery and negotiated Zstandard Wasm
+
+The Python simple server was removed from the persistent playground path after a
+remote client observed roughly one megabyte of Wasm transfer in two minutes. The
+frontend is now built by Vite 8.2.2 and served by its preview server. Fine's
+Emscripten module remains an external root asset rather than being interpreted or
+folded into the JavaScript bundle.
+
+The build precompresses `fine.wasm` with Node's Zstandard implementation at level
+19. A narrow Vite preview middleware serves that exact file only when the request
+advertises `Accept-Encoding: zstd`; it sets `Content-Encoding: zstd`, preserves
+the `application/wasm` media type, varies the response by encoding, and otherwise
+falls through to the original module. The 10,662,220-byte Wasm becomes 2,555,916
+bytes on the wire. A client without Zstandard support still receives the original
+bytes.
+
+`playground/serve-smoke.mjs` starts the same Vite command used by the service and
+checks both paths byte-for-byte: the plain response must equal `fine.wasm`, while
+the negotiated response must equal `fine.wasm.zst` and carry the encoding header.
+This caught Vite's default attempt to bundle its config into a temporary directory
+inside the read-only Nix store. The service now uses `--configLoader native`, so
+the runtime writes nothing into its package.
+
+Validation before commit:
+
+```sh
+nix build --no-link --print-out-paths .#playground
+# /nix/store/lvl6ixcnys5h88a5483gavrb9zb5mac1-fine-playground-0.1.0
+# wasm smoke passed with 85 Rainfall events
+# serve smoke passed: 10662220 -> 2555916 bytes
+
+PORT=4175 nix run --no-write-lock-file .#playground-service
+curl -H 'Accept-Encoding: zstd' -D - -o /dev/null \
+  http://127.0.0.1:4175/fine.wasm
+# Content-Encoding: zstd
+# Content-Length: 2555916
+```

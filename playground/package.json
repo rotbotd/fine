@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "esbuild app.js --bundle --minify --format=esm --platform=browser --external:./fine.mjs --outfile=dist/app.js"
+    "build": "vite build && node compress.mjs"
   },
   "dependencies": {
     "@codemirror/language": "6.11.3",
@@ -12,6 +12,6 @@
     "codemirror": "6.0.2"
   },
   "devDependencies": {
-    "esbuild": "0.25.11"
+    "vite": "8.2.2"
   }
 }
