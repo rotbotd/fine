@@ -1,0 +1,29 @@
+body {
+  font-family: sans-serif;
+  margin: 1rem;
+}
+
+main {
+  max-width: 100rem;
+}
+
+textarea {
+  box-sizing: border-box;
+  font-family: monospace;
+  min-height: 24rem;
+  width: 100%;
+}
+
+section {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+}
+
+pre {
+  border: 1px solid;
+  min-height: 12rem;
+  overflow: auto;
+  padding: 0.5rem;
+  white-space: pre-wrap;
+}

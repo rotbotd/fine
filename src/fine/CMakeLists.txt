@@ -9,6 +9,7 @@ add_executable(fine-bin
 )
 set_target_properties(fine-bin PROPERTIES OUTPUT_NAME fine)
 target_link_libraries(fine-bin PRIVATE libz3)
+target_compile_options(fine-bin PRIVATE ${Z3_COMPONENT_CXX_FLAGS})
 foreach(define ${Z3_COMPONENT_CXX_DEFINES})
   target_compile_definitions(fine-bin PRIVATE ${define})
 endforeach()
@@ -17,6 +18,25 @@ target_include_directories(fine-bin PRIVATE
   "${PROJECT_SOURCE_DIR}/src"
   "${PROJECT_SOURCE_DIR}/src/api"
 )
+
+if (EMSCRIPTEN)
+  # The browser playground drives the ordinary CLI through Emscripten's MEMFS.
+  # Keep one executable boundary rather than growing a second, browser-only
+  # interpretation of Fine.
+  set_target_properties(fine-bin PROPERTIES SUFFIX ".mjs")
+  target_link_options(fine-bin PRIVATE
+    "-fwasm-exceptions"
+    "-sSUPPORT_LONGJMP=wasm"
+    "-sMODULARIZE=1"
+    "-sEXPORT_ES6=1"
+    "-sEXPORT_NAME=createFine"
+    "-sEXPORTED_RUNTIME_METHODS=['FS','callMain']"
+    "-sINVOKE_RUN=0"
+    "-sEXIT_RUNTIME=0"
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sENVIRONMENT=web,node"
+  )
+endif()
 
 install(TARGETS fine-bin
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"

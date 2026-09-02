@@ -1,0 +1,12 @@
+[Unit]
+Description=Fine browser playground
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/projects/fine
+ExecStart=/run/current-system/sw/bin/nix run --no-write-lock-file /root/projects/fine#playground-service
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

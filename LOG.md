@@ -3758,3 +3758,63 @@ nix flake check
 nix build --no-link --print-out-paths
 # /nix/store/q3lr6h9jp3k5xrf4cm5zqwfyz8b5i1m4-fine-0.1.0
 ```
+
+## 2026-09-02 — browser-owned Fine and Rainfall playground
+
+The first public playground slice deliberately retained the executable boundary
+instead of adding a JavaScript interpretation of Fine. `fine.mjs` is the regular
+C++ CLI plus the fork's own static `libz3`, compiled by Emscripten. Browser code
+writes the edited document to MEMFS, calls `run --proof-selector z3`, then calls
+`rain --proof-selector z3` on the exact same bytes. The page exposes only a
+textarea, a run button, ordinary output, and a formatted Rainfall pane. There is
+no server-side source execution.
+
+The declarative build has two layers. `playground-wasm` filters browser assets
+out of its source and builds the 11 MiB solver module; `playground` adds the
+three static page assets and the checked-in transitivity sample. This prevents a
+frontend edit from triggering another complete Z3 cross-compile. The
+`playground-service` flake app serves the immutable result on localhost port
+4174, and `fine-playground.service` is the persistent rc-managed unit source.
+Port 4173 was already occupied by an unrelated process and was left untouched.
+
+Three failed builds were retained because each exposed a distinct boundary bug:
+
+1. The generic derivation ran Z3's legacy `./configure` before the explicit
+   Emscripten CMake build. `dontConfigure = true` now makes the build phase sole
+   owner of configuration.
+2. CMake emits the executable at the build root, not `src/fine`; the first smoke
+   and install paths incorrectly named the latter. The wasm derivation now copies
+   `build-wasm/fine.mjs` and `build-wasm/fine.wasm`.
+3. The first datatype-model call escaped as an opaque `WebAssembly.Exception`.
+   Fine and all Z3 components were not being compiled under the same explicit
+   native Wasm exception mode. Once aligned, the real error became visible:
+   `fine: thread constructor failed: Not supported`. The model selector's
+   five-second wall-clock timeout creates a timer thread. Under Emscripten it now
+   uses a five-million-unit Z3 resource limit instead, retaining a bounded call
+   without pretending browser pthreads exist.
+
+The final Node sequence reused one initialized module for `run`, `rain`, and a
+second `run`; it returned statuses `0, 0, 0`, with respectively 13, 85, and 13
+stdout lines and no stderr. The package smoke requires
+`proof.model.grammar`, `proof.model.solve`, `proof.model.lift`, and
+`proof-core.run.close` in the emitted JSONL.
+
+Commands at closure:
+
+```sh
+nix flake check --no-build
+# all outputs evaluate, including playground-wasm, playground, and service app
+
+nix build --no-link --print-out-paths .#playground
+# /nix/store/qb8r7dgfrhdrys9xvfaah4mfp8fdhm13-fine-playground-0.1.0
+
+node playground/smoke.mjs \
+  /nix/store/6xizq6rxzj8820kbhxmwnlhw36a0lj97-fine-playground-wasm-0.1.0 \
+  fine/fixtures/identity-transitivity.fine
+# wasm smoke passed with 85 Rainfall events
+```
+
+A local service smoke returned `200 OK` for the page and served `fine.wasm`
+with `Content-Type: application/wasm` and byte length 10,662,220.
+The unchanged native semantics also passed the complete install-check suite in
+`/nix/store/822xsgb3qdbl3widd4mna173v8ilmi9s-fine-0.1.0`.

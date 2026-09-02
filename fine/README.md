@@ -76,6 +76,26 @@ The final command reparses and rechecks `explicit.fine` with proof search
 forbidden. The default remains deterministic enumeration so the complete
 frontier stays a stable reference rather than an accidental solver model.
 
+## Browser playground
+
+The browser build compiles the ordinary Fine executable and this repository's
+Z3 fork to WebAssembly. A textarea writes source into Emscripten's in-memory
+filesystem, invokes the same CLI first in `run` mode and then in `rain` mode,
+and displays the ordinary result beside formatted Rainfall events. The sample
+uses the Z3 datatype-model proof selector.
+
+```sh
+nix build --no-link --print-out-paths .#playground
+nix run .#playground-service
+# open http://127.0.0.1:4174
+```
+
+`playground-wasm` is a separate flake package, so changing the HTML or browser
+JavaScript does not rebuild the 11 MiB solver module. `playground/smoke.mjs`
+runs the compiled module under Node and requires the grammar, model solve,
+structural lift, and closed-run Rainfall events. The production service is a
+static file server: source and solver execution remain in the visitor's browser.
+
 The former Bool-predicate implementation remains runnable from tag
 `pre-pat-1d7222a23`. The exact survival and deletion map is in
 [`PROOF_TERMS.md`](PROOF_TERMS.md); current invariants are in

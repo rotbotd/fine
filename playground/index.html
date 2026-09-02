@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fine playground</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main>
+      <h1>Fine</h1>
+      <p>A browser build of Fine. Proof evidence remains virtual; Rainfall is the trace produced by the same executable.</p>
+
+      <label for="source">source</label>
+      <textarea id="source" spellcheck="false" disabled>loading…</textarea>
+      <p>
+        <button id="run" type="button" disabled>run</button>
+        <span id="status">loading Fine…</span>
+      </p>
+
+      <section>
+        <div>
+          <h2>result</h2>
+          <pre id="result"></pre>
+        </div>
+        <div>
+          <h2>rainfall</h2>
+          <pre id="rainfall"></pre>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

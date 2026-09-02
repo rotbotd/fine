@@ -170,7 +170,14 @@ namespace fine::proof_model {
         z3::expr hole = context.constant(("fine-proof-hole-" + suffix).c_str(), datatype.sort);
         z3::solver solver(context);
         z3::params options(context);
+#ifdef __EMSCRIPTEN__
+        // Emscripten's single-threaded runtime cannot create the timer thread
+        // behind Z3's wall-clock timeout. A solver resource limit preserves a
+        // bounded browser call without pretending pthreads are available.
+        options.set("rlimit", 5000000u);
+#else
         options.set("timeout", 5000u);
+#endif
         solver.set(options);
         solver.add(well(hole));
         solver.add(carrier(hole) == integer(context, grammar.expected.carrier));

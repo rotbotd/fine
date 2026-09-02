@@ -7,12 +7,33 @@
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
+      wasmSource = pkgs.lib.cleanSourceWith {
+        src = self;
+        filter = path: type:
+          let relative = pkgs.lib.removePrefix "${toString self}/" (toString path);
+          in relative == "CMakeLists.txt"
+             || relative == "z3.pc.cmake.in"
+             || relative == "cmake" || pkgs.lib.hasPrefix "cmake/" relative
+             || relative == "examples" || pkgs.lib.hasPrefix "examples/" relative
+             || relative == "scripts" || pkgs.lib.hasPrefix "scripts/" relative
+             || relative == "src" || pkgs.lib.hasPrefix "src/" relative;
+      };
+      playgroundServer = pkgs.writeShellApplication {
+        name = "fine-playground-service";
+        runtimeInputs = [ pkgs.python3 ];
+        text = ''
+          exec python -m http.server "''${PORT:-4174}" \
+            --bind 127.0.0.1 \
+            --directory ${self.packages.${system}.playground}
+        '';
+      };
     in {
       devShells.${system}.default = pkgs.mkShell {
-        packages = with pkgs; [ cmake ninja python3 clang pkg-config git ];
+        packages = with pkgs; [ cmake ninja python3 clang pkg-config git emscripten nodejs_22 ];
       };
 
-      packages.${system}.default = pkgs.stdenv.mkDerivation {
+      packages.${system} = {
+      default = pkgs.stdenv.mkDerivation {
         pname = "fine";
         version = "0.1.0";
         src = self;
@@ -342,10 +363,74 @@
         '';
       };
 
-      apps.${system}.live = {
+      playground-wasm = pkgs.stdenv.mkDerivation {
+        pname = "fine-playground-wasm";
+        version = "0.1.0";
+        src = wasmSource;
+        nativeBuildInputs = with pkgs; [ cmake ninja python3 emscripten ];
+        dontUseCmakeConfigure = true;
+        dontConfigure = true;
+
+        buildPhase = ''
+          runHook preBuild
+          emcmake cmake -S . -B build-wasm -G Ninja \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DZ3_BUILD_LIBZ3_SHARED=OFF \
+            -DZ3_BUILD_EXECUTABLE=OFF \
+            -DZ3_BUILD_TEST_EXECUTABLES=OFF \
+            -DZ3_SINGLE_THREADED=ON \
+            -DFINE_BUILD_EXECUTABLE=ON
+          cmake --build build-wasm --target fine-bin
+          runHook postBuild
+        '';
+
+        installPhase = ''
+          runHook preInstall
+          mkdir -p "$out"
+          cp build-wasm/fine.mjs build-wasm/fine.wasm "$out/"
+          runHook postInstall
+        '';
+      };
+
+      playground = pkgs.stdenvNoCC.mkDerivation {
+        pname = "fine-playground";
+        version = "0.1.0";
+        src = ./playground;
+        nativeBuildInputs = [ pkgs.nodejs_22 ];
+        dontBuild = true;
+
+        doCheck = true;
+        checkPhase = ''
+          runHook preCheck
+          node smoke.mjs ${self.packages.${system}.playground-wasm} \
+            ${./fine/fixtures/identity-transitivity.fine}
+          runHook postCheck
+        '';
+
+        installPhase = ''
+          runHook preInstall
+          mkdir -p "$out"
+          cp index.html app.js style.css "$out/"
+          cp ${./fine/fixtures/identity-transitivity.fine} "$out/sample.fine"
+          cp ${self.packages.${system}.playground-wasm}/fine.mjs \
+            ${self.packages.${system}.playground-wasm}/fine.wasm "$out/"
+          runHook postInstall
+        '';
+      };
+      };
+
+      apps.${system} = {
+      live = {
         type = "app";
         program = "${self.packages.${system}.default}/bin/fine-rain-live";
         meta.description = "Local browser editor for live Fine Rainfall evidence";
+      };
+
+      playground-service = {
+        type = "app";
+        program = "${playgroundServer}/bin/fine-playground-service";
+        meta.description = "Serve Fine's browser playground on localhost";
+      };
       };
     };
 }

@@ -204,6 +204,7 @@ elseif (WIN32)
   list(APPEND Z3_DEPENDENT_LIBS dbghelp)
 elseif (EMSCRIPTEN)
   message(STATUS "Platform: Emscripten")
+  list(APPEND Z3_COMPONENT_CXX_FLAGS "-fwasm-exceptions")
   list(APPEND Z3_DEPENDENT_EXTRA_CXX_LINK_FLAGS
     "-Os"
     "-s ALLOW_MEMORY_GROWTH=1"
