@@ -113,6 +113,42 @@
           echo "$false_predicate_induction"
           grep -F "refuted-predicate-induction: equal_indices" <<<"$false_predicate_induction"
           grep -F "failed-constructor: root" <<<"$false_predicate_induction"
+          contextual_induction="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-context-induction.fine")"
+          echo "$contextual_induction"
+          grep -F "verified-predicate-induction: preserves_ceiling" <<<"$contextual_induction"
+          contextual_induction_false="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-context-induction-false.fine")"
+          echo "$contextual_induction_false"
+          grep -F "refuted-predicate-induction: strict_ceiling" <<<"$contextual_induction_false"
+          grep -F "failed-constructor: root" <<<"$contextual_induction_false"
+          contextual_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/predicate-context-induction.fine" \
+            > "$contextual_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/predicate-context-induction.fine" "$contextual_rain"
+          ${pkgs.python3}/bin/python - "$contextual_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          opened = next(event for event in events
+                        if event["operation"] == "predicate-induction.run.open")
+          assert opened["data"]["context_parameters"] == 1
+          assert opened["data"]["context_assumptions"] == 1
+          hypothesis = next(event for event in events
+                            if event["operation"] == "predicate-induction.hypothesis")
+          assert hypothesis["data"]["constructor"] == "under"
+          assert hypothesis["data"]["generalized_parameters"] == 1
+          terms = {event["data"]["id"]: event["data"]["text"]
+                   for event in events if event["operation"] == "term.declare"}
+          text = terms[hypothesis["data"]["induction_hypothesis"]]
+          assert "forall[" in text
+          assert "fine.predicate-induction.preserves_ceiling.under.premise0" in text
+          branch = next(event for event in events
+                        if event["operation"] == "predicate-induction.branch.open"
+                        and event["data"]["constructor"] == "under")
+          assert branch["data"]["context_assumptions"]
+          assert branch["data"]["goal"]
+          PY
           predicate_induction_rain="$(mktemp)"
           $out/bin/fine rain "$src/fine/fixtures/predicate-induction-two-premises.fine" \
             > "$predicate_induction_rain"

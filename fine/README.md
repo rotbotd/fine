@@ -123,13 +123,20 @@ relation such as `Step(before, after)`, a check writes
 `inducts(Step(before, after));` and repeats that exact atom in `assumes`. Fine
 enumerates its retained predicate constructors, substitutes each constructor's
 result indices into the guarantee, and supplies one induction hypothesis at the
-exact indices of every recursive premise. Each resulting branch is a separate
-ordinary SMT refutation query. Rainfall keeps the constructor result and every
-premise/hypothesis pair before the derivation witness erases; it does not reconstruct
-branches from Spacer's projected learned lemmas. This slice excludes explicit
-proof matches, existential constructor fields, and typed branch counterexamples.
+exact indices of every recursive premise. Additional check parameters are
+universally generalized in every IH. Additional `assumes` clauses become the
+antecedent of that IH and are separately specialized to the constructor result
+in the branch query. This is what lets a recursive branch instantiate a context
+parameter differently from its source occurrence; `predicate-context-induction.fine`
+requires the IH at `ceiling - 1`. Each branch remains a separate ordinary SMT
+refutation query. Rainfall keeps the constructor result, specialized context,
+and every premise/hypothesis pair before the derivation witness erases; it does
+not reconstruct branches from Spacer's projected learned lemmas. Predicate
+atoms in guarantees and inversion of auxiliary predicate assumptions remain
+outside this slice, so this is setup for preservation rather than preservation
+itself.
 
-The first non-Horn proof field is explicit rather than smuggled through a body
+The first non-Horn derivation field is explicit rather than smuggled through a body
 variable:
 
 ```fine

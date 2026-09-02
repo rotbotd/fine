@@ -155,7 +155,7 @@ derivation induction is added.
 
 The first-order derivation-induction sub-slice is closed by
 `predicate-induction.fine`. `inducts(Step(before, after))` requires the exact
-same atom as the sole `assumes` clause. Fine makes one compiler-owned branch per
+same atom first in `assumes`. Fine makes one compiler-owned branch per
 retained constructor, substitutes that constructor's result indices into the
 guarantee, and supplies one guarantee-shaped induction hypothesis at each
 recursive premise's exact indices. The two-premise fixture retains two distinct
@@ -163,7 +163,20 @@ premise/hypothesis pairs in its `pairwise` branch and verifies all three
 constructors; the false control identifies `root` as the failing branch. This is
 real induction over Fine's constructor table, not a reconstruction from Spacer
 lemmas. It still has no explicit source match body, proof-term value,
-existential constructor field, cofinite branch, or lifted branch counterexample.
+existential constructor field, or lifted branch counterexample.
+
+Contextual derivation induction is closed by
+`predicate-context-induction.fine`. Predicate indices remain the leading check
+parameters; later parameters are universally generalized in every recursive
+IH. Later `assumes` clauses become the IH antecedent and are independently
+specialized to each constructor result in the branch query. The executable
+`SameHeight` theorem needs the recursive IH at `ceiling - 1`; retaining only the
+free source occurrence of `ceiling` cannot close it. Its false strict-ceiling
+control fails at `root`. Rainfall retains the context arity, exact auxiliary
+assumption, result-specialized branch assumption, qid-bearing universal IH, and
+branch result. This admits the shape of a preservation context, but not yet its
+substance: predicate atoms remain forbidden in guarantees and Fine cannot invert
+an auxiliary typing derivation.
 
 The arbitrary-field mechanism now has a real locally nameless consumer at the
 evidence boundary. `predicate-cofinite-support-induction.fine` represents

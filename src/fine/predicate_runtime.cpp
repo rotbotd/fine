@@ -338,35 +338,42 @@ namespace fine::runtime_detail {
         syntax::Expr const &target = *declaration.predicate_induction;
         if (!predicates_.contains(target.name))
             reject(target.span, "`inducts` target must call a declared predicate");
-        if (declaration.assumes.size() != 1)
-            reject(declaration.span, "predicate induction needs exactly its target atom in `assumes`");
+        if (declaration.assumes.empty())
+            reject(declaration.span, "predicate induction needs its target atom first in `assumes`");
         syntax::Expr const &assumed = declaration.assumes.front();
         if (assumed.kind != syntax::Expr::Kind::call || assumed.name != target.name)
             reject(assumed.span, "predicate induction assumption must be the same predicate as `inducts`");
 
         PredicateInfo const &predicate = *predicates_.at(target.name);
-        if (declaration.parameters.size() != predicate.index_types.size() ||
-            target.elements.size() != declaration.parameters.size())
-            reject(target.span, "the first predicate-induction slice needs exactly one check parameter per predicate index");
+        std::size_t index_count = predicate.index_types.size();
+        if (declaration.parameters.size() < index_count || target.elements.size() != index_count)
+            reject(target.span,
+                   "predicate induction needs one leading check parameter per predicate index; later parameters are "
+                   "generalized context");
 
         ExpressionEnvironment environment;
-        z3::expr_vector check_terms(context_);
+        z3::expr_vector index_terms(context_);
+        z3::expr_vector context_terms(context_);
         std::set<std::string> parameter_names;
         for (std::size_t i = 0; i < declaration.parameters.size(); ++i) {
             syntax::Parameter const &parameter = declaration.parameters[i];
             if (!parameter_names.insert(parameter.name).second)
                 reject(parameter.span, "duplicate check parameter `" + parameter.name + "`");
             TypePtr type = resolve_type(parameter.type);
-            if (!same(type, predicate.index_types[i]))
+            if (i < index_count && !same(type, predicate.index_types[i]))
                 reject(parameter.type.span, "predicate-induction parameter " + std::to_string(i + 1) + " must have type `" +
                                                 predicate.index_types[i]->display + "`");
-            if (target.elements[i].kind != syntax::Expr::Kind::name || target.elements[i].name != parameter.name)
+            if (i < index_count &&
+                (target.elements[i].kind != syntax::Expr::Kind::name || target.elements[i].name != parameter.name))
                 reject(target.elements[i].span,
-                       "predicate-induction indices must be the check parameters in declaration order");
+                       "predicate-induction indices must be the leading check parameters in declaration order");
             std::string internal = "Fine.predicate-induction." + declaration.name + ".arg" + std::to_string(i);
             z3::expr term = context_.constant(internal.c_str(), type->sort);
             environment.emplace(parameter.name, TypedExpression{type, term});
-            check_terms.push_back(term);
+            if (i < index_count)
+                index_terms.push_back(term);
+            else
+                context_terms.push_back(term);
         }
 
         std::function<void(syntax::Expr const &)> reject_predicate_in_guarantee = [&](syntax::Expr const &expression) {
@@ -385,6 +392,14 @@ namespace fine::runtime_detail {
         TypedExpression assumed_term = elaborate_expression(assumed, environment);
         if (!Z3_is_eq_ast(context_, target_term.expression, assumed_term.expression))
             reject(assumed.span, "`inducts` target and assumed predicate atom must elaborate identically");
+        z3::expr auxiliary_assumptions = context_.bool_val(true);
+        for (std::size_t i = 1; i < declaration.assumes.size(); ++i) {
+            syntax::Expr const &condition = declaration.assumes[i];
+            TypedExpression elaborated = elaborate_expression(condition, environment);
+            if (!same(elaborated.type, bool_type_))
+                reject(condition.span, "predicate-induction context assumption must have type Bool");
+            auxiliary_assumptions = auxiliary_assumptions && elaborated.expression;
+        }
         z3::expr guarantees = context_.bool_val(true);
         for (syntax::Expr const &condition : declaration.ensures) {
             TypedExpression elaborated = elaborate_expression(condition, environment);
@@ -403,17 +418,48 @@ namespace fine::runtime_detail {
                 {RainfallRecorder::string_field("declaration", declaration.name),
                  RainfallRecorder::string_field("predicate", predicate.name),
                  RainfallRecorder::number_field("constructors", predicate.constructors.size()),
+                 RainfallRecorder::number_field("context_parameters", context_terms.size()),
+                 RainfallRecorder::number_field("context_assumptions", declaration.assumes.size() - 1),
                  RainfallRecorder::string_field("target", rainfall_->term(target_term.expression)),
+                 RainfallRecorder::string_field("auxiliary_assumptions", rainfall_->term(auxiliary_assumptions)),
                  RainfallRecorder::string_field("guarantees", rainfall_->term(guarantees))});
 
         auto instantiate = [&](z3::expr const &expression, std::vector<z3::expr> const &indices) {
-            if (indices.size() != check_terms.size())
+            if (indices.size() != index_terms.size())
                 throw std::runtime_error("internal predicate index arity mismatch");
             z3::expr_vector replacements(context_);
             for (z3::expr const &index : indices)
                 replacements.push_back(index);
             z3::expr result = expression;
-            return result.substitute(check_terms, replacements);
+            return result.substitute(index_terms, replacements);
+        };
+
+        z3::expr contextual_theorem = z3::implies(auxiliary_assumptions, guarantees);
+        auto induction_hypothesis = [&](std::vector<z3::expr> const &indices, std::string const &suffix) {
+            if (context_terms.empty())
+                return declaration.assumes.size() == 1 ? instantiate(guarantees, indices)
+                                                       : instantiate(contextual_theorem, indices);
+
+            z3::expr hypothesis = instantiate(contextual_theorem, indices);
+            z3::expr_vector source(context_);
+            z3::expr_vector destination(context_);
+            std::vector<Z3_app> bound;
+            for (unsigned i = 0; i < context_terms.size(); ++i) {
+                z3::expr const &term = context_terms[i];
+                std::string name = "Fine.predicate-induction." + declaration.name + ".ih." + suffix + ".context" +
+                                   std::to_string(i);
+                z3::expr generalized = context_.constant(name.c_str(), term.get_sort());
+                source.push_back(term);
+                destination.push_back(generalized);
+                bound.push_back(reinterpret_cast<Z3_app>(static_cast<Z3_ast>(generalized)));
+            }
+            hypothesis = hypothesis.substitute(source, destination);
+            std::string qid = "fine.predicate-induction." + declaration.name + "." + suffix;
+            Z3_ast quantified = Z3_mk_quantifier_const_ex(
+                context_, true, 0, context_.str_symbol(qid.c_str()), context_.str_symbol(""),
+                static_cast<unsigned>(bound.size()), bound.data(), 0, nullptr, 0, nullptr, hypothesis);
+            context_.check_error();
+            return z3::expr(context_, quantified);
         };
 
         std::string failed_branch;
@@ -425,11 +471,13 @@ namespace fine::runtime_detail {
             z3::expr constructor_result = predicate.relation(static_cast<unsigned>(constructor.result_indices.size()),
                                                           constructor.result_indices.data());
             z3::expr branch_goal = instantiate(guarantees, constructor.result_indices);
+            z3::expr branch_assumptions = instantiate(auxiliary_assumptions, constructor.result_indices);
             z3::expr hypotheses = context_.bool_val(true);
             std::vector<z3::expr> hypothesis_terms;
             for (std::size_t i = 0; i < constructor.recursive_premise_indices.size(); ++i) {
                 std::vector<z3::expr> const &indices = constructor.recursive_premise_indices[i];
-                z3::expr hypothesis = instantiate(guarantees, indices);
+                z3::expr hypothesis = induction_hypothesis(
+                    indices, constructor.name + ".premise" + std::to_string(i));
                 hypotheses = hypotheses && hypothesis;
                 hypothesis_terms.push_back(hypothesis);
                 if (rainfall_) {
@@ -441,7 +489,8 @@ namespace fine::runtime_detail {
                         {RainfallRecorder::string_field("constructor", constructor.name),
                          RainfallRecorder::number_field("premise_ordinal", i),
                          RainfallRecorder::string_field("recursive_premise", rainfall_->term(premise)),
-                         RainfallRecorder::string_field("induction_hypothesis", rainfall_->term(hypothesis))});
+                         RainfallRecorder::string_field("induction_hypothesis", rainfall_->term(hypothesis)),
+                         RainfallRecorder::number_field("generalized_parameters", context_terms.size())});
                 }
             }
 
@@ -519,7 +568,9 @@ namespace fine::runtime_detail {
                 hypotheses = hypotheses && field.requirement;
                 for (std::size_t i = 0; i < field.recursive_premise_indices.size(); ++i) {
                     std::vector<z3::expr> const &indices = field.recursive_premise_indices[i];
-                    z3::expr hypothesis = instantiate(guarantees, indices);
+                    z3::expr hypothesis = induction_hypothesis(
+                        indices, constructor.name + ".arbitrary" + std::to_string(field_ordinal) + ".premise" +
+                                     std::to_string(i));
                     hypotheses = hypotheses && hypothesis;
                     hypothesis_terms.push_back(hypothesis);
                     if (rainfall_)
@@ -538,10 +589,11 @@ namespace fine::runtime_detail {
                              RainfallRecorder::string_field("recursive_premise",
                                                             rainfall_->term(field.premise_terms[i])),
                              RainfallRecorder::string_field("induction_hypothesis", rainfall_->term(hypothesis)),
+                             RainfallRecorder::number_field("generalized_parameters", context_terms.size()),
                              RainfallRecorder::string_field("scope_owner", "fine-arbitrary-field")});
                 }
             }
-            z3::expr branch_query = hypotheses && !branch_goal;
+            z3::expr branch_query = hypotheses && branch_assumptions && !branch_goal;
             if (rainfall_) {
                 rainfall_->source_term(declaration.node_id, declaration.span, "decl.check", branch_query, "generated",
                                        {run_scope, branch_scope});
@@ -551,6 +603,7 @@ namespace fine::runtime_detail {
                     {RainfallRecorder::string_field("constructor", constructor.name),
                      RainfallRecorder::number_field("constructor_parameters", constructor.parameters.size()),
                      RainfallRecorder::string_field("constructor_result", rainfall_->term(constructor_result)),
+                     RainfallRecorder::string_field("context_assumptions", rainfall_->term(branch_assumptions)),
                      RainfallRecorder::string_field("goal", rainfall_->term(branch_goal)),
                      RainfallRecorder::string_field("counterexample_query", rainfall_->term(branch_query)),
                      RainfallRecorder::number_field("recursive_hypotheses", hypothesis_terms.size()),

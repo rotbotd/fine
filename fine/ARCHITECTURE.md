@@ -102,14 +102,21 @@ reported only as fixedpoint reachability until its concrete index tuple can be
 lifted honestly.
 
 Explicit first-order derivation induction uses
-`inducts(F(index_parameters))`. The target must be identical to the sole predicate
-atom in `assumes`, with one check parameter per predicate index in declaration
-order. Fine enumerates the retained constructors. For each branch it substitutes
-the exact result indices into the guarantee, makes one guarantee-shaped induction
-hypothesis at every recursive premise's indices, and asks ordinary SMT whether
-the conjunction of those hypotheses with the negated branch goal is satisfiable.
-Every constructor branch must be unsatisfiable; constructors with premises from
-another predicate are rejected by this first slice.
+`inducts(F(index_parameters))`. The target must be identical to the first
+predicate atom in `assumes`; the leading check parameters are its indices in
+declaration order. Later check parameters form the context. Fine conjoins every
+later assumption as `A(indices, context)` and the guarantees as
+`G(indices, context)`. For each recursive premise at indices `r`, its compiler-owned
+IH is `forall context. A(r, context) -> G(r, context)`. The constructor branch
+asserts `A(result_indices, context)` and refutes `G(result_indices, context)` in
+the presence of those exact IHs. Universal generalization is essential: the
+ceiling fixture closes its recursive branch only by instantiating the IH at
+`ceiling - 1`, not at the branch's free ceiling constant. Rainfall records the
+context arity, original auxiliary assumptions, result-specialized assumptions,
+and generalized IH independently. Every constructor branch must be
+unsatisfiable; constructors with premises from another predicate, predicate
+atoms in guarantees, and derivation inversion of auxiliary predicate assumptions
+remain outside this slice.
 
 An arbitrary constrained field has the source form
 `arbitrary x: View(arguments) { recursive_atoms; }` inside a constructor's

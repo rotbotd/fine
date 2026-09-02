@@ -2309,3 +2309,83 @@ are `z3`, `smt`, `programming-languages`, `formal-methods`, and
 initial publication because the retained upstream tree contains Z3's large
 workflow suite, not Fine-specific CI; the locked Nix install check remains the
 release gate until a bounded Fine workflow is written.
+
+## 2026-09-02 — contextual derivation induction
+
+The first attempt to write the actual preservation theorem exposed an earlier
+blocker than typing inversion: predicate induction required exactly its target
+atom in `assumes` and exactly one check parameter per predicate index. A theorem
+of the form
+
+```
+forall before after context.
+  Step(before, after) -> A(before, context) -> G(after, context)
+```
+
+cannot use an IH which merely retains the branch's one free `context` constant.
+The recursive proof often needs a different context value. Locally nameless
+preservation will require environments and types to be generalized the same way
+structural induction already generalizes non-induction parameters.
+
+`execute_predicate_induction` now gives the syntax an exact division. The
+leading check parameters remain the predicate indices and must appear directly,
+in order, in `inducts(F(...))`. Every later check parameter is context. The first
+`assumes` clause must still be the identical induction target; subsequent
+clauses are conjoined as `A(indices, context)`. Guarantees form
+`G(indices, context)`. For each recursive constructor premise at indices `r`,
+Fine builds
+
+```
+forall context. A(r, context) -> G(r, context)
+```
+
+with fresh same-manager binder constants and a stable
+`fine.predicate-induction.<check>.<constructor>.<premise>` qid. For the current
+branch it separately substitutes the constructor result indices into both the
+auxiliary assumptions and the guarantee, then asks whether
+`IHs && A(result, context) && !G(result, context)` is satisfiable. With no extra
+parameters or assumptions, the previous exact guarantee-shaped IH is preserved.
+Arbitrary-field recursive premises use the same contextual-IH builder, so their
+binder ownership and availability checks remain separate.
+
+The executable discriminator is
+`fine/fixtures/predicate-context-induction.fine`. `SameHeight` relates `zero` to
+`zero` and closes under `succ`; `height` is a native recursive Fine function.
+The theorem transports `height(before) <= ceiling` to `after`. In the recursive
+branch the source assumption gives `height(before) <= ceiling - 1`, so Z3 must
+instantiate the universally generalized IH at `ceiling - 1` before rebuilding
+the successor bound. A fixed-ceiling IH cannot close that branch. The false
+control strengthens the result to `height(after) + 1 <= ceiling` and correctly
+names `root` as the failing constructor.
+
+Rainfall's `predicate-induction.run.open` now retains context-parameter and
+context-assumption counts plus the original auxiliary-assumption term. Each
+recursive hypothesis retains its generalized-parameter count and exact
+qid-bearing universal term. Each branch retains the separately specialized
+context-assumption term, goal, counterexample query, and public result. The
+install check verifies the universal rendering rather than accepting branch
+success alone. Existing zero-context two-premise, cofinite arbitrary-field, and
+reusable-proof traces still validate unchanged.
+
+Commands and results:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/predicate-context-induction.fine
+# verified-predicate-induction: preserves_ceiling
+.build/fine run fine/fixtures/predicate-context-induction-false.fine
+# refuted-predicate-induction: strict_ceiling; failed-constructor: root
+.build/fine rain fine/fixtures/predicate-context-induction.fine > /tmp/context.rain
+python3 fine/rainfall_replay.py \
+  fine/fixtures/predicate-context-induction.fine /tmp/context.rain
+nix build --no-link --print-out-paths
+# /nix/store/k6ppijh0bip4jblzpxgyv9fkh5qs05y0-fine-0.0.1
+```
+
+This closes contextual parameters and ordinary setup assumptions, not STLC
+preservation. Predicate atoms remain rejected in guarantees, and an auxiliary
+`HasType` atom would still be opaque to the ordinary branch solver: Fine has no
+constructor-owned inversion of that typing derivation. The next justified slice
+is the smallest target-predicate construction/inversion mechanism forced by the
+application and abstraction preservation branches, not a general relaxation of
+predicate atoms inside formulas.

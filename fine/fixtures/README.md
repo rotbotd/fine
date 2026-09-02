@@ -102,6 +102,14 @@ in recursive unfolding beyond two seconds; with it present, the query closes
 immediately. Its Rainfall trace retains the generated theorem separately from
 the later `case-def`, `recfun-num-rounds`, theory, and clause traffic.
 
+`predicate-context-induction.fine` adds an ordinary assumption and one context
+parameter to constructor-generated predicate induction. Its `SameHeight`
+recursive branch must instantiate the universally generalized IH at
+`ceiling - 1` to transport `height(before) <= ceiling` to the result. The false
+strict-ceiling fixture fails at `root`. Their Rainfall traces distinguish the
+source context assumption, constructor-result specialization, generalized IH,
+and public branch result.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.
