@@ -1852,3 +1852,43 @@ nix build --no-link --print-out-paths
 
 The pre-commit tree realized as
 `/nix/store/qywg8909bkxrpzpg3hsqjjvmm6yn5jbb-fine-0.0.1`.
+
+## 2026-09-02 — Runtime partitioned at executable semantic boundaries
+
+`src/fine/runtime.cpp` had reached 3,178 lines and 205,694 bytes. It was no
+longer one runtime mechanism: it contained the core type/elaboration path, the
+erased proof-family compiler, synthesis orchestration, and the older
+bisimulation/model round-trip consumer in one in-class definition.
+
+The split is by executable ownership rather than a miscellaneous helpers file:
+
+- `runtime_internal.h` owns the internal runtime representations and the single
+  `Runtime` declaration shared by implementation units;
+- `runtime.cpp` (1,356 lines) retains core type declaration, ordinary expression
+  elaboration/lifting, checks, dispatch, and the public `fine::execute` boundary;
+- `proof_runtime.cpp` (709 lines) owns proof-family/view declaration, ground
+  membership, compiler-owned derivation induction, and Spacer invariant queries;
+- `synthesis_runtime.cpp` (396 lines) owns whole-arm and top-level synthesis
+  orchestration; and
+- `bisimulation_runtime.cpp` (447 lines) owns the original bisimulation consumer
+  plus surface model/table lift, reification, and printing.
+
+This is a source partition only: member state, term identity, manager ownership,
+and call order are unchanged. `runtime_internal.h` is private to the executable;
+`runtime.h` remains the small public execution/error interface. CMake compiles
+all four implementation units separately, so this is not an include-fragment
+or a renamed 3,000-line file.
+
+Validation:
+
+```
+clang-format -i src/fine/runtime_internal.h src/fine/runtime.cpp \
+  src/fine/proof_runtime.cpp src/fine/synthesis_runtime.cpp \
+  src/fine/bisimulation_runtime.cpp
+git diff --cached --check
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The full declarative fixture suite passed and the clean pre-commit realization
+was `/nix/store/mg4n8wxsm0qdmmarwkx0z1cm9qgqmb63-fine-0.0.1`.
