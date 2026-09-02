@@ -130,6 +130,8 @@ namespace fine::syntax {
                 Document result;
                 while (at("enum"))
                     result.enums.push_back(enum_declaration());
+                while (at("proof") && peek(1).text == "inductive")
+                    result.proof_inductives.push_back(proof_inductive());
                 while (at("function") || (at("proof") && peek(1).text == "function")) {
                     if (at("function"))
                         result.functions.push_back(function());
@@ -233,17 +235,68 @@ namespace fine::syntax {
             }
 
             ProofType proof_type() {
-                Token begin = expect("Id");
+                Token begin = identifier("proof type name");
                 expect("(");
+                if (begin.text != "Id") {
+                    ProofType result;
+                    result.kind = ProofType::Kind::inductive;
+                    result.name = begin.text;
+                    result.node_id = next_node_id_++;
+                    if (!at(")")) {
+                        while (true) {
+                            result.arguments.push_back(value_expression());
+                            if (!at(","))
+                                break;
+                            take();
+                        }
+                    }
+                    Token end = expect(")");
+                    result.span = {begin.span.begin, end.span.end};
+                    return result;
+                }
                 ValueType carrier = value_type();
                 expect(",");
                 ValueExpr left = value_expression();
                 expect(",");
                 ValueExpr right = value_expression();
                 Token end = expect(")");
-                return {ProofType::Kind::identity, {begin.span.begin, end.span.end},
-                        next_node_id_++,           std::move(carrier),
-                        std::move(left),           std::move(right)};
+                ProofType result;
+                result.kind = ProofType::Kind::identity;
+                result.span = {begin.span.begin, end.span.end};
+                result.node_id = next_node_id_++;
+                result.name = "Id";
+                result.carrier = std::move(carrier);
+                result.left = std::move(left);
+                result.right = std::move(right);
+                return result;
+            }
+
+            ProofInductiveDecl proof_inductive() {
+                Token begin = expect("proof");
+                expect("inductive");
+                Token name = identifier("proof inductive name");
+                ProofInductiveDecl result;
+                result.node_id = next_node_id_++;
+                result.name = name.text;
+                result.indices = value_parameters();
+                expect("{");
+                while (!at("}")) {
+                    Token constructor = identifier("proof constructor name");
+                    ProofConstructorDecl item;
+                    item.node_id = next_node_id_++;
+                    item.name = constructor.text;
+                    item.parameters = value_parameters();
+                    if (at("needs"))
+                        item.proof_parameters = coeffect_parameters();
+                    expect("->");
+                    item.result_type = proof_type();
+                    Token end = expect(";");
+                    item.span = {constructor.span.begin, end.span.end};
+                    result.constructors.push_back(std::move(item));
+                }
+                Token end = take();
+                result.span = {begin.span.begin, end.span.end};
+                return result;
             }
 
             CoeffectParameter coeffect_parameter() {

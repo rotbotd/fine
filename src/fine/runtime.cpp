@@ -66,15 +66,22 @@ namespace fine {
                 : carrier(carrier), left(std::move(left)), right(std::move(right)) {}
         };
 
+        struct InductiveType {
+            std::string family;
+            std::vector<ValueTerm> indices;
+        };
+
+        using SemanticProofType = std::variant<IdentityType, InductiveType>;
+
         struct ProofEvidence {
             std::string name;
-            IdentityType type;
+            SemanticProofType type;
             std::string formation;
             syntax::SourceSpan span;
             std::string left_source;
             std::string right_source;
 
-            ProofEvidence(std::string name, IdentityType type, std::string formation, syntax::SourceSpan span,
+            ProofEvidence(std::string name, SemanticProofType type, std::string formation, syntax::SourceSpan span,
                           std::string left_source, std::string right_source)
                 : name(std::move(name)), type(std::move(type)), formation(std::move(formation)), span(span),
                   left_source(std::move(left_source)), right_source(std::move(right_source)) {}
@@ -128,6 +135,16 @@ namespace fine {
         bool same_type(z3::context &context, IdentityType const &left, IdentityType const &right) {
             return left.carrier == right.carrier && same_ast(context, left.left, right.left) &&
                    same_ast(context, left.right, right.right);
+        }
+
+        bool same_type(z3::context &context, InductiveType const &left, InductiveType const &right) {
+            if (left.family != right.family || left.indices.size() != right.indices.size())
+                return false;
+            for (std::size_t i = 0; i < left.indices.size(); ++i)
+                if (left.indices[i].kind != right.indices[i].kind ||
+                    !same_ast(context, left.indices[i].expression, right.indices[i].expression))
+                    return false;
+            return true;
         }
 
         std::string print_value(syntax::ValueExpr const &expression) {
@@ -193,6 +210,19 @@ namespace fine {
             result << "Id(" << kind_name(kind_of(type.carrier)) << ", " << print_value(type.left) << ", "
                    << print_value(type.right) << ')';
             return result.str();
+        }
+
+        std::string print_proof_type(syntax::ProofType const &type) {
+            if (type.kind == syntax::ProofType::Kind::identity)
+                return print_identity(type);
+            std::ostringstream result;
+            result << type.name << '(';
+            for (std::size_t i = 0; i < type.arguments.size(); ++i) {
+                if (i)
+                    result << ", ";
+                result << print_value(type.arguments[i]);
+            }
+            return result.str() + ')';
         }
 
         std::string print_proof(syntax::ProofExpr const &expression) {
@@ -284,6 +314,8 @@ namespace fine {
                 for (auto const &enumeration : document.enums)
                     declare_enum(enumeration);
                 record_boundary();
+                for (auto const &family : document.proof_inductives)
+                    declare_proof_inductive(family);
                 for (auto const &function : document.proof_functions)
                     declare_proof_function(function);
                 for (auto const &function : document.functions)
@@ -316,6 +348,8 @@ namespace fine {
             std::optional<RainfallRecorder> rainfall_;
             std::map<std::string, std::unique_ptr<RuntimeEnum>> enums_;
             std::map<std::string, std::pair<RuntimeEnum *, std::size_t>> constructors_;
+            std::map<std::string, syntax::ProofInductiveDecl const *> proof_inductives_;
+            std::map<std::string, syntax::ProofConstructorDecl const *> proof_constructors_;
             std::map<std::string, syntax::FunctionDecl const *> functions_;
             std::map<std::string, syntax::ProofFunctionDecl const *> proof_functions_;
             std::vector<std::string> proof_function_order_;
@@ -517,6 +551,9 @@ namespace fine {
                         return value->second;
                     if (proofs.contains(expression.name))
                         reject(expression.span, "proof `" + expression.name + "` cannot inhabit a runtime value");
+                    if (proof_constructors_.contains(expression.name))
+                        reject(expression.span,
+                               "proof constructor `" + expression.name + "` cannot inhabit a runtime value");
                     if (auto found = constructors_.find(expression.name); found != constructors_.end()) {
                         RuntimeConstructor const &constructor = found->second.first->constructors[found->second.second];
                         if (!constructor.fields.empty())
@@ -556,6 +593,8 @@ namespace fine {
             IdentityType elaborate_identity(syntax::ProofType const &type, ValueEnvironment const &values,
                                             ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
                                             std::vector<z3::expr> const &absorbed) {
+                if (type.kind != syntax::ProofType::Kind::identity)
+                    reject(type.span, "expected identity proof type, found `" + print_proof_type(type) + "`");
                 require_known_type(type.carrier);
                 ValueKind carrier = kind_of(type.carrier);
                 ValueTerm left = elaborate_value(type.left, values, proofs, proof_order, absorbed);
@@ -564,6 +603,38 @@ namespace fine {
                     reject(type.span,
                            "identity endpoints do not have carrier type `" + std::string(kind_name(carrier)) + "`");
                 return {carrier, std::move(left.expression), std::move(right.expression)};
+            }
+
+            InductiveType elaborate_inductive_type(syntax::ProofType const &type, ValueEnvironment const &values,
+                                                   ProofEnvironment const &proofs,
+                                                   std::vector<std::string> const &proof_order,
+                                                   std::vector<z3::expr> const &absorbed) {
+                auto found = proof_inductives_.find(type.name);
+                if (found == proof_inductives_.end())
+                    reject(type.span, "unknown proof inductive `" + type.name + "`");
+                auto const &family = *found->second;
+                if (type.arguments.size() != family.indices.size())
+                    reject(type.span, "proof inductive `" + type.name + "` expects " +
+                                          std::to_string(family.indices.size()) + " indices");
+                InductiveType result{type.name, {}};
+                for (std::size_t i = 0; i < type.arguments.size(); ++i) {
+                    ValueTerm index = elaborate_value(type.arguments[i], values, proofs, proof_order, absorbed);
+                    require_known_type(family.indices[i].type);
+                    if (index.kind != kind_of(family.indices[i].type))
+                        reject(type.arguments[i].span, "index `" + family.indices[i].name + "` of `" + type.name +
+                                                           "` has the wrong value type");
+                    result.indices.push_back(std::move(index));
+                }
+                return result;
+            }
+
+            SemanticProofType elaborate_proof_type(syntax::ProofType const &type, ValueEnvironment const &values,
+                                                   ProofEnvironment const &proofs,
+                                                   std::vector<std::string> const &proof_order,
+                                                   std::vector<z3::expr> const &absorbed) {
+                if (type.kind == syntax::ProofType::Kind::identity)
+                    return elaborate_identity(type, values, proofs, proof_order, absorbed);
+                return elaborate_inductive_type(type, values, proofs, proof_order, absorbed);
             }
 
             bool bind_result_index(syntax::ValueExpr const &pattern, z3::expr const &target,
@@ -612,10 +683,13 @@ namespace fine {
             bool match_identity_pattern(syntax::ProofType const &pattern, ProofEvidence const &target,
                                         std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings,
                                         std::map<std::string, std::string> &source_bindings, bool &added) {
-                return kind_of(pattern.carrier) == target.type.carrier &&
-                       match_index_pattern(pattern.left, target.type.left, target.left_source, parameters, bindings,
+                auto identity = std::get_if<IdentityType>(&target.type);
+                if (!identity)
+                    return false;
+                return kind_of(pattern.carrier) == identity->carrier &&
+                       match_index_pattern(pattern.left, identity->left, target.left_source, parameters, bindings,
                                            source_bindings, added) &&
-                       match_index_pattern(pattern.right, target.type.right, target.right_source, parameters, bindings,
+                       match_index_pattern(pattern.right, identity->right, target.right_source, parameters, bindings,
                                            source_bindings, added);
             }
 
@@ -827,9 +901,12 @@ namespace fine {
                 std::vector<ProofCandidate> candidates;
                 for (auto const &candidate_name : proof_order) {
                     auto found = proofs.find(candidate_name);
-                    if (found != proofs.end() && same_type(context_, found->second.type, expected))
-                        candidates.push_back(
-                            {candidate_name, "exact-local", candidate_name, std::nullopt, {}, {}, 1, expected, {}});
+                    if (found != proofs.end()) {
+                        auto identity = std::get_if<IdentityType>(&found->second.type);
+                        if (identity && same_type(context_, *identity, expected))
+                            candidates.push_back(
+                                {candidate_name, "exact-local", candidate_name, std::nullopt, {}, {}, 1, expected, {}});
+                    }
                 }
                 if (same_ast(context_, expected.left, expected.right))
                     candidates.push_back(
@@ -925,7 +1002,8 @@ namespace fine {
                     auto found = proofs.find(expression.name);
                     if (found == proofs.end())
                         reject(expression.span, "unknown proof `" + expression.name + "`");
-                    if (!same_type(context_, found->second.type, expected))
+                    auto identity = std::get_if<IdentityType>(&found->second.type);
+                    if (!identity || !same_type(context_, *identity, expected))
                         reject(expression.span, "proof `" + expression.name + "` has the wrong identity type");
                     return {std::move(name),
                             std::move(expected),
@@ -1133,9 +1211,109 @@ namespace fine {
                         print_value(expected_syntax.right)};
             }
 
+            ProofEvidence elaborate_inductive_proof(syntax::ProofExpr const &expression,
+                                                    syntax::ProofType const &expected_syntax, InductiveType expected,
+                                                    ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                                    std::vector<std::string> const &proof_order,
+                                                    std::vector<z3::expr> const &absorbed, std::string name,
+                                                    std::string const &run) {
+                if (expression.kind == syntax::ProofExpr::Kind::name) {
+                    auto found = proofs.find(expression.name);
+                    if (found == proofs.end())
+                        reject(expression.span, "unknown proof `" + expression.name + "`");
+                    auto inductive = std::get_if<InductiveType>(&found->second.type);
+                    if (!inductive || !same_type(context_, *inductive, expected))
+                        reject(expression.span, "proof `" + expression.name + "` has the wrong inductive type");
+                    return {std::move(name), std::move(expected), "alias:" + expression.name, expression.span, "", ""};
+                }
+                if (expression.kind == syntax::ProofExpr::Kind::reflexivity)
+                    reject(expression.span, "`refl` constructs identity evidence, not `" + expected.family + "`");
+                if (expression.kind == syntax::ProofExpr::Kind::hole)
+                    reject(expression.span, "proof inductive holes are not admitted before their exact grammar exists");
+
+                auto found = proof_constructors_.find(expression.name);
+                if (found == proof_constructors_.end()) {
+                    if (proof_functions_.contains(expression.name))
+                        reject(expression.span,
+                               "identity proof function `" + expression.name + "` cannot construct inductive evidence");
+                    reject(expression.span, "unknown proof constructor `" + expression.name + "`");
+                }
+                auto const &constructor = *found->second;
+                if (expression.value_arguments.size() != constructor.parameters.size())
+                    reject(expression.span, "proof constructor `" + expression.name + "` expects " +
+                                                std::to_string(constructor.parameters.size()) + " index arguments");
+                if (expression.proof_arguments.size() != constructor.proof_parameters.size())
+                    reject(expression.span, "proof constructor `" + expression.name + "` expects " +
+                                                std::to_string(constructor.proof_parameters.size()) +
+                                                " proof arguments");
+
+                ValueEnvironment indices;
+                for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
+                    ValueTerm argument =
+                        elaborate_value(expression.value_arguments[i], values, proofs, proof_order, absorbed);
+                    require_known_type(constructor.parameters[i].type);
+                    if (argument.kind != kind_of(constructor.parameters[i].type))
+                        reject(expression.value_arguments[i].span,
+                               "index argument `" + constructor.parameters[i].name + "` has the wrong value type");
+                    indices.emplace(constructor.parameters[i].name, std::move(argument));
+                }
+
+                ProofEnvironment constructor_proofs;
+                std::vector<std::string> constructor_proof_order;
+                std::vector<z3::expr> no_absorbed;
+                std::vector<std::string> proof_sources;
+                for (std::size_t i = 0; i < constructor.proof_parameters.size(); ++i) {
+                    auto const &parameter = constructor.proof_parameters[i];
+                    SemanticProofType parameter_type = elaborate_proof_type(parameter.type, indices, constructor_proofs,
+                                                                            constructor_proof_order, no_absorbed);
+                    ProofEvidence argument = elaborate_any_proof(expression.proof_arguments[i], parameter.type,
+                                                                 std::move(parameter_type), values, proofs, proof_order,
+                                                                 absorbed, name + "." + parameter.name, run, {}, {});
+                    proof_sources.push_back(print_proof(expression.proof_arguments[i]));
+                    constructor_proofs.emplace(parameter.name, std::move(argument));
+                    constructor_proof_order.push_back(parameter.name);
+                }
+                SemanticProofType result_type = elaborate_proof_type(
+                    constructor.result_type, indices, constructor_proofs, constructor_proof_order, no_absorbed);
+                auto inductive_result = std::get_if<InductiveType>(&result_type);
+                if (!inductive_result || !same_type(context_, *inductive_result, expected))
+                    reject(expression.span,
+                           "proof constructor application `" + print_proof(expression) + "` has the wrong result type");
+
+                if (rainfall_)
+                    rainfall_->record(
+                        "derive", "proof.inductive.constructor.apply", {"run:" + run}, "fine.proof-elaborator",
+                        "A static indexed constructor forms proof evidence without creating a runtime datatype value",
+                        {RainfallRecorder::string_field("family", expected.family),
+                         RainfallRecorder::string_field("constructor", constructor.name),
+                         RainfallRecorder::string_field("body", print_proof(expression)),
+                         RainfallRecorder::raw_field("proof_arguments", RainfallRecorder::string_array(proof_sources)),
+                         RainfallRecorder::boolean_field("runtime_value_created", false)});
+                return {
+                    std::move(name), std::move(expected), "constructor:" + constructor.name, expression.span, "", ""};
+            }
+
+            ProofEvidence elaborate_any_proof(syntax::ProofExpr const &expression,
+                                              syntax::ProofType const &expected_syntax, SemanticProofType expected,
+                                              ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                              std::vector<std::string> const &proof_order,
+                                              std::vector<z3::expr> const &absorbed, std::string name,
+                                              std::string const &run, std::string const &proof_source,
+                                              std::string const &type_source) {
+                if (auto identity = std::get_if<IdentityType>(&expected))
+                    return elaborate_proof(expression, expected_syntax, std::move(*identity), values, proofs,
+                                           proof_order, absorbed, std::move(name), run, proof_source, type_source);
+                return elaborate_inductive_proof(expression, expected_syntax,
+                                                 std::move(std::get<InductiveType>(expected)), values, proofs,
+                                                 proof_order, absorbed, std::move(name), run);
+            }
+
             void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed, std::vector<std::string> within,
                         std::string_view role, std::optional<std::string> source = std::nullopt) {
-                z3::expr proposition = proof.type.left == proof.type.right;
+                auto identity = std::get_if<IdentityType>(&proof.type);
+                if (!identity)
+                    return;
+                z3::expr proposition = identity->left == identity->right;
                 absorbed.push_back(proposition);
                 if (!rainfall_)
                     return;
@@ -1154,9 +1332,70 @@ namespace fine {
                                   data);
             }
 
+            void declare_proof_inductive(syntax::ProofInductiveDecl const &declaration) {
+                if (declaration.name == "Id" || proof_inductives_.contains(declaration.name))
+                    reject(declaration.span, "duplicate proof type `" + declaration.name + "`");
+                if (declaration.constructors.empty())
+                    reject(declaration.span, "proof inductive `" + declaration.name + "` has no constructors");
+                std::set<std::string> index_names;
+                for (auto const &index : declaration.indices) {
+                    if (!index_names.insert(index.name).second)
+                        reject(index.span, "duplicate proof index `" + index.name + "`");
+                    require_known_type(index.type);
+                }
+
+                proof_inductives_.emplace(declaration.name, &declaration);
+                std::set<std::string> local_constructors;
+                for (auto const &constructor : declaration.constructors) {
+                    if (!local_constructors.insert(constructor.name).second ||
+                        proof_constructors_.contains(constructor.name) || proof_functions_.contains(constructor.name))
+                        reject(constructor.span, "duplicate proof constructor `" + constructor.name + "`");
+                    ValueEnvironment values;
+                    ProofEnvironment proofs;
+                    std::vector<std::string> proof_order;
+                    std::vector<z3::expr> absorbed;
+                    std::set<std::string> names;
+                    for (auto const &parameter : constructor.parameters) {
+                        if (!names.insert(parameter.name).second)
+                            reject(parameter.span, "duplicate constructor parameter `" + parameter.name + "`");
+                        require_known_type(parameter.type);
+                        ValueKind kind = kind_of(parameter.type);
+                        std::string symbol = "fine.proof-constructor." + constructor.name + "." + parameter.name;
+                        values.emplace(parameter.name, ValueTerm(kind, context_.constant(symbol.c_str(), sort(kind))));
+                    }
+                    for (auto const &parameter : constructor.proof_parameters) {
+                        if (!names.insert(parameter.name).second)
+                            reject(parameter.span, "duplicate constructor parameter `" + parameter.name + "`");
+                        SemanticProofType type =
+                            elaborate_proof_type(parameter.type, values, proofs, proof_order, absorbed);
+                        proofs.emplace(parameter.name,
+                                       ProofEvidence(parameter.name, std::move(type), "proof-constructor-parameter",
+                                                     parameter.span, "", ""));
+                        proof_order.push_back(parameter.name);
+                    }
+                    SemanticProofType result =
+                        elaborate_proof_type(constructor.result_type, values, proofs, proof_order, absorbed);
+                    auto inductive = std::get_if<InductiveType>(&result);
+                    if (!inductive || inductive->family != declaration.name)
+                        reject(constructor.result_type.span, "proof constructor `" + constructor.name +
+                                                                 "` must return `" + declaration.name + "(...)`");
+                    proof_constructors_.emplace(constructor.name, &constructor);
+                }
+                output_ << "declared proof inductive: " << declaration.name << " (" << declaration.constructors.size()
+                        << " constructors, static)\n";
+                if (rainfall_)
+                    rainfall_->record("object", "proof.inductive.declare", {"proof-inductive:" + declaration.name},
+                                      "fine.proof-elaborator",
+                                      "Indexed proof constructors declared only in the static evidence layer",
+                                      {RainfallRecorder::string_field("family", declaration.name),
+                                       RainfallRecorder::number_field("indices", declaration.indices.size()),
+                                       RainfallRecorder::number_field("constructors", declaration.constructors.size()),
+                                       RainfallRecorder::boolean_field("runtime_datatype_created", false)});
+            }
+
             void declare_proof_function(syntax::ProofFunctionDecl const &declaration) {
                 if (proof_functions_.contains(declaration.name) || functions_.contains(declaration.name) ||
-                    constructors_.contains(declaration.name))
+                    constructors_.contains(declaration.name) || proof_constructors_.contains(declaration.name))
                     reject(declaration.span, "duplicate function `" + declaration.name + "`");
                 ValueEnvironment indices;
                 ProofEnvironment proofs;
@@ -1248,8 +1487,9 @@ namespace fine {
                     if (rainfall_) {
                         source =
                             rainfall_->source_node(coeffect.type.node_id, coeffect.type.span, "proof-type.identity");
+                        IdentityType const &identity = std::get<IdentityType>(evidence.type);
                         std::string proposition =
-                            rainfall_->term(evidence.type.left == evidence.type.right, "coeffect-proposition");
+                            rainfall_->term(identity.left == identity.right, "coeffect-proposition");
                         rainfall_->record("object", "coeffect.demand.declare", {"function:" + declaration.name},
                                           "fine.two-level-elaborator",
                                           "Function signature declares identity evidence required from each caller",
@@ -1312,6 +1552,9 @@ namespace fine {
                     if (proof_functions_.contains(expression.name))
                         reject(expression.span, "proof function `" + expression.name +
                                                     "` cannot be called from a runtime value expression");
+                    if (proof_constructors_.contains(expression.name))
+                        reject(expression.span, "proof constructor `" + expression.name +
+                                                    "` cannot be called from a runtime value expression");
                     reject(expression.span, "unknown function `" + expression.name + "`");
                 }
                 syntax::FunctionDecl const &function = *found->second;
@@ -1356,7 +1599,8 @@ namespace fine {
                         for (auto const &candidate : caller_proof_order) {
                             auto candidate_found = caller_proofs.find(candidate);
                             if (candidate_found != caller_proofs.end() &&
-                                same_type(context_, candidate_found->second.type, demand)) {
+                                std::holds_alternative<IdentityType>(candidate_found->second.type) &&
+                                same_type(context_, std::get<IdentityType>(candidate_found->second.type), demand)) {
                                 proof_name = candidate;
                                 break;
                             }
@@ -1368,7 +1612,8 @@ namespace fine {
                     auto evidence_found = caller_proofs.find(proof_name);
                     if (evidence_found == caller_proofs.end())
                         reject(expression.span, "unknown caller proof `" + proof_name + "`");
-                    if (!same_type(context_, evidence_found->second.type, demand))
+                    if (!std::holds_alternative<IdentityType>(evidence_found->second.type) ||
+                        !same_type(context_, std::get<IdentityType>(evidence_found->second.type), demand))
                         reject(expression.span, "caller proof `" + proof_name + "` does not satisfy coeffect `" +
                                                     expression.name + "." + coeffect.name + "`");
                     ProofEvidence supplied(coeffect.name, std::move(demand), "caller:" + proof_name,
@@ -1382,9 +1627,9 @@ namespace fine {
                     output_ << "resolved coeffect: " << expression.name << '.' << coeffect.name << " <- " << proof_name
                             << (explicit_choice ? " (explicit)" : " (lexical search)") << '\n';
                     if (rainfall_) {
+                        IdentityType const &identity = std::get<IdentityType>(inserted->second.type);
                         std::string demand_term =
-                            rainfall_->term(inserted->second.type.left == inserted->second.type.right,
-                                            "instantiated-coeffect-proposition");
+                            rainfall_->term(identity.left == identity.right, "instantiated-coeffect-proposition");
                         rainfall_->record(
                             "derive", "coeffect.demand.instantiate", {"call:" + expression.name},
                             "fine.two-level-elaborator",
@@ -1467,7 +1712,8 @@ namespace fine {
                                    ValueEnvironment &values, ProofEnvironment &proofs,
                                    std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed) {
                 ensure_fresh(declaration.name, declaration.span, values, proofs);
-                IdentityType expected = elaborate_identity(declaration.type, values, proofs, proof_order, absorbed);
+                SemanticProofType expected =
+                    elaborate_proof_type(declaration.type, values, proofs, proof_order, absorbed);
                 std::string proof_source;
                 std::string type_source;
                 if (rainfall_) {
@@ -1475,31 +1721,47 @@ namespace fine {
                                                           declaration.value.kind == syntax::ProofExpr::Kind::hole
                                                               ? "proof.expression.hole"
                                                               : "proof.expression");
-                    type_source =
-                        rainfall_->source_node(declaration.type.node_id, declaration.type.span, "proof-type.identity");
+                    type_source = rainfall_->source_node(declaration.type.node_id, declaration.type.span,
+                                                         declaration.type.kind == syntax::ProofType::Kind::identity
+                                                             ? "proof-type.identity"
+                                                             : "proof-type.inductive");
                 }
                 ProofEvidence evidence =
-                    elaborate_proof(declaration.value, declaration.type, std::move(expected), values, proofs,
-                                    proof_order, absorbed, declaration.name, run, proof_source, type_source);
+                    elaborate_any_proof(declaration.value, declaration.type, std::move(expected), values, proofs,
+                                        proof_order, absorbed, declaration.name, run, proof_source, type_source);
                 if (rainfall_) {
-                    std::string proposition =
-                        rainfall_->term(evidence.type.left == evidence.type.right, "identity-proposition");
-                    rainfall_->record("object", "proof.identity.form", {"run:" + run}, "fine.proof-elaborator",
-                                      "Exact source proof evidence formed at the static level; no runtime term exists",
-                                      {RainfallRecorder::string_field("proof", declaration.name),
-                                       RainfallRecorder::string_field("formation", evidence.formation),
-                                       RainfallRecorder::string_field("proof_source", proof_source),
-                                       RainfallRecorder::string_field("type_source", type_source),
-                                       RainfallRecorder::string_field("proof_type", print_identity(declaration.type)),
-                                       RainfallRecorder::string_field("proposition", proposition),
-                                       RainfallRecorder::boolean_field("runtime_value_created", false)});
+                    if (auto identity = std::get_if<IdentityType>(&evidence.type)) {
+                        std::string proposition =
+                            rainfall_->term(identity->left == identity->right, "identity-proposition");
+                        rainfall_->record(
+                            "object", "proof.identity.form", {"run:" + run}, "fine.proof-elaborator",
+                            "Exact source proof evidence formed at the static level; no runtime term exists",
+                            {RainfallRecorder::string_field("proof", declaration.name),
+                             RainfallRecorder::string_field("formation", evidence.formation),
+                             RainfallRecorder::string_field("proof_source", proof_source),
+                             RainfallRecorder::string_field("type_source", type_source),
+                             RainfallRecorder::string_field("proof_type", print_identity(declaration.type)),
+                             RainfallRecorder::string_field("proposition", proposition),
+                             RainfallRecorder::boolean_field("runtime_value_created", false)});
+                    }
+                    else {
+                        rainfall_->record(
+                            "object", "proof.inductive.form", {"run:" + run}, "fine.proof-elaborator",
+                            "Indexed constructor evidence formed only at the static proof level",
+                            {RainfallRecorder::string_field("proof", declaration.name),
+                             RainfallRecorder::string_field("formation", evidence.formation),
+                             RainfallRecorder::string_field("proof_source", proof_source),
+                             RainfallRecorder::string_field("type_source", type_source),
+                             RainfallRecorder::string_field("proof_type", print_proof_type(declaration.type)),
+                             RainfallRecorder::boolean_field("runtime_value_created", false)});
+                    }
                 }
                 auto [inserted, ok] = proofs.emplace(declaration.name, std::move(evidence));
                 proof_order.push_back(declaration.name);
                 absorb(inserted->second, absorbed, {"run:" + run}, "local-proof",
                        proof_source.empty() ? std::nullopt : std::optional(proof_source));
                 ++result_.proofs_formed;
-                output_ << "formed proof: " << declaration.name << " : " << print_identity(declaration.type)
+                output_ << "formed proof: " << declaration.name << " : " << print_proof_type(declaration.type)
                         << " (virtual)\n";
             }
 

@@ -73,11 +73,13 @@ namespace fine::syntax {
     };
 
     struct ProofType {
-        enum class Kind { identity };
+        enum class Kind { identity, inductive };
 
         Kind kind = Kind::identity;
         SourceSpan span;
         std::size_t node_id = 0;
+        std::string name;
+        std::vector<ValueExpr> arguments;
         ValueType carrier;
         ValueExpr left;
         ValueExpr right;
@@ -129,6 +131,23 @@ namespace fine::syntax {
         ProofType result_type;
     };
 
+    struct ProofConstructorDecl {
+        SourceSpan span;
+        std::size_t node_id = 0;
+        std::string name;
+        std::vector<ValueParameter> parameters;
+        std::vector<CoeffectParameter> proof_parameters;
+        ProofType result_type;
+    };
+
+    struct ProofInductiveDecl {
+        SourceSpan span;
+        std::size_t node_id = 0;
+        std::string name;
+        std::vector<ValueParameter> indices;
+        std::vector<ProofConstructorDecl> constructors;
+    };
+
     struct EnumConstructorDecl {
         SourceSpan span;
         std::string name;
@@ -175,6 +194,7 @@ namespace fine::syntax {
 
     struct Document {
         std::vector<EnumDecl> enums;
+        std::vector<ProofInductiveDecl> proof_inductives;
         std::vector<FunctionDecl> functions;
         std::vector<ProofFunctionDecl> proof_functions;
         RunDecl run;

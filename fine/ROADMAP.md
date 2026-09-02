@@ -198,6 +198,18 @@ runtime representation, while constructor result indices and proof premises live
 only in the static proof layer. This does not turn a family into a Bool predicate
 and does not introduce a runtime proof datatype.
 
+Constructor introduction is now executable. `proof-inductive-even.fine`
+declares `Even(value: Nat)` with a base constructor and a recursive constructor
+whose virtual premise is `Even(previous)`. The constructor application
+`even_next[zero](zero_even)` forms evidence only when its proof field and exact
+result index agree. Rainfall retains declaration, constructor application, and
+formation separately while reporting that no runtime datatype or proof value was
+created. Controls reject a wrong index, a wrong recursive premise, and a proof
+constructor called from runtime value code.
+
+This does not close the whole slice. Proof-producing match, constructor-specific
+branch equations, recursive induction hypotheses, and source proof search remain.
+
 Fine may lower the proposition to a Z3 relation for checking and search, but the
 source constructor table owns branch identity, field scope, recursive-premise
 links, and induction-hypothesis links. Solver lemmas remain summaries. If Z3

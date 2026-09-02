@@ -1,0 +1,12 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+}
+
+run reject_proof_constructor_as_value {
+  let leaked: Nat = even_zero();
+}

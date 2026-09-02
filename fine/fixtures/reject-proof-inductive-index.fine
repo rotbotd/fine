@@ -1,0 +1,22 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat) needs [prior: Even(previous)] -> Even(succ(succ(previous)));
+}
+
+function predecessor(value: Nat) -> Nat {
+  match value {
+    zero => zero,
+    succ(previous) => previous,
+  }
+}
+
+run reject_proof_inductive_index {
+  // This index is solver-equal to zero, but it is not the constructor's exact
+  // manager-local result term. Fine must not silently identify the two.
+  proof bad: Even(predecessor(succ(zero))) = even_zero();
+}

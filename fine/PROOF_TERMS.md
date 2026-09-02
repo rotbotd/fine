@@ -146,3 +146,23 @@ This is deliberately not yet a faster replacement for enumeration: the
 deterministic frontier still supplies the reference grammar and residual list.
 The slice establishes the ownership, model, lift, and recheck boundaries before
 any attempt to generate a larger grammar without enumerating all complete trees.
+
+## Static indexed-constructor admission
+
+Ordinary runtime `enum` and static `proof inductive` deliberately have different
+destinations. A runtime enum becomes one native Z3 datatype and may be constructed
+or matched by value code. A proof inductive declaration contributes only an
+indexed source constructor table. Its value indices elaborate to ordinary Z3
+terms, but its inhabitants remain `ProofEvidence` and cannot enter execution.
+
+The first family is `Even(value: Nat)`. `even_zero()` has exact result
+`Even(zero)`. `even_next(previous: Nat)` requires virtual evidence
+`Even(previous)` and has exact result `Even(succ(succ(previous)))`. Applying it
+as `even_next[zero](zero_even)` checks the static argument, recursive proof field,
+and result index by manager-local AST identity. A semantic equality at a
+different term identity is not silently accepted.
+
+This is constructor introduction, not a hidden Bool predicate, a Z3 runtime
+proof datatype, or induction. Proof-producing elimination and constructor search
+remain closed until they can retain branch owner, proof fields, and recursive
+hypotheses as separate source objects.

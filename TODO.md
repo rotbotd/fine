@@ -50,6 +50,26 @@ and eliminates it, and checks `Id(Nat, one, one)` without creating a proof value
 The two rejecting controls catch non-exhaustive elimination and a mistyped
 recursive field.
 
+## Closed: indexed proof constructor introduction
+
+- [x] Add `proof inductive Family(indices)`, distinct from runtime `enum` and
+      from the former Bool-valued predicate declarations.
+- [x] Give each static constructor explicit value indices, virtual proof fields,
+      and an exact indexed result type.
+- [x] Form nested constructor evidence while checking every recursive premise
+      and result index by same-manager AST identity.
+- [x] Retain family declaration, constructor application, and evidence formation
+      separately in Rainfall; create neither a Z3 runtime datatype nor a runtime
+      proof value.
+- [x] Reject a wrong result index, a wrong recursive premise, and use of a proof
+      constructor as a runtime function.
+
+Exit test: `proof-inductive-even.fine` forms `Even(zero)` and then
+`Even(succ(succ(zero)))` with `even_next[zero](zero_even)`. The family index is
+an ordinary runtime `Nat`; the inhabitants and constructor remain static.
+This closes introduction only. Proof matching, induction hypotheses, and holes
+must be added as separate slices rather than inferred from these declarations.
+
 ## Closed: typed identity holes
 
 - [x] Add `?` with an expected identity proof type.
@@ -90,8 +110,10 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       retrofit the old Bool-valued `predicate` declaration.
 - [x] Recover closed ordinary datatypes and runtime matching against the new
       value representation.
-- [ ] Add `proof inductive` as an indexed, static constructor family; do not
+- [x] Add `proof inductive` as an indexed, static constructor family; do not
       reuse runtime enum matching or turn the family into a Bool predicate.
+- [ ] Add proof-producing elimination over `proof inductive`, retaining exact
+      constructor and proof-field identity before any solver projection.
 - [ ] Recover ordinary model/counterexample consumers one at a time.
 - [ ] Connect source proof materialization to the editor host's atomic revision
       transaction.

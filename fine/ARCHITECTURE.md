@@ -54,6 +54,33 @@ An `Id(Nat, left, right)` inhabitant remains `ProofEvidence`, and no enum match
 can inspect it. Static indexed families will use the separate `proof inductive`
 form rather than pretending an indexed proof constructor is a runtime enum.
 
+## Static indexed constructors
+
+`proof inductive` declares an indexed family at the proof level. The family
+indices are ordinary value terms, but its constructors and inhabitants exist
+only as `ProofEvidence`:
+
+```fine
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat)
+    needs [prior: Even(previous)]
+    -> Even(succ(succ(previous)));
+}
+```
+
+`even_next[zero](zero_even)` checks its explicit static index, its virtual proof
+field, and the exact result index. Fine creates no corresponding runtime Z3
+datatype and does not expose `Even(value)` as a runtime Bool. A proof constructor
+therefore cannot occur in a value expression. This is the ATS split at the
+current boundary: values carry the runtime data; indices and evidence constrain
+it statically.
+
+This first slice is introduction-only. It does not claim proof matching,
+induction, or constructor search. Those operations must retain constructor and
+recursive-field ownership explicitly before the solver is allowed to summarize
+anything.
+
 ## Contextual proof demand
 
 A function declares evidence required from its caller:

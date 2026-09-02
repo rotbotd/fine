@@ -85,6 +85,39 @@
           fi
           grep -F 'field 0 of `succ` has the wrong value type' "$wrong_enum_field"
 
+          inductive_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-even.fine")"
+          echo "$inductive_output"
+          grep -F "declared proof inductive: Even (2 constructors, static)" <<<"$inductive_output"
+          grep -F "formed proof: zero_even : Even(zero) (virtual)" <<<"$inductive_output"
+          grep -F "formed proof: two_even : Even(succ(succ(zero))) (virtual)" <<<"$inductive_output"
+          grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$inductive_output"
+
+          bad_inductive_index="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-proof-inductive-index.fine" \
+              >"$bad_inductive_index" 2>&1; then
+            echo "wrong proof-constructor result index unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'proof constructor application `even_zero()` has the wrong result type' \
+            "$bad_inductive_index"
+
+          bad_inductive_premise="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-proof-inductive-premise.fine" \
+              >"$bad_inductive_premise" 2>&1; then
+            echo "wrong proof-constructor premise unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'proof `zero_even` has the wrong inductive type' "$bad_inductive_premise"
+
+          leaked_constructor="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-proof-constructor-as-value.fine" \
+              >"$leaked_constructor" 2>&1; then
+            echo "proof constructor unexpectedly entered runtime value code" >&2
+            exit 1
+          fi
+          grep -F 'proof constructor `even_zero` cannot be called from a runtime value expression' \
+            "$leaked_constructor"
+
           materialized="$(mktemp)"
           $out/bin/fine materialize "$src/fine/fixtures/identity-coeffect.fine" > "$materialized"
           cmp "$src/fine/fixtures/identity-coeffect-materialized.fine" "$materialized"
@@ -285,6 +318,29 @@
           declarations = [e for e in events if e["operation"] == "term.declare"]
           validations = [e for e in events if e["operation"] == "term.lift.validate"]
           assert len(declarations) == len(validations) and declarations
+          PY
+
+          inductive_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-inductive-even.fine" > "$inductive_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-inductive-even.fine" "$inductive_rain"
+          ${pkgs.python3}/bin/python - "$inductive_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          declaration = next(e for e in events if e["operation"] == "proof.inductive.declare")
+          assert declaration["data"] == {
+              "family": "Even", "indices": 1, "constructors": 2,
+              "runtime_datatype_created": False,
+          }
+          applications = [e for e in events if e["operation"] == "proof.inductive.constructor.apply"]
+          assert [e["data"]["constructor"] for e in applications] == ["even_zero", "even_next"]
+          assert applications[1]["data"]["proof_arguments"] == ["zero_even"]
+          assert all(e["data"]["runtime_value_created"] is False for e in applications)
+          forms = [e for e in events if e["operation"] == "proof.inductive.form"]
+          assert [e["data"]["proof_type"] for e in forms] == [
+              "Even(zero)", "Even(succ(succ(zero)))"
+          ]
+          assert events[-1]["data"]["runtime_proof_values"] == 0
           PY
 
           hole_rain="$(mktemp)"

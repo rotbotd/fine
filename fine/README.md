@@ -44,6 +44,23 @@ runtime match must cover each constructor once. Enum values may occur in an
 identity type such as `Id(Nat, one, one)`, but its inhabitant is still static
 proof evidence rather than a runtime datatype value.
 
+Static indexed families use a separate form:
+
+```fine
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat) needs [prior: Even(previous)]
+    -> Even(succ(succ(previous)));
+}
+
+proof zero_even: Even(zero) = even_zero();
+proof two_even: Even(succ(succ(zero))) = even_next[zero](zero_even);
+```
+
+The bracketed arguments are static value indices and the parenthesized arguments
+are virtual proof fields. This slice checks constructor introduction only; proof
+matching and induction are not yet accepted syntax.
+
 Build and run:
 
 ```sh

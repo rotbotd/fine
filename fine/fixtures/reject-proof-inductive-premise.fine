@@ -1,0 +1,14 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat) needs [prior: Even(previous)] -> Even(succ(succ(previous)));
+}
+
+run reject_proof_inductive_premise {
+  proof zero_even: Even(zero) = even_zero();
+  proof bad: Even(succ(succ(succ(succ(zero))))) = even_next[succ(succ(zero))](zero_even);
+}

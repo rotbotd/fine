@@ -6,6 +6,17 @@
   evidence without creating a runtime proof value.
 - `reject-nonexhaustive-enum-match.fine` omits the recursive constructor arm.
 - `reject-enum-field-type.fine` supplies `Bool` to a recursive `Nat` field.
+- `proof-inductive-even.fine` declares the static indexed family `Even(Nat)`.
+  `even_zero` forms the base evidence; `even_next` takes an exact recursive
+  proof field and changes the result index by two. Both inhabitants remain
+  virtual while their indices are ordinary runtime `Nat` terms.
+- `reject-proof-inductive-index.fine` applies the base constructor at
+  `predecessor(succ(zero))`: solver-equal to `zero`, but not the exact
+  manager-local result index the constructor produces.
+- `reject-proof-inductive-premise.fine` supplies `Even(zero)` where the recursive
+  constructor requires evidence at its explicit `previous` index.
+- `reject-proof-constructor-as-value.fine` calls a static constructor in a
+  runtime value binding.
 - `identity-coeffect.fine` forms an elaborator-only identity proof, absorbs it,
   resolves a function coeffect from exact caller-local evidence, and verifies a
   guarantee which needs the absorbed equality.

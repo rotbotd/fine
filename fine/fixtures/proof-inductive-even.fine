@@ -1,0 +1,14 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat) needs [prior: Even(previous)] -> Even(succ(succ(previous)));
+}
+
+run proof_inductive {
+  proof zero_even: Even(zero) = even_zero();
+  proof two_even: Even(succ(succ(zero))) = even_next[zero](zero_even);
+}

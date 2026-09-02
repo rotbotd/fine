@@ -4098,3 +4098,73 @@ nix build --no-link --print-out-paths .#default
 
 `nix flake check` passed and the native artifact is
 `/nix/store/phhsharb7400y2fc7z35hsbimgf8ap74-fine-0.1.0`.
+
+## 2026-09-02 — `proof inductive` constructor-introduction slice
+
+Immediately after closing ordinary runtime enums, I implemented the other half
+of h's chosen surface split as a separate static representation rather than
+sharing runtime enum machinery.
+
+The new syntax is:
+
+```fine
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat) needs [prior: Even(previous)]
+    -> Even(succ(succ(previous)));
+}
+```
+
+A proof family records the types of its ordinary value indices. Each constructor
+has explicit static value parameters, virtual proof fields, and an indexed proof
+result. Applications preserve that separation as
+`even_next[zero](zero_even)`: square brackets instantiate static value
+parameters; parentheses supply proof evidence. Family instances elaborate to a
+new `InductiveType` containing the family identity and strong manager-local index
+terms. `ProofEvidence` now carries either an `IdentityType` or an
+`InductiveType`; neither representation was added to `ValueTerm`.
+
+Constructor declarations are checked after registering their own family, so
+recursive proof fields are legal. Every parameter type and result-family arity is
+checked. Constructor application checks value argument types, recursively checks
+proof fields, elaborates the instantiated result, and requires exact family and
+same-manager AST identity for every index. It does not ask Z3 for semantic
+equality. The discriminating control asks `even_zero()` to inhabit
+`Even(predecessor(succ(zero)))`: that index is solver-equal to `zero`, but Fine
+correctly rejects it because it is not the constructor's exact result term.
+A second control supplies `Even(zero)` where `Even(succ(succ(zero)))` is required;
+a third calls `even_zero()` in runtime value code.
+
+Rainfall now separates `proof.inductive.declare`,
+`proof.inductive.constructor.apply`, and `proof.inductive.form`. Each records that
+no runtime datatype/value was created. The positive trace has 13 events, four
+source nodes, no generated Z3 terms, and zero proof holes; both rainfall
+validation and replay pass. `fine materialize` makes no changes to the explicit
+constructor tree and its required search-free rerun passes.
+
+This closes introduction only. I deliberately did not add a Bool projection,
+proof match, induction hypotheses, or holes. The next slice must make
+proof-producing elimination preserve constructor owner, exact proof fields, and
+recursive hypotheses before any solver summary is involved.
+
+Local commands:
+
+```
+cmake --build build/proof-core -j2
+./build/proof-core/fine run fine/fixtures/proof-inductive-even.fine
+./build/proof-core/fine rain fine/fixtures/proof-inductive-even.fine > /tmp/proof-inductive.rain
+python3 fine/rainfall_validate.py fine/fixtures/proof-inductive-even.fine /tmp/proof-inductive.rain
+python3 fine/rainfall_replay.py /tmp/proof-inductive.rain
+./build/proof-core/fine materialize fine/fixtures/proof-inductive-even.fine > /tmp/proof-inductive-materialized.fine
+cmp fine/fixtures/proof-inductive-even.fine /tmp/proof-inductive-materialized.fine
+```
+
+The declared check and clean install-check build completed with:
+
+```
+nix flake check --print-build-logs
+nix build --no-link --print-out-paths .#default
+```
+
+All checks passed. Clean native artifact:
+`/nix/store/1k0ii1k35s5afxkhkig9gdj56k4wynax-fine-0.1.0`.

@@ -6,9 +6,11 @@ virtual by construction: proof and value syntax are separate, and the runtime
 value representation has no proof case.
 
 The executable core also declares recursive runtime enums and eliminates them
-with exhaustive typed matches. It forms identity proofs, absorbs their propositions
-into Z3 contexts, declares caller-local proof coeffects, and fills typed identity holes
-from a finite grammar of exact local evidence and reflexivity. Materialization
+with exhaustive typed matches. Separate `proof inductive` declarations form
+static indexed constructor evidence without creating runtime proof datatypes. It
+forms identity proofs, absorbs their propositions into Z3 contexts, declares
+caller-local proof coeffects, and fills typed identity holes from a finite grammar
+of exact local evidence and reflexivity. Materialization
 replaces the holes and writes explicit coeffect arguments, then reparses and
 reruns with both searches forbidden.
 
