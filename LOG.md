@@ -3746,3 +3746,15 @@ reference frontier and to prevent a second grammar from growing inside the
 solver backend. A later direct grammar generator may remove that cost only if
 its productions, source ownership, exact type checks, and frontier claims remain
 observationally identical to the deterministic reference.
+
+Post-commit clean-source verification for implementation commit `c96d53ffe`
+reran the complete install checks, including deterministic and Z3-selected
+transitivity, exact materialization, model Rainfall replay, and every earlier
+proof-core control:
+
+```sh
+nix flake check
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/q3lr6h9jp3k5xrf4cm5zqwfyz8b5i1m4-fine-0.1.0
+```
