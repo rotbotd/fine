@@ -50,6 +50,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     proof_selections: dict[str, dict[str, Any]] = {}
     proof_holes_closed: set[str] = set()
     proof_functions: dict[str, dict[str, Any]] = {}
+    proof_match_branches: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    proof_matches: set[tuple[str, ...]] = set()
     proof_model_grammars: dict[str, dict[str, Any]] = {}
     proof_model_solves: dict[str, dict[str, Any]] = {}
     proof_model_lifts: dict[str, dict[str, Any]] = {}
@@ -205,17 +207,51 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             _require(data.get("rendering_hash") == terms[term].get("rendering_hash"),
                      f"event {sequence}: exact lift validates a different rendering")
             term_lift_validations.add(term)
+        elif operation == "proof.inductive.match.branch":
+            scope = tuple(within)
+            refined = data.get("refined_indices")
+            value_binders = data.get("value_binders")
+            proof_binders = data.get("proof_binders")
+            _require(len(scope) == 2 and scope[1].startswith("proof-match:") and
+                     scope not in proof_matches and
+                     isinstance(data.get("constructor"), str) and data["constructor"] and
+                     isinstance(refined, list) and len(refined) == len(set(refined)) and
+                     all(isinstance(name, str) and name for name in refined) and
+                     isinstance(value_binders, list) and
+                     all(isinstance(name, str) and name for name in value_binders) and
+                     isinstance(proof_binders, list) and
+                     all(isinstance(name, str) and name for name in proof_binders) and
+                     len(value_binders + proof_binders) == len(set(value_binders + proof_binders)) and
+                     data.get("runtime_value_created") is False,
+                     f"event {sequence}: malformed indexed proof-match branch")
+            proof_match_branches.setdefault(scope, []).append(data)
+        elif operation == "proof.inductive.match":
+            scope = tuple(within)
+            branches = proof_match_branches.get(scope, [])
+            _require(len(scope) == 2 and scope[1].startswith("proof-match:") and
+                     scope not in proof_matches and
+                     isinstance(data.get("scrutinee"), str) and data["scrutinee"] and
+                     isinstance(data.get("family"), str) and data["family"] and
+                     data.get("reachable_constructors") == len(branches) and
+                     data.get("checked_arms") == len(branches) and
+                     len(branches) == len({branch["constructor"] for branch in branches}) and
+                     data.get("exhaustiveness_after_refinement") is True and
+                     data.get("runtime_value_created") is False,
+                     f"event {sequence}: malformed or incomplete indexed proof match")
+            proof_matches.add(scope)
         elif operation == "proof.function.verify":
             function = data.get("function")
             parameter_sources = data.get("parameter_sources")
+            status = data.get("status")
+            checked_result = ((status == "unsat" and data.get("result_proposition") in terms) or
+                              (status == "body-checked" and data.get("result_proposition") == ""))
             _require(isinstance(function, str) and function and
                      function not in proof_functions and
                      isinstance(parameter_sources, list) and
                      all(source_id in source_nodes
                          for source_id in parameter_sources) and
                      data.get("result_source") in source_nodes and
-                     data.get("result_proposition") in terms and
-                     data.get("status") == "unsat" and
+                     checked_result and
                      data.get("runtime_function_created") is False,
                      f"event {sequence}: malformed or repeated proof function")
             proof_functions[function] = data

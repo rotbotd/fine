@@ -162,7 +162,32 @@ as `even_next[zero](zero_even)` checks the static argument, recursive proof fiel
 and result index by manager-local AST identity. A semantic equality at a
 different term identity is not silently accepted.
 
-This is constructor introduction, not a hidden Bool predicate, a Z3 runtime
-proof datatype, or induction. Proof-producing elimination and constructor search
-remain closed until they can retain branch owner, proof fields, and recursive
-hypotheses as separate source objects.
+This is not a hidden Bool predicate or a Z3 runtime proof datatype.
+
+## Indexed proof-family elimination
+
+A proof function may have a checked proof body. `match evidence` accepts only
+indexed-family evidence and produces another proof; it cannot produce runtime
+data. Patterns keep static value binders in brackets and virtual proof fields in
+parentheses, matching constructor application syntax:
+
+```fine
+match evidence {
+  even_zero() => shape_zero[value](refl(value)),
+  even_next[previous](prior) =>
+    shape_next[value, previous](refl(value), prior),
+}
+```
+
+Fine first unifies each constructor result with the scrutinee's indices. A
+symbolic proof-function index is refined to that result inside the arm. Thus the
+base arm checks `refl(value) : Id(Nat, value, zero)`, while the recursive arm
+checks `refl(value) : Id(Nat, value, succ(succ(previous)))`; `prior` is a usable
+local `Even(previous)` proof. The exact branch environment, not a solver lemma,
+owns these substitutions and binders.
+
+Only reachable constructors count toward exhaustiveness. `match impossible {}`
+eliminates evidence of a zero-constructor family into any proof type. The same
+empty match is accepted for `Even(succ(zero))`, since neither constructor result
+can unify with that index. Writing an unreachable arm is rejected rather than
+asking its body to prove nonsense.

@@ -1,0 +1,20 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat) needs [prior: Even(previous)] -> Even(succ(succ(previous)));
+}
+
+proof function impossible_even()
+  needs [impossible: Even(succ(zero))]
+  -> Id(Int, 0, 1) {
+  match impossible {
+    even_zero() => refl(0),
+  }
+}
+
+run reject_unreachable_proof_match_arm {
+}

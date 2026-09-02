@@ -58,8 +58,11 @@ proof two_even: Even(succ(succ(zero))) = even_next[zero](zero_even);
 ```
 
 The bracketed arguments are static value indices and the parenthesized arguments
-are virtual proof fields. This slice checks constructor introduction only; proof
-matching and induction are not yet accepted syntax.
+are virtual proof fields. Proof functions may match indexed evidence in checked
+proof bodies. Each arm refines the scrutinee index to its constructor result and
+binds those two classes of fields separately. Exhaustiveness ignores impossible
+constructors, so a zero-constructor family and an impossible concrete index both
+admit `match evidence {}`. The match cannot return runtime data.
 
 Build and run:
 

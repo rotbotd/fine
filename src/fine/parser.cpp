@@ -455,6 +455,56 @@ namespace fine::syntax {
             }
 
             ProofExpr proof_expression() {
+                if (at("match")) {
+                    Token begin = take();
+                    ProofExpr result;
+                    result.kind = ProofExpr::Kind::match;
+                    result.node_id = next_node_id_++;
+                    result.matched_proof = identifier("proof match scrutinee").text;
+                    expect("{");
+                    while (!at("}")) {
+                        Token constructor = identifier("proof match constructor");
+                        SourcePosition arm_begin = constructor.span.begin;
+                        std::vector<std::string> value_binders;
+                        std::vector<std::string> proof_binders;
+                        if (at("[")) {
+                            take();
+                            if (!at("]")) {
+                                while (true) {
+                                    value_binders.push_back(identifier("proof match value binder").text);
+                                    if (!at(","))
+                                        break;
+                                    take();
+                                }
+                            }
+                            expect("]");
+                        }
+                        expect("(");
+                        if (!at(")")) {
+                            while (true) {
+                                proof_binders.push_back(identifier("proof match evidence binder").text);
+                                if (!at(","))
+                                    break;
+                                take();
+                            }
+                        }
+                        expect(")");
+                        expect("=>");
+                        ProofExpr body = proof_expression();
+                        result.match_constructors.push_back(constructor.text);
+                        result.match_value_binders.push_back(std::move(value_binders));
+                        result.match_proof_binders.push_back(std::move(proof_binders));
+                        result.match_arm_spans.push_back({arm_begin, body.span.end});
+                        result.match_bodies.push_back(std::move(body));
+                        if (at(","))
+                            take();
+                        else if (!at("}"))
+                            fail(peek(), "expected `,` or `}` after proof match arm");
+                    }
+                    Token end = take();
+                    result.span = {begin.span.begin, end.span.end};
+                    return result;
+                }
                 if (at("?")) {
                     Token token = take();
                     ProofExpr result;
@@ -519,7 +569,16 @@ namespace fine::syntax {
                     result.proof_parameters = coeffect_parameters();
                 expect("->");
                 result.result_type = proof_type();
-                Token end = expect(";");
+                Token end;
+                if (at("{")) {
+                    take();
+                    result.has_body = true;
+                    result.body = proof_expression();
+                    end = expect("}");
+                }
+                else {
+                    end = expect(";");
+                }
                 result.span = {begin.span.begin, end.span.end};
                 return result;
             }

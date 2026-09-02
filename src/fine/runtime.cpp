@@ -80,11 +80,14 @@ namespace fine {
             syntax::SourceSpan span;
             std::string left_source;
             std::string right_source;
+            std::vector<syntax::ValueExpr> index_syntax;
 
             ProofEvidence(std::string name, SemanticProofType type, std::string formation, syntax::SourceSpan span,
-                          std::string left_source, std::string right_source)
+                          std::string left_source, std::string right_source,
+                          std::vector<syntax::ValueExpr> index_syntax = {})
                 : name(std::move(name)), type(std::move(type)), formation(std::move(formation)), span(span),
-                  left_source(std::move(left_source)), right_source(std::move(right_source)) {}
+                  left_source(std::move(left_source)), right_source(std::move(right_source)),
+                  index_syntax(std::move(index_syntax)) {}
         };
 
         using ValueEnvironment = std::map<std::string, ValueTerm>;
@@ -145,6 +148,14 @@ namespace fine {
                     !same_ast(context, left.indices[i].expression, right.indices[i].expression))
                     return false;
             return true;
+        }
+
+        bool same_type(z3::context &context, SemanticProofType const &left, SemanticProofType const &right) {
+            if (left.index() != right.index())
+                return false;
+            if (auto identity = std::get_if<IdentityType>(&left))
+                return same_type(context, *identity, std::get<IdentityType>(right));
+            return same_type(context, std::get<InductiveType>(left), std::get<InductiveType>(right));
         }
 
         std::string print_value(syntax::ValueExpr const &expression) {
@@ -249,6 +260,32 @@ namespace fine {
                 }
                 result << ')';
                 return result.str();
+            }
+            case syntax::ProofExpr::Kind::match: {
+                std::ostringstream result;
+                result << "match " << expression.matched_proof << " { ";
+                for (std::size_t i = 0; i < expression.match_constructors.size(); ++i) {
+                    if (i)
+                        result << ", ";
+                    result << expression.match_constructors[i];
+                    if (!expression.match_value_binders[i].empty()) {
+                        result << '[';
+                        for (std::size_t j = 0; j < expression.match_value_binders[i].size(); ++j) {
+                            if (j)
+                                result << ", ";
+                            result << expression.match_value_binders[i][j];
+                        }
+                        result << ']';
+                    }
+                    result << '(';
+                    for (std::size_t j = 0; j < expression.match_proof_binders[i].size(); ++j) {
+                        if (j)
+                            result << ", ";
+                        result << expression.match_proof_binders[i][j];
+                    }
+                    result << ") => " << print_proof(expression.match_bodies[i]);
+                }
+                return result.str() + " }";
             }
             case syntax::ProofExpr::Kind::hole: return "?";
             }
@@ -637,6 +674,69 @@ namespace fine {
                 return elaborate_inductive_type(type, values, proofs, proof_order, absorbed);
             }
 
+            bool contains_parameter(syntax::ValueExpr const &expression,
+                                    std::map<std::string, ValueKind> const &parameters,
+                                    ValueEnvironment const &bindings) {
+                if (expression.kind == syntax::ValueExpr::Kind::name && parameters.contains(expression.name) &&
+                    !bindings.contains(expression.name))
+                    return true;
+                return std::any_of(expression.elements.begin(), expression.elements.end(),
+                                   [&](syntax::ValueExpr const &element) {
+                                       return contains_parameter(element, parameters, bindings);
+                                   });
+            }
+
+            bool match_constructor_index(syntax::ValueExpr const &pattern, z3::expr const &target,
+                                         std::map<std::string, ValueKind> const &parameters,
+                                         ValueEnvironment &bindings) {
+                if (pattern.kind == syntax::ValueExpr::Kind::name && parameters.contains(pattern.name)) {
+                    ValueKind kind = parameters.at(pattern.name);
+                    if (!Z3_is_eq_sort(context_, target.get_sort(), sort(kind)))
+                        return false;
+                    auto found = bindings.find(pattern.name);
+                    if (found != bindings.end())
+                        return same_ast(context_, found->second.expression, target);
+                    bindings.emplace(pattern.name, ValueTerm(kind, target));
+                    return true;
+                }
+
+                auto match_runtime_constructor = [&](std::string const &name,
+                                                     std::vector<syntax::ValueExpr> const &arguments) {
+                    auto found = constructors_.find(name);
+                    if (found == constructors_.end() || !target.is_app())
+                        return false;
+                    RuntimeConstructor const &constructor =
+                        found->second.first->constructors[found->second.second];
+                    if (arguments.size() != constructor.fields.size() || target.num_args() != arguments.size() ||
+                        !Z3_is_eq_func_decl(context_, target.decl(), constructor.constructor))
+                        return false;
+                    for (std::size_t i = 0; i < arguments.size(); ++i)
+                        if (!match_constructor_index(arguments[i], target.arg(static_cast<unsigned>(i)), parameters,
+                                                     bindings))
+                            return false;
+                    return true;
+                };
+
+                if (pattern.kind == syntax::ValueExpr::Kind::name && constructors_.contains(pattern.name))
+                    return match_runtime_constructor(pattern.name, {});
+                if (pattern.kind == syntax::ValueExpr::Kind::call && constructors_.contains(pattern.name))
+                    return match_runtime_constructor(pattern.name, pattern.elements);
+                if (contains_parameter(pattern, parameters, bindings))
+                    return false;
+                ProofEnvironment no_proofs;
+                std::vector<std::string> no_proof_order;
+                std::vector<z3::expr> no_absorbed;
+                ValueTerm instantiated = elaborate_value(pattern, bindings, no_proofs, no_proof_order, no_absorbed);
+                return same_ast(context_, instantiated.expression, target);
+            }
+
+            bool is_refinable_index(syntax::ValueExpr const &source, ValueTerm const &term) {
+                if (source.kind != syntax::ValueExpr::Kind::name || !term.expression.is_app() ||
+                    term.expression.num_args() != 0 || term.expression.decl().decl_kind() != Z3_OP_UNINTERPRETED)
+                    return false;
+                return term.expression.decl().name().str().starts_with("fine.proof-function.");
+            }
+
             bool bind_result_index(syntax::ValueExpr const &pattern, z3::expr const &target,
                                    std::string const &target_source, std::map<std::string, ValueKind> const &parameters,
                                    ValueEnvironment &bindings, std::map<std::string, std::string> &source_bindings) {
@@ -821,12 +921,13 @@ namespace fine {
                 return grammar;
             }
 
-            ProofEvidence elaborate_proof_application(syntax::ProofExpr const &expression, IdentityType expected,
+            ProofEvidence elaborate_proof_application(syntax::ProofExpr const &expression,
+                                                      syntax::ProofType const &expected_syntax,
+                                                      SemanticProofType expected,
                                                       ValueEnvironment const &values, ProofEnvironment const &proofs,
                                                       std::vector<std::string> const &proof_order,
                                                       std::vector<z3::expr> const &absorbed, std::string name,
-                                                      std::string const &run, std::string left_source,
-                                                      std::string right_source) {
+                                                      std::string const &run) {
                 auto found = proof_functions_.find(expression.name);
                 if (found == proof_functions_.end()) {
                     if (functions_.contains(expression.name))
@@ -854,11 +955,11 @@ namespace fine {
                 ProofEnvironment no_proofs;
                 std::vector<std::string> no_proof_order;
                 std::vector<z3::expr> no_absorbed;
-                IdentityType result_type =
-                    elaborate_identity(function.result_type, indices, no_proofs, no_proof_order, no_absorbed);
+                SemanticProofType result_type =
+                    elaborate_proof_type(function.result_type, indices, no_proofs, no_proof_order, no_absorbed);
                 if (!same_type(context_, result_type, expected))
                     reject(expression.span,
-                           "proof application `" + print_proof(expression) + "` has the wrong identity result type");
+                           "proof application `" + print_proof(expression) + "` has the wrong result type");
 
                 std::vector<std::string> index_sources;
                 for (auto const &argument : expression.value_arguments)
@@ -867,12 +968,12 @@ namespace fine {
                 for (std::size_t i = 0; i < function.proof_parameters.size(); ++i) {
                     if (expression.proof_arguments[i].kind == syntax::ProofExpr::Kind::hole)
                         reject(expression.proof_arguments[i].span, "nested proof holes are not admitted in this slice");
-                    IdentityType parameter_type = elaborate_identity(function.proof_parameters[i].type, indices,
-                                                                     no_proofs, no_proof_order, no_absorbed);
-                    ProofEvidence argument =
-                        elaborate_proof(expression.proof_arguments[i], function.proof_parameters[i].type,
-                                        std::move(parameter_type), values, proofs, proof_order, absorbed,
-                                        name + "." + function.proof_parameters[i].name, run, {}, {});
+                    SemanticProofType parameter_type = elaborate_proof_type(
+                        function.proof_parameters[i].type, indices, no_proofs, no_proof_order, no_absorbed);
+                    ProofEvidence argument = elaborate_any_proof(
+                        expression.proof_arguments[i], function.proof_parameters[i].type, std::move(parameter_type),
+                        values, proofs, proof_order, absorbed, name + "." + function.proof_parameters[i].name, run,
+                        {}, {});
                     argument_sources.push_back(print_proof(expression.proof_arguments[i]));
                 }
 
@@ -886,8 +987,18 @@ namespace fine {
                          RainfallRecorder::raw_field("proof_arguments",
                                                      RainfallRecorder::string_array(argument_sources)),
                          RainfallRecorder::boolean_field("runtime_call_created", false)});
-                return {std::move(name), std::move(expected),    "apply:" + function.name,
-                        expression.span, std::move(left_source), std::move(right_source)};
+                std::vector<syntax::ValueExpr> index_syntax;
+                std::string left_source;
+                std::string right_source;
+                if (expected_syntax.kind == syntax::ProofType::Kind::identity) {
+                    left_source = print_value(expected_syntax.left);
+                    right_source = print_value(expected_syntax.right);
+                }
+                else {
+                    index_syntax = expected_syntax.arguments;
+                }
+                return {std::move(name), std::move(expected), "apply:" + function.name, expression.span,
+                        std::move(left_source), std::move(right_source), std::move(index_syntax)};
             }
 
             std::vector<ProofCandidate>
@@ -1027,8 +1138,8 @@ namespace fine {
                 }
                 if (expression.kind == syntax::ProofExpr::Kind::application)
                     return elaborate_proof_application(
-                        expression, std::move(expected), values, proofs, proof_order, absorbed, std::move(name), run,
-                        print_value(expected_syntax.left), print_value(expected_syntax.right));
+                        expression, expected_syntax, SemanticProofType(std::move(expected)), values, proofs,
+                        proof_order, absorbed, std::move(name), run);
 
                 if (options_.require_materialized_proofs)
                     reject(expression.span, "proof hole remains after materialization");
@@ -1224,7 +1335,8 @@ namespace fine {
                     auto inductive = std::get_if<InductiveType>(&found->second.type);
                     if (!inductive || !same_type(context_, *inductive, expected))
                         reject(expression.span, "proof `" + expression.name + "` has the wrong inductive type");
-                    return {std::move(name), std::move(expected), "alias:" + expression.name, expression.span, "", ""};
+                    return {std::move(name), std::move(expected), "alias:" + expression.name, expression.span, "", "",
+                            found->second.index_syntax};
                 }
                 if (expression.kind == syntax::ProofExpr::Kind::reflexivity)
                     reject(expression.span, "`refl` constructs identity evidence, not `" + expected.family + "`");
@@ -1234,8 +1346,9 @@ namespace fine {
                 auto found = proof_constructors_.find(expression.name);
                 if (found == proof_constructors_.end()) {
                     if (proof_functions_.contains(expression.name))
-                        reject(expression.span,
-                               "identity proof function `" + expression.name + "` cannot construct inductive evidence");
+                        return elaborate_proof_application(
+                            expression, expected_syntax, SemanticProofType(std::move(expected)), values, proofs,
+                            proof_order, absorbed, std::move(name), run);
                     reject(expression.span, "unknown proof constructor `" + expression.name + "`");
                 }
                 auto const &constructor = *found->second;
@@ -1290,7 +1403,221 @@ namespace fine {
                          RainfallRecorder::raw_field("proof_arguments", RainfallRecorder::string_array(proof_sources)),
                          RainfallRecorder::boolean_field("runtime_value_created", false)});
                 return {
-                    std::move(name), std::move(expected), "constructor:" + constructor.name, expression.span, "", ""};
+                    std::move(name), std::move(expected), "constructor:" + constructor.name, expression.span, "", "",
+                    expected_syntax.arguments};
+            }
+
+            ProofEvidence elaborate_proof_match(syntax::ProofExpr const &expression,
+                                                syntax::ProofType const &expected_syntax,
+                                                SemanticProofType expected, ValueEnvironment const &values,
+                                                ProofEnvironment const &proofs,
+                                                std::vector<std::string> const &proof_order,
+                                                std::vector<z3::expr> const &absorbed, std::string name,
+                                                std::string const &run) {
+                auto scrutinee_found = proofs.find(expression.matched_proof);
+                if (scrutinee_found == proofs.end())
+                    reject(expression.span, "unknown proof `" + expression.matched_proof + "`");
+                auto scrutinee = std::get_if<InductiveType>(&scrutinee_found->second.type);
+                if (!scrutinee)
+                    reject(expression.span, "proof match scrutinee `" + expression.matched_proof +
+                                                "` is not indexed-family evidence");
+                auto family_found = proof_inductives_.find(scrutinee->family);
+                if (family_found == proof_inductives_.end())
+                    throw std::logic_error("proof evidence names an undeclared family");
+                syntax::ProofInductiveDecl const &family = *family_found->second;
+                std::string match_scope = "proof-match:" + std::to_string(expression.node_id);
+
+                struct ReachableArm {
+                    syntax::ProofConstructorDecl const *constructor;
+                    ValueEnvironment constructor_values;
+                    ValueEnvironment refined_values;
+                    std::vector<std::string> refined_indices;
+                };
+                std::map<std::string, ReachableArm> reachable;
+                for (auto const &constructor : family.constructors) {
+                    std::map<std::string, ValueKind> parameter_kinds;
+                    for (auto const &parameter : constructor.parameters)
+                        parameter_kinds.emplace(parameter.name, kind_of(parameter.type));
+                    ValueEnvironment constructor_values;
+                    bool possible = true;
+                    for (std::size_t i = 0; i < scrutinee->indices.size(); ++i) {
+                        bool refinable = i < scrutinee_found->second.index_syntax.size() &&
+                                         is_refinable_index(scrutinee_found->second.index_syntax[i],
+                                                            scrutinee->indices[i]);
+                        if (!refinable &&
+                            !match_constructor_index(constructor.result_type.arguments[i],
+                                                     scrutinee->indices[i].expression, parameter_kinds,
+                                                     constructor_values)) {
+                            possible = false;
+                            break;
+                        }
+                    }
+                    if (!possible)
+                        continue;
+                    for (auto const &parameter : constructor.parameters) {
+                        if (constructor_values.contains(parameter.name))
+                            continue;
+                        ValueKind kind = kind_of(parameter.type);
+                        std::string symbol = "fine.proof-match." + std::to_string(expression.node_id) + "." +
+                                             constructor.name + "." + parameter.name;
+                        constructor_values.emplace(parameter.name,
+                                                   ValueTerm(kind, context_.constant(symbol.c_str(), sort(kind))));
+                    }
+                    ProofEnvironment no_proofs;
+                    std::vector<std::string> no_proof_order;
+                    std::vector<z3::expr> no_absorbed;
+                    SemanticProofType constructor_result = elaborate_proof_type(
+                        constructor.result_type, constructor_values, no_proofs, no_proof_order, no_absorbed);
+                    auto result_indices = std::get_if<InductiveType>(&constructor_result);
+                    if (!result_indices || result_indices->family != family.name)
+                        throw std::logic_error("checked proof constructor changed family");
+
+                    ValueEnvironment refined_values = values;
+                    ValueEnvironment index_refinements;
+                    for (std::size_t i = 0; i < scrutinee->indices.size(); ++i) {
+                        bool refinable = i < scrutinee_found->second.index_syntax.size() &&
+                                         is_refinable_index(scrutinee_found->second.index_syntax[i],
+                                                            scrutinee->indices[i]);
+                        if (!refinable) {
+                            if (!same_ast(context_, result_indices->indices[i].expression,
+                                          scrutinee->indices[i].expression)) {
+                                possible = false;
+                                break;
+                            }
+                            continue;
+                        }
+                        std::string const &index_name = scrutinee_found->second.index_syntax[i].name;
+                        auto previous = index_refinements.find(index_name);
+                        if (previous != index_refinements.end() &&
+                            !same_ast(context_, previous->second.expression,
+                                      result_indices->indices[i].expression)) {
+                            possible = false;
+                            break;
+                        }
+                        if (previous == index_refinements.end())
+                            index_refinements.emplace(index_name, result_indices->indices[i]);
+                    }
+                    for (auto const &[index_name, refinement] : index_refinements)
+                        refined_values.insert_or_assign(index_name, refinement);
+                    std::vector<std::string> refined_indices;
+                    for (auto const &[index_name, refinement] : index_refinements)
+                        refined_indices.push_back(index_name);
+                    if (possible)
+                        reachable.emplace(constructor.name,
+                                          ReachableArm{&constructor, std::move(constructor_values),
+                                                       std::move(refined_values), std::move(refined_indices)});
+                }
+
+                std::set<std::string> seen;
+                for (std::size_t i = 0; i < expression.match_constructors.size(); ++i) {
+                    std::string const &constructor_name = expression.match_constructors[i];
+                    auto global = proof_constructors_.find(constructor_name);
+                    if (global == proof_constructors_.end() ||
+                        global->second->result_type.name != family.name)
+                        reject(expression.match_arm_spans[i], "proof constructor `" + constructor_name +
+                                                                "` does not belong to `" + family.name + "`");
+                    if (!seen.insert(constructor_name).second)
+                        reject(expression.match_arm_spans[i], "duplicate proof match arm for `" +
+                                                                constructor_name + "`");
+                    auto arm_found = reachable.find(constructor_name);
+                    if (arm_found == reachable.end())
+                        reject(expression.match_arm_spans[i], "unreachable proof match arm `" + constructor_name +
+                                                                "` must be omitted");
+                    auto const &constructor = *arm_found->second.constructor;
+                    if (expression.match_value_binders[i].size() != constructor.parameters.size())
+                        reject(expression.match_arm_spans[i], "proof match arm `" + constructor_name + "` expects " +
+                                                                std::to_string(constructor.parameters.size()) +
+                                                                " value binders");
+                    if (expression.match_proof_binders[i].size() != constructor.proof_parameters.size())
+                        reject(expression.match_arm_spans[i], "proof match arm `" + constructor_name + "` expects " +
+                                                                std::to_string(constructor.proof_parameters.size()) +
+                                                                " evidence binders");
+
+                    ValueEnvironment branch_values = arm_found->second.refined_values;
+                    ProofEnvironment branch_proofs = proofs;
+                    std::vector<std::string> branch_proof_order = proof_order;
+                    std::vector<z3::expr> branch_absorbed = absorbed;
+                    std::set<std::string> arm_names;
+                    for (std::size_t j = 0; j < constructor.parameters.size(); ++j) {
+                        std::string const &binder = expression.match_value_binders[i][j];
+                        if (!arm_names.insert(binder).second || branch_values.contains(binder) ||
+                            branch_proofs.contains(binder))
+                            reject(expression.match_arm_spans[i], "duplicate proof match binder `" + binder + "`");
+                        branch_values.emplace(binder,
+                                              arm_found->second.constructor_values.at(constructor.parameters[j].name));
+                    }
+
+                    ProofEnvironment constructor_proofs;
+                    std::vector<std::string> constructor_proof_order;
+                    for (std::size_t j = 0; j < constructor.proof_parameters.size(); ++j) {
+                        auto const &parameter = constructor.proof_parameters[j];
+                        SemanticProofType field_type = elaborate_proof_type(
+                            parameter.type, arm_found->second.constructor_values, constructor_proofs,
+                            constructor_proof_order, branch_absorbed);
+                        std::string const &binder = expression.match_proof_binders[i][j];
+                        if (!arm_names.insert(binder).second || branch_values.contains(binder) ||
+                            branch_proofs.contains(binder))
+                            reject(expression.match_arm_spans[i], "duplicate proof match binder `" + binder + "`");
+                        ProofEvidence field(binder, std::move(field_type),
+                                            "proof-match-field:" + expression.matched_proof,
+                                            expression.match_arm_spans[i], "", "", parameter.type.arguments);
+                        auto [inserted, ok] = branch_proofs.emplace(binder, std::move(field));
+                        branch_proof_order.push_back(binder);
+                        absorb(inserted->second, branch_absorbed,
+                               {"proof-function:" + run, "proof-match:" + expression.matched_proof},
+                               "proof-match-field");
+                    }
+                    SemanticProofType branch_expected = elaborate_proof_type(
+                        expected_syntax, branch_values, branch_proofs, branch_proof_order, branch_absorbed);
+                    (void)elaborate_any_proof(expression.match_bodies[i], expected_syntax,
+                                              std::move(branch_expected), branch_values, branch_proofs,
+                                              branch_proof_order, branch_absorbed, name + "." + constructor_name,
+                                              run, {}, {});
+                    if (rainfall_)
+                        rainfall_->record(
+                            "derive", "proof.inductive.match.branch",
+                            {"proof-function:" + run, match_scope},
+                            "fine.proof-elaborator",
+                            "One reachable constructor owns its index refinements and bound static/proof fields",
+                            {RainfallRecorder::string_field("constructor", constructor_name),
+                             RainfallRecorder::raw_field(
+                                 "refined_indices",
+                                 RainfallRecorder::string_array(arm_found->second.refined_indices)),
+                             RainfallRecorder::raw_field(
+                                 "value_binders",
+                                 RainfallRecorder::string_array(expression.match_value_binders[i])),
+                             RainfallRecorder::raw_field(
+                                 "proof_binders",
+                                 RainfallRecorder::string_array(expression.match_proof_binders[i])),
+                             RainfallRecorder::boolean_field("runtime_value_created", false)});
+                }
+                for (auto const &[constructor_name, arm] : reachable)
+                    if (!seen.contains(constructor_name))
+                        reject(expression.span, "non-exhaustive proof match: missing `" + constructor_name + "`");
+
+                if (rainfall_)
+                    rainfall_->record(
+                        "derive", "proof.inductive.match", {"proof-function:" + run, match_scope},
+                        "fine.proof-elaborator",
+                        "Constructor-result unification refines branch indices before proof bodies are checked",
+                        {RainfallRecorder::string_field("scrutinee", expression.matched_proof),
+                         RainfallRecorder::string_field("family", family.name),
+                         RainfallRecorder::number_field("reachable_constructors", reachable.size()),
+                         RainfallRecorder::number_field("checked_arms", expression.match_constructors.size()),
+                         RainfallRecorder::boolean_field("exhaustiveness_after_refinement", true),
+                         RainfallRecorder::boolean_field("runtime_value_created", false)});
+                std::vector<syntax::ValueExpr> index_syntax;
+                if (expected_syntax.kind == syntax::ProofType::Kind::inductive)
+                    index_syntax = expected_syntax.arguments;
+                return {std::move(name), std::move(expected), "proof-match:" + expression.matched_proof,
+                        expression.span,
+                        expected_syntax.kind == syntax::ProofType::Kind::identity
+                            ? print_value(expected_syntax.left)
+                            : "",
+                        expected_syntax.kind == syntax::ProofType::Kind::identity
+                            ? print_value(expected_syntax.right)
+                            : "",
+                        std::move(index_syntax)};
             }
 
             ProofEvidence elaborate_any_proof(syntax::ProofExpr const &expression,
@@ -1300,6 +1627,9 @@ namespace fine {
                                               std::vector<z3::expr> const &absorbed, std::string name,
                                               std::string const &run, std::string const &proof_source,
                                               std::string const &type_source) {
+                if (expression.kind == syntax::ProofExpr::Kind::match)
+                    return elaborate_proof_match(expression, expected_syntax, std::move(expected), values, proofs,
+                                                 proof_order, absorbed, std::move(name), run);
                 if (auto identity = std::get_if<IdentityType>(&expected))
                     return elaborate_proof(expression, expected_syntax, std::move(*identity), values, proofs,
                                            proof_order, absorbed, std::move(name), run, proof_source, type_source);
@@ -1335,8 +1665,6 @@ namespace fine {
             void declare_proof_inductive(syntax::ProofInductiveDecl const &declaration) {
                 if (declaration.name == "Id" || proof_inductives_.contains(declaration.name))
                     reject(declaration.span, "duplicate proof type `" + declaration.name + "`");
-                if (declaration.constructors.empty())
-                    reject(declaration.span, "proof inductive `" + declaration.name + "` has no constructors");
                 std::set<std::string> index_names;
                 for (auto const &index : declaration.indices) {
                     if (!index_names.insert(index.name).second)
@@ -1415,47 +1743,88 @@ namespace fine {
                 for (auto const &parameter : declaration.proof_parameters) {
                     if (!names.insert(parameter.name).second)
                         reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
-                    IdentityType type = elaborate_identity(parameter.type, indices, proofs, proof_order, absorbed);
+                    SemanticProofType type =
+                        elaborate_proof_type(parameter.type, indices, proofs, proof_order, absorbed);
+                    std::vector<syntax::ValueExpr> index_syntax;
+                    std::string left_source;
+                    std::string right_source;
+                    if (parameter.type.kind == syntax::ProofType::Kind::identity) {
+                        left_source = print_value(parameter.type.left);
+                        right_source = print_value(parameter.type.right);
+                    }
+                    else {
+                        index_syntax = parameter.type.arguments;
+                    }
                     ProofEvidence evidence(parameter.name, std::move(type), "proof-function-parameter", parameter.span,
-                                           print_value(parameter.type.left), print_value(parameter.type.right));
+                                           std::move(left_source), std::move(right_source),
+                                           std::move(index_syntax));
                     if (rainfall_)
-                        parameter_sources.push_back(
-                            rainfall_->source_node(parameter.type.node_id, parameter.type.span, "proof-type.identity"));
+                        parameter_sources.push_back(rainfall_->source_node(
+                            parameter.type.node_id, parameter.type.span,
+                            parameter.type.kind == syntax::ProofType::Kind::identity ? "proof-type.identity"
+                                                                                     : "proof-type.inductive"));
                     auto [inserted, ok] = proofs.emplace(parameter.name, std::move(evidence));
                     proof_order.push_back(parameter.name);
                     absorb(inserted->second, absorbed, {"proof-function:" + declaration.name},
                            "proof-function-parameter");
                 }
-                IdentityType result_type =
-                    elaborate_identity(declaration.result_type, indices, proofs, proof_order, absorbed);
-                z3::expr result_proposition = result_type.left == result_type.right;
-                z3::solver solver(context_);
-                for (auto const &assumption : absorbed)
-                    solver.add(assumption);
-                solver.add(!result_proposition);
-                if (solver.check() != z3::unsat)
-                    reject(declaration.span, "proof function `" + declaration.name +
-                                                 "` does not establish its result "
-                                                 "from its proof parameters");
+                SemanticProofType result_type =
+                    elaborate_proof_type(declaration.result_type, indices, proofs, proof_order, absorbed);
+                std::optional<z3::expr> result_proposition;
+                if (declaration.has_body) {
+                    (void)elaborate_any_proof(declaration.body, declaration.result_type, result_type, indices, proofs,
+                                              proof_order, absorbed, declaration.name + ".result", declaration.name,
+                                              {}, {});
+                }
+                else {
+                    auto identity = std::get_if<IdentityType>(&result_type);
+                    if (!identity)
+                        reject(declaration.span, "proof function `" + declaration.name +
+                                                     "` returning inductive evidence requires a body");
+                    result_proposition.emplace(identity->left == identity->right);
+                    z3::solver solver(context_);
+                    for (auto const &assumption : absorbed)
+                        solver.add(assumption);
+                    solver.add(!*result_proposition);
+                    if (solver.check() != z3::unsat)
+                        reject(declaration.span, "proof function `" + declaration.name +
+                                                     "` does not establish its result "
+                                                     "from its proof parameters");
+                }
 
                 proof_functions_.emplace(declaration.name, &declaration);
-                proof_function_order_.push_back(declaration.name);
+                bool identity_searchable = declaration.result_type.kind == syntax::ProofType::Kind::identity &&
+                                           std::all_of(declaration.proof_parameters.begin(),
+                                                       declaration.proof_parameters.end(),
+                                                       [](syntax::CoeffectParameter const &parameter) {
+                                                           return parameter.type.kind ==
+                                                                  syntax::ProofType::Kind::identity;
+                                                       });
+                if (identity_searchable)
+                    proof_function_order_.push_back(declaration.name);
                 ++result_.proof_functions_verified;
                 output_ << "verified proof function: " << declaration.name << '\n';
                 if (rainfall_) {
                     std::string result_source = rainfall_->source_node(
-                        declaration.result_type.node_id, declaration.result_type.span, "proof-type.identity");
-                    std::string proposition = rainfall_->term(result_proposition, "proof-function-result-proposition");
+                        declaration.result_type.node_id, declaration.result_type.span,
+                        declaration.result_type.kind == syntax::ProofType::Kind::identity ? "proof-type.identity"
+                                                                                          : "proof-type.inductive");
+                    std::string proposition = result_proposition
+                                                  ? rainfall_->term(*result_proposition,
+                                                                    "proof-function-result-proposition")
+                                                  : "";
                     rainfall_->record(
                         "transition", "proof.function.verify", {"proof-function:" + declaration.name},
                         "fine.proof-elaborator",
-                        "A named proof-level function result is refuted under its absorbed proof parameters",
+                        declaration.has_body
+                            ? "A named proof-level function body constructs its static result under virtual parameters"
+                            : "A named proof-level function result is refuted under its absorbed proof parameters",
                         {RainfallRecorder::string_field("function", declaration.name),
                          RainfallRecorder::raw_field("parameter_sources",
                                                      RainfallRecorder::string_array(parameter_sources)),
                          RainfallRecorder::string_field("result_source", result_source),
                          RainfallRecorder::string_field("result_proposition", proposition),
-                         RainfallRecorder::string_field("status", "unsat"),
+                         RainfallRecorder::string_field("status", declaration.has_body ? "body-checked" : "unsat"),
                          RainfallRecorder::boolean_field("runtime_function_created", false)});
                 }
             }

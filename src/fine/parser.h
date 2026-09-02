@@ -86,7 +86,7 @@ namespace fine::syntax {
     };
 
     struct ProofExpr {
-        enum class Kind { name, reflexivity, application, hole };
+        enum class Kind { name, reflexivity, application, match, hole };
 
         Kind kind = Kind::name;
         SourceSpan span;
@@ -95,6 +95,15 @@ namespace fine::syntax {
         ValueExpr value;
         std::vector<ValueExpr> value_arguments;
         std::vector<ProofExpr> proof_arguments;
+        // Proof-family patterns preserve static value binders and proof-field
+        // binders separately. The scrutinee is intentionally a local proof
+        // name in this first eliminator slice.
+        std::string matched_proof;
+        std::vector<std::string> match_constructors;
+        std::vector<std::vector<std::string>> match_value_binders;
+        std::vector<std::vector<std::string>> match_proof_binders;
+        std::vector<SourceSpan> match_arm_spans;
+        std::vector<ProofExpr> match_bodies;
     };
 
     struct ValueParameter {
@@ -129,6 +138,8 @@ namespace fine::syntax {
         std::vector<ValueParameter> parameters;
         std::vector<CoeffectParameter> proof_parameters;
         ProofType result_type;
+        bool has_body = false;
+        ProofExpr body;
     };
 
     struct ProofConstructorDecl {

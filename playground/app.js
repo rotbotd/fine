@@ -18,6 +18,7 @@ const fineLanguage = StreamLanguage.define({
     definition: tags.function(tags.definition(tags.variableName)),
     hole: tags.atom,
     proofKeyword: tags.modifier,
+    proofTerm: tags.constant(tags.name),
     proofType: tags.className,
     valueType: tags.typeName,
   },
@@ -105,7 +106,7 @@ const fineLanguage = StreamLanguage.define({
       if (["true", "false"].includes(word))
         return "bool";
       if (word === "refl")
-        return "standard";
+        return "proofTerm";
       if (word === "result")
         return "selfName";
       return "variableName";

@@ -85,6 +85,16 @@
                 <td><code>proof two: Even(succ(succ(zero)))<br>&nbsp;&nbsp;= even_next[zero](zero_even);</code></td>
               </tr>
               <tr>
+                <td>indexed proof match</td>
+                <td>Constructor results refine symbolic indices before arm checking. Brackets bind static values, parentheses bind proof fields, and only reachable constructors are required.</td>
+                <td><code>match evidence {<br>&nbsp;&nbsp;even_zero() =&gt; shape_zero[value](refl(value)),<br>&nbsp;&nbsp;even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;shape_next[value, previous](refl(value), prior),<br>}</code></td>
+              </tr>
+              <tr>
+                <td>empty proof match</td>
+                <td>Evidence with no reachable constructor eliminates into any proof type with zero arms.</td>
+                <td><code>match impossible { }</code></td>
+              </tr>
+              <tr>
                 <td>executable check</td>
                 <td>A <code>run</code> block is closed over runtime values and every assertion must hold.</td>
                 <td><code>run demo {<br>&nbsp;&nbsp;let n: Int = 7;<br>&nbsp;&nbsp;assert n == 7;<br>}</code></td>

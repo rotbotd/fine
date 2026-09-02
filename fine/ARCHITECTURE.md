@@ -76,10 +76,31 @@ therefore cannot occur in a value expression. This is the ATS split at the
 current boundary: values carry the runtime data; indices and evidence constrain
 it statically.
 
-This first slice is introduction-only. It does not claim proof matching,
-induction, or constructor search. Those operations must retain constructor and
-recursive-field ownership explicitly before the solver is allowed to summarize
-anything.
+Proof functions with bodies eliminate indexed evidence by proof-level matching:
+
+```fine
+proof function expose_even(value: Nat)
+  needs [evidence: Even(value)]
+  -> EvenShape(value) {
+  match evidence {
+    even_zero() => shape_zero[value](refl(value)),
+    even_next[previous](prior) =>
+      shape_next[value, previous](refl(value), prior),
+  }
+}
+```
+
+Constructor-result unification happens before an arm is checked. The first arm
+refines `value` to `zero`; the second refines it to
+`succ(succ(previous))` and introduces both `previous` and `prior`. The two
+`refl(value)` terms therefore check at different branch-local identity types.
+This is definitional index refinement, not an equality proposition guessed by
+Z3.
+
+Exhaustiveness is computed after refinement. A family with zero constructors
+has a valid zero-arm match, and `Even(succ(zero))` likewise has no reachable
+constructors. An unreachable arm must be omitted. Matches remain proof-producing:
+neither the scrutinee nor its proof fields can enter a runtime value.
 
 ## Contextual proof demand
 

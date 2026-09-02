@@ -74,6 +74,22 @@ an ordinary runtime `Nat`; the inhabitants and constructor remain static.
 This closes introduction only. Proof matching, induction hypotheses, and holes
 must be added as separate slices rather than inferred from these declarations.
 
+## Closed: indexed proof-family match
+
+- [x] Allow checked proof-function bodies without creating runtime functions.
+- [x] Match only on indexed proof evidence and return only proof evidence.
+- [x] Unify constructor results before checking arms, refine symbolic indices,
+      and bind static values separately from virtual proof fields.
+- [x] Compute exhaustiveness after refinement; reject both missing reachable
+      arms and supplied unreachable arms.
+- [x] Admit zero-constructor families and zero-arm elimination, including an
+      impossible concrete index of a nonempty family.
+
+Exit test: `proof-inductive-match.fine` makes `refl(value)` inhabit a different
+identity type in each `Even(value)` arm, uses `previous` and `prior`, eliminates
+`Never()`, and accepts no arms for `Even(succ(zero))`. The two rejecting fixtures
+separate non-exhaustiveness from an explicitly written impossible arm.
+
 ## Closed: typed identity holes
 
 - [x] Add `?` with an expected identity proof type.
@@ -116,7 +132,7 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       value representation.
 - [x] Add `proof inductive` as an indexed, static constructor family; do not
       reuse runtime enum matching or turn the family into a Bool predicate.
-- [ ] Add proof-producing elimination over `proof inductive`, retaining exact
+- [x] Add proof-producing elimination over `proof inductive`, retaining exact
       constructor and proof-field identity before any solver projection.
 - [ ] Recover ordinary model/counterexample consumers one at a time.
 - [ ] Connect source proof materialization to the editor host's atomic revision

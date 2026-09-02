@@ -92,6 +92,36 @@
           grep -F "formed proof: two_even : Even(succ(succ(zero))) (virtual)" <<<"$inductive_output"
           grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$inductive_output"
 
+          proof_match_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-match.fine")"
+          echo "$proof_match_output"
+          grep -F "declared proof inductive: Never (0 constructors, static)" <<<"$proof_match_output"
+          grep -F "verified proof function: expose_even" <<<"$proof_match_output"
+          grep -F "verified proof function: absurd" <<<"$proof_match_output"
+          grep -F "verified proof function: impossible_even" <<<"$proof_match_output"
+          grep -F "verified proof function: contradictory_indices" <<<"$proof_match_output"
+          grep -F "formed proof: zero_shape : EvenShape(zero) (virtual)" <<<"$proof_match_output"
+
+          proof_match_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-inductive-match.fine" > "$proof_match_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-inductive-match.fine" "$proof_match_rain"
+
+          nonexhaustive_proof_match="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-nonexhaustive-proof-match.fine" \
+              >"$nonexhaustive_proof_match" 2>&1; then
+            echo "non-exhaustive proof match unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'non-exhaustive proof match: missing `even_next`' "$nonexhaustive_proof_match"
+
+          unreachable_proof_match="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-unreachable-proof-match-arm.fine" \
+              >"$unreachable_proof_match" 2>&1; then
+            echo "unreachable proof match arm unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'unreachable proof match arm `even_zero` must be omitted' "$unreachable_proof_match"
+
           bad_inductive_index="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-proof-inductive-index.fine" \
               >"$bad_inductive_index" 2>&1; then

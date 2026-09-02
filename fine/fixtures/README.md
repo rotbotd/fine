@@ -10,6 +10,16 @@
   `even_zero` forms the base evidence; `even_next` takes an exact recursive
   proof field and changes the result index by two. Both inhabitants remain
   virtual while their indices are ordinary runtime `Nat` terms.
+- `proof-inductive-match.fine` checks a body-bearing eliminator for `Even(value)`.
+  Its two arms refine `value` to distinct constructor indices before accepting
+  `refl(value)`, and the recursive arm uses both `previous` and `prior`. The same
+  file eliminates the empty family `Never()` and accepts zero arms for the
+  impossible index `Even(succ(zero))`. A two-index control also prevents one
+  symbolic index from being refined to two different constructor results.
+- `reject-nonexhaustive-proof-match.fine` omits one constructor that remains
+  reachable for a symbolic index.
+- `reject-unreachable-proof-match-arm.fine` writes a constructor arm after index
+  refinement has proved that constructor impossible.
 - `reject-proof-inductive-index.fine` applies the base constructor at
   `predecessor(succ(zero))`: solver-equal to `zero`, but not the exact
   manager-local result index the constructor produces.

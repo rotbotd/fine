@@ -1,0 +1,60 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat) needs [prior: Even(previous)] -> Even(succ(succ(previous)));
+}
+
+proof inductive EvenShape(value: Nat) {
+  shape_zero(candidate: Nat)
+    needs [shape: Id(Nat, candidate, zero)]
+    -> EvenShape(candidate);
+  shape_next(candidate: Nat, previous: Nat)
+    needs [shape: Id(Nat, candidate, succ(succ(previous))), recursive: Even(previous)]
+    -> EvenShape(candidate);
+}
+
+proof inductive Never() {
+}
+
+proof inductive Split(left: Nat, right: Nat) {
+  split() -> Split(zero, succ(zero));
+}
+
+proof function expose_even(value: Nat)
+  needs [evidence: Even(value)]
+  -> EvenShape(value) {
+  match evidence {
+    even_zero() => shape_zero[value](refl(value)),
+    even_next[previous](prior) => shape_next[value, previous](refl(value), prior),
+  }
+}
+
+proof function absurd(left: Int, right: Int)
+  needs [impossible: Never()]
+  -> Id(Int, left, right) {
+  match impossible {
+  }
+}
+
+proof function impossible_even()
+  needs [impossible: Even(succ(zero))]
+  -> Id(Int, 0, 1) {
+  match impossible {
+  }
+}
+
+proof function contradictory_indices(value: Nat)
+  needs [impossible: Split(value, value)]
+  -> Id(Int, 0, 1) {
+  match impossible {
+  }
+}
+
+run proof_inductive_match {
+  proof zero_even: Even(zero) = even_zero();
+  proof zero_shape: EvenShape(zero) = expose_even[zero](zero_even);
+}

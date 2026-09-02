@@ -4206,3 +4206,100 @@ Artifact: `/nix/store/siyisjkz7mnr4pda192n2i3mynjsjxzi-fine-playground-0.1.0`.
 I restarted `fine-playground.service`, verified both it and
 `rc-publish-fine.service` active, and fetched both localhost and
 `https://fine.shit.yachts/`; both contained the indexed-proof-family reference.
+
+## 2026-09-02 — indexed proof-family elimination refines before exhaustiveness
+
+h supplied the exact admission test rather than merely asking whether proof
+matching existed: scrutinizing `evidence: Even(value)` must make
+`refl(value) : Id(Nat, value, zero)` check in the base arm, make
+`refl(value) : Id(Nat, value, succ(succ(previous)))` check in the recursive
+arm, and bind both `previous` and `prior`. An empty family must eliminate into
+an arbitrary proof, and a concrete impossible index such as
+`Even(succ(zero))` must leave no demanded branches.
+
+I added proof expressions of the form:
+
+```fine
+match evidence {
+  even_zero() => shape_zero[value](refl(value)),
+  even_next[previous](prior) =>
+    shape_next[value, previous](refl(value), prior),
+}
+```
+
+Square brackets bind constructor value parameters and parentheses bind virtual
+proof fields, preserving constructor application syntax. The scrutinee is a
+local proof name in this first eliminator slice. Proof functions may now use a
+checked `{ proof-expression }` body. Semicolon declarations retain their old
+identity-theorem behavior. Body-bearing functions can return either identity or
+inductive evidence and can be applied later; identity hole search sees only
+identity-result functions whose parameters are all identity evidence.
+
+`ProofEvidence` retains the source syntax of inductive indices. For each family
+constructor, the elaborator structurally unifies rigid scrutinee indices against
+the constructor result using native runtime-constructor identities. A direct
+symbolic proof-function index is flexible: the arm environment replaces it with
+the constructor result before re-elaborating the expected proof type. Unbound
+constructor parameters become distinct static symbols, then appear under the
+source arm binders. Constructor proof fields become separate virtual locals and
+identity-shaped fields are absorbed only in that arm.
+
+Exhaustiveness runs over this reachable-constructor table. Missing reachable
+arms fail. Supplied unreachable arms fail with a demand to omit them. A
+zero-constructor family produces an empty table, so `match impossible {}` checks
+at any proof result. `Even(succ(zero))` also produces an empty table because
+neither `zero` nor `succ(succ(previous))` unifies with the index. A repeated
+symbolic index is refined consistently: the `Split(value, value)` control has no
+reachable constructor when the sole result is `Split(zero, succ(zero))`; the two
+occurrences cannot silently overwrite one another.
+
+The positive fixture `proof-inductive-match.fine` defines `EvenShape` so the
+base and recursive arms must explicitly supply those two different `refl`
+proofs. The recursive result also requires the pattern-bound `prior`, forcing
+both kinds of binder to be usable. A run applies the checked eliminator to
+`even_zero()` evidence. Separate controls reject one omitted symbolic branch and
+one explicitly written impossible branch.
+
+Rainfall records one `proof.inductive.match.branch` per reachable arm with its
+constructor, refined source indices, static binders, and proof binders, followed
+by `proof.inductive.match` at the same node-specific scope. Replay validates the
+branch list, distinct binders, constructor uniqueness, counts, and zero-arm
+case. The old replay rule initially rejected body-checked proof functions because
+it required every `proof.function.verify` event to name an unsat proposition;
+it now distinguishes `status: body-checked` with no solver term from the existing
+`status: unsat` theorem check.
+
+The architecture, proof-term guide, roadmap, TODO, fixture index, README, and
+browser reference now describe branch refinement, reachable exhaustiveness, and
+empty elimination. The playground smoke requires the two new reference rows;
+the lexical mode gives `refl` its proof-term role and retains `match` as a
+keyword without attempting to become a second parser.
+
+Local checks:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/proof-inductive-match.fine
+.build/fine rain fine/fixtures/proof-inductive-match.fine > /tmp/proof-match.rain
+python fine/rainfall_validate.py fine/fixtures/proof-inductive-match.fine /tmp/proof-match.rain
+python fine/rainfall_replay.py /tmp/proof-match.rain
+nix flake check -L
+nix build --no-link --print-out-paths .#default .#playground
+```
+
+The positive run verifies `expose_even`, `absurd`, `impossible_even`, and
+`contradictory_indices`, then forms `zero_shape : EvenShape(zero)`. The Rainfall
+trace has 36 events, 12 source nodes, zero Z3 terms, and zero proof holes. The
+first clean combined build produced native
+`/nix/store/jc8dzgm7hs6abvyv81bmsfq8fa1rcy0j-fine-0.1.0` and playground
+`/nix/store/xjbsx1j164vqrrhhd66ishzgkvy63vd9-fine-playground-0.1.0`; a final
+rebuild after the branch-event validation change follows below if its content
+paths differ.
+
+The final declared rebuild, including match-branch replay validation and the
+repeated-index control, passed. Final clean artifacts:
+
+```
+/nix/store/xib8cmpg3nn9gwj72jrxjxxjxq2z3jhj-fine-0.1.0
+/nix/store/sm1wbvydwk83fj3wjwsfqi3vavfwvaq6-fine-playground-0.1.0
+```

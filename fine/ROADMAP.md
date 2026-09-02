@@ -208,8 +208,17 @@ formation separately while reporting that no runtime datatype or proof value was
 created. Controls reject a wrong index, a wrong recursive premise, and a proof
 constructor called from runtime value code.
 
-This does not close the whole slice. Proof-producing match, constructor-specific
-branch equations, recursive induction hypotheses, and source proof search remain.
+Proof-producing match is now executable. A body-bearing proof function may
+scrutinize indexed evidence; constructor-result unification refines symbolic
+indices before each arm is checked and binds static constructor parameters and
+virtual proof fields separately. `proof-inductive-match.fine` forces both
+refinements with `refl`, consumes the recursive `prior`, eliminates a
+zero-constructor family, and omits both impossible constructors of
+`Even(succ(zero))`. Exhaustiveness ranges over reachable constructors.
+
+This does not close the whole slice. Recursive induction hypotheses and source
+proof search remain; a pattern-bound recursive proof is ordinary local evidence,
+not an automatically generated induction hypothesis.
 
 Fine may lower the proposition to a Z3 relation for checking and search, but the
 source constructor table owns branch identity, field scope, recursive-premise
