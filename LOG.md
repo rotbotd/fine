@@ -3028,3 +3028,138 @@ nix build --no-link --print-out-paths
 nix flake check
 # all checks passed
 ```
+
+## 2026-09-02 — proof-term branch cut and virtual identity coeffects
+
+h changed the destination explicitly: Fine should synthesize source proof terms,
+not merely use Bool-valued predicates as erased evidence. Identity-shaped proof
+terms are absorbed into the proof context by default, and functions declare a
+coeffect which asks Fine to find the required proof in the caller's lexical
+scope. Proof types are virtual and must have no runtime term. Retrofitting that
+shape onto the expression-first parser/runtime would preserve the wrong center,
+so the implementation was cut rather than adapted.
+
+The last runnable predicate implementation, commit `1d7222a23`, was preserved
+and pushed as annotated tag `pre-pat-1d7222a23`. A public
+`fine/proof-terms` branch was created from that commit. The cut removes 10,279
+lines while adding 1,409 before this log entry. It deletes the linked
+bisimulation, predicate, and synthesis runtimes, their shared runtime-internal
+header, the embedded demo, and all 44 former executable fixtures. The generic
+Z3 fork/observers, source snapshots, exact generated-term lift, Rainfall
+recorder/validator/projector/generation/host modules, build ancestry, and
+research documents remain. `fine/PROOF_TERMS.md` records the survival and
+quarantine boundary. The old code remains inspectable and runnable at the tag;
+it is not copied into a `legacy` directory on this branch.
+
+The new parser has distinct `ValueType` and `ProofType` AST nodes. The new
+elaborator has distinct `ValueTerm` and `ProofEvidence` C++ structures rather
+than a tagged union. `ValueTerm` is closed over `Int` and `Bool` in this slice.
+`ProofEvidence` owns an `IdentityType`, formation label, and source span but no
+runtime payload. There is no proof variant which an erasure pass could forget
+to remove. An attempted value lookup which resolves to the proof namespace is a
+static error. Rainfall opens every run with `proof.erasure.boundary`, declaring
+the two runtime value kinds and zero proof variants, and closes with
+`runtime_proof_values: 0`.
+
+The first identity surface is `Id(A, left, right)` with `refl(value)`.
+Reflexivity is accepted only if both endpoints reify to the exact same
+manager-local AST as the supplied value. A proof declaration retains its source
+node and formation, then automatically projects only `left == right` into the
+lexical Z3 context. The projection is a normal strong Rainfall term with the
+existing `fine.generated-term.v1` exact lift/reparse/reify validation; the proof
+source is not falsely described as a Z3 proof term.
+
+Functions now have value parameters, a value result, optional identity
+`needs`, optional Bool `ensures`, and a value body. Declaration checking creates
+symbolic value parameters, introduces every `needs` binder as hypothetical
+static evidence, absorbs its proposition, and asks Z3 to refute the negated
+guarantee. In the admitted fixture:
+
+```
+function replace(left: Int, right: Int) -> Int
+  needs [same: Id(Int, left, right)]
+  ensures { result == right; }
+{
+  left
+}
+```
+
+`left == right` from the coeffect is necessary. The control with no `needs`
+clause is satisfiable and rejected with `does not satisfy its guarantees under
+declared coeffects`.
+
+At a call, Fine substitutes the value arguments into each declared identity
+demand. The first proof-search grammar has exactly one rule: select the first
+lexically introduced caller proof whose carrier and both endpoints have exact
+AST identity with the instantiated demand. There is no global instance table,
+approximate solver entailment, or constructor search. The selected evidence is
+installed virtually under the callee's coeffect name and only its proposition
+is absorbed. Rainfall keeps `coeffect.demand.declare`,
+`coeffect.demand.instantiate`, `coeffect.resolve`, `proof.context.absorb`, and
+`coeffect.use` separate; `coeffect.use` explicitly records that no runtime
+argument was created.
+
+`fine materialize` turns an implicit call such as `replace(x, y)` into the exact
+source `replace(x, y) using [same = p]`. It applies byte-offset insertions,
+reparses the resulting document, and executes it with implicit coeffect
+resolution forbidden before emitting the source. The checked-in explicit
+fixture is byte-identical to this output. Re-running it reports `(explicit)`;
+the unmaterialized source reports `(lexical search)`.
+
+Discriminating fixtures and observed outputs:
+
+```
+build/proof-core/fine run fine/fixtures/identity-coeffect.fine
+# verified function: replace
+# formed proof: p : Id(Int, x, y) (virtual)
+# resolved coeffect: replace.same <- p (lexical search)
+# verified assertion: identity_coeffect.0
+# runtime-proof-values: 0 (unrepresentable)
+
+build/proof-core/fine materialize fine/fixtures/identity-coeffect.fine \
+  > /tmp/fine-materialized.fine
+diff -u fine/fixtures/identity-coeffect-materialized.fine \
+  /tmp/fine-materialized.fine
+# no diff
+
+build/proof-core/fine run fine/fixtures/reject-missing-coeffect.fine
+# failure: missing caller proof for coeffect `replace.same ...`
+
+build/proof-core/fine run fine/fixtures/reject-proof-as-value.fine
+# failure: proof `p` cannot inhabit a runtime value
+
+build/proof-core/fine run fine/fixtures/reject-unjustified-function.fine
+# failure: function `replace` does not satisfy its guarantees under declared coeffects
+```
+
+The positive Rainfall trace has 31 events, seven source nodes, three exact Z3
+terms, and four source-term edges. The validator was extended to recognize only
+the new `proof-core.run.close` as an additional terminal operation. Projection
+still admits the current snapshot and its source annotations. The Nix install
+check asserts the positive run, exact materialized bytes, explicit rerun, all
+three negative controls, required event separation, zero runtime proof variants,
+term declaration/validation parity, and current projection.
+
+Build record:
+
+```
+cmake -S . -B build/proof-core -G Ninja \
+  -DZ3_BUILD_LIBZ3_SHARED=OFF \
+  -DZ3_BUILD_EXECUTABLE=OFF \
+  -DZ3_BUILD_TEST_EXECUTABLES=OFF \
+  -DFINE_BUILD_EXECUTABLE=ON
+cmake --build build/proof-core --target fine-bin -j16
+# success
+
+nix flake check --print-build-logs
+# all checks passed (flake output evaluation)
+
+nix build --no-link --print-out-paths
+# /nix/store/ymfhr95bzpsiji2vrpybscf09ifbq9k1-fine-0.1.0
+```
+
+The next justified consumer is a typed identity proof hole. Its initial grammar
+should contain exact lexical evidence, `refl`, and later named identity proof
+applications; ill-typed candidates must be absent before enumeration. It must
+materialize one actual proof term and rerun with no proof search before
+inductive propositions or old predicates are reconsidered.

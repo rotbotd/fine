@@ -1,0 +1,14 @@
+function replace(left: Int, right: Int) -> Int
+  needs [same: Id(Int, left, right)]
+  ensures {
+    result == right;
+  }
+{
+  left
+}
+
+run missing_coeffect {
+  let x: Int = 7;
+  let answer: Int = replace(x, x);
+  assert answer == x;
+}

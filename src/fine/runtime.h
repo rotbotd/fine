@@ -3,10 +3,12 @@
 #include "parser.h"
 #include "source.h"
 
+#include <cstddef>
 #include <iosfwd>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fine {
 
@@ -14,19 +16,36 @@ namespace fine {
     public:
         SemanticError(syntax::SourceSpan span, std::string message);
 
-        syntax::SourceSpan span() const noexcept {
-            return span_;
-        }
+        syntax::SourceSpan span() const noexcept { return span_; }
         std::string format(std::string_view filename, std::string_view source) const;
 
     private:
         syntax::SourceSpan span_;
     };
 
-    // Elaborate and execute the one admitted proof in a parsed Fine document.
-    // Returns zero for a returned model and throws SemanticError for invalid Fine.
-    // When rainfall_output is non-null, Fine also writes a JSONL semantic trace.
-    int execute(syntax::Document const &document, std::ostream &output, std::ostream *rainfall_output = nullptr,
-                SourceSnapshot const *snapshot = nullptr, std::string rainfall_run = {});
+    struct Materialization {
+        std::size_t offset = 0;
+        std::string text;
+    };
+
+    struct ExecutionResult {
+        std::vector<Materialization> materializations;
+        std::size_t functions_verified = 0;
+        std::size_t proofs_formed = 0;
+        std::size_t coeffects_resolved = 0;
+    };
+
+    struct ExecutionOptions {
+        bool require_explicit_coeffects = false;
+    };
+
+    ExecutionResult execute(syntax::Document const &document, std::ostream &output,
+                            std::ostream *rainfall_output = nullptr,
+                            SourceSnapshot const *snapshot = nullptr,
+                            std::string rainfall_run = {},
+                            ExecutionOptions options = {});
+
+    std::string apply_materializations(std::string_view source,
+                                       std::vector<Materialization> materializations);
 
 }  // namespace fine

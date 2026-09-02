@@ -1,0 +1,6 @@
+run proof_as_value {
+  let x: Int = 7;
+  proof p: Id(Int, x, x) = refl(x);
+  let leaked: Int = p;
+  assert leaked == x;
+}

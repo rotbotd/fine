@@ -1,9 +1,0 @@
-// Tuple values are ordinary check inputs, not merely hidden table keys.
-check pair_claim(pair: (Int, Bool)) {
-  assumes {
-    pair == (7, true);
-  }
-  ensures {
-    pair == (8, false);
-  }
-}

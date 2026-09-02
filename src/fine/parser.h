@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -25,234 +24,125 @@ namespace fine::syntax {
     public:
         ParseError(SourceSpan span, std::string message);
 
-        SourceSpan span() const noexcept {
-            return span_;
-        }
+        SourceSpan span() const noexcept { return span_; }
         std::string format(std::string_view filename, std::string_view source) const;
 
     private:
         SourceSpan span_;
     };
 
-    // These nodes retain only source syntax. Name and type resolution deliberately
-    // happen later, against the declarations interned by a Z3 context.
-    struct Type {
-        enum class Kind { named, tuple, table };
+    // The syntax itself is two-level. ValueType and ProofType are not variants
+    // of one common source type, and the runtime has no reason to add a proof
+    // case when elaborating either structure.
+    struct ValueType {
+        enum class Kind { integer, boolean };
 
-        Kind kind = Kind::named;
+        Kind kind = Kind::integer;
         SourceSpan span;
-        std::string name;
-        std::vector<Type> arguments;
     };
 
-    struct Expr {
-        enum class Kind { name, boolean, integer, tuple, call, binary, conditional, hole };
-        enum class BinaryOp { equal, greater_equal, less_equal, logical_and, logical_or, add, subtract };
+    struct ExplicitProofArgument {
+        SourceSpan span;
+        std::string coeffect;
+        std::string proof;
+    };
+
+    struct ValueExpr {
+        enum class Kind { name, integer, boolean, call, equal };
 
         Kind kind = Kind::name;
         SourceSpan span;
+        std::size_t node_id = 0;
         std::string name;
-        bool boolean_value = false;
         std::string integer_text;
-        BinaryOp binary_op = BinaryOp::equal;
-        std::vector<Expr> elements;
-        // Unique only within one parse. A source identity also includes the exact
-        // snapshot that produced this node.
+        bool boolean_value = false;
+        std::vector<ValueExpr> elements;
+        std::vector<ExplicitProofArgument> using_proofs;
+        // End of the call's closing parenthesis. An implicit coeffect
+        // materialization inserts ` using [...]` at this exact byte offset.
+        std::size_t call_argument_end = 0;
+    };
+
+    struct ProofType {
+        enum class Kind { identity };
+
+        Kind kind = Kind::identity;
+        SourceSpan span;
         std::size_t node_id = 0;
+        ValueType carrier;
+        ValueExpr left;
+        ValueExpr right;
     };
 
-    struct EnumField {
-        SourceSpan span;
-        std::string name;
-        Type type;
-    };
+    struct ProofExpr {
+        enum class Kind { name, reflexivity };
 
-    struct EnumCase {
+        Kind kind = Kind::name;
         SourceSpan span;
-        std::string name;
-        std::vector<EnumField> fields;
-    };
-
-    struct EnumDecl {
-        SourceSpan span;
-        std::string name;
-        std::vector<EnumCase> cases;
         std::size_t node_id = 0;
+        std::string name;
+        ValueExpr value;
     };
 
-    struct TableEntry {
+    struct ValueParameter {
         SourceSpan span;
-        Expr key;
-        Expr value;
+        std::string name;
+        ValueType type;
     };
 
-    struct TableLiteral {
+    struct CoeffectParameter {
         SourceSpan span;
-        Expr default_value;
-        std::vector<TableEntry> entries;
+        std::string name;
+        ProofType type;
+    };
+
+    struct FunctionDecl {
+        SourceSpan span;
+        std::size_t node_id = 0;
+        std::string name;
+        std::vector<ValueParameter> parameters;
+        ValueType result_type;
+        std::vector<CoeffectParameter> coeffects;
+        std::vector<ValueExpr> ensures;
+        ValueExpr body;
     };
 
     struct LetDecl {
         SourceSpan span;
-        std::string name;
-        Type type;
-        TableLiteral value;
         std::size_t node_id = 0;
+        std::string name;
+        ValueType type;
+        ValueExpr value;
     };
 
-    struct ModelDecl {
+    struct ProofDecl {
         SourceSpan span;
-        std::string name;
-        Type type;
-        // Empty means a model-shaped hole. A present table is a concrete model
-        // witness, using the same syntax as an ordinary table binding.
-        std::optional<TableLiteral> value;
         std::size_t node_id = 0;
+        std::string name;
+        ProofType type;
+        ProofExpr value;
     };
 
-    struct NamedArgument {
+    struct AssertDecl {
         SourceSpan span;
-        std::string name;
-        Expr value;
-    };
-
-    struct SolveDecl {
-        SourceSpan span;
-        std::string name;
-        std::vector<NamedArgument> takes;
-        Expr gives;
         std::size_t node_id = 0;
+        ValueExpr proposition;
     };
 
-    struct Parameter {
-        SourceSpan span;
-        std::string name;
-        Type type;
-    };
+    using RunStatement = std::variant<LetDecl, ProofDecl, AssertDecl>;
 
-    // A constrained view names an erased proposition over one existing native
-    // carrier. `value` is bound to the carrier inside each requirement.
-    struct ViewDecl {
+    struct RunDecl {
         SourceSpan span;
-        std::string name;
-        std::vector<Parameter> parameters;
-        Type carrier;
-        std::vector<Expr> requirements;
-        std::optional<Expr> witness;
         std::size_t node_id = 0;
-    };
-
-    struct ArbitraryPremise {
-        SourceSpan span;
-        std::string binder;
-        std::string view_name;
-        std::vector<Expr> view_arguments;
-        std::vector<Expr> premises;
-        std::size_t node_id = 0;
-    };
-
-    struct PredicateConstructor {
-        SourceSpan span;
         std::string name;
-        std::vector<Parameter> parameters;
-        std::vector<Expr> premises;
-        std::vector<ArbitraryPremise> arbitrary_premises;
-        Expr result;
+        std::vector<RunStatement> statements;
     };
-
-    // A predicate is an indexed proposition over ordinary Fine values. Its
-    // constructors generate the least Z3 relation satisfying their rules;
-    // there is deliberately no runtime datatype of derivation witnesses.
-    struct PredicateDecl {
-        SourceSpan span;
-        std::string name;
-        std::vector<Parameter> indices;
-        std::vector<PredicateConstructor> constructors;
-        std::size_t node_id = 0;
-    };
-
-    struct MatchBinding {
-        SourceSpan span;
-        std::string name;
-    };
-
-    struct MatchArm {
-        SourceSpan span;
-        std::string constructor;
-        std::vector<MatchBinding> bindings;
-        Expr value;
-    };
-
-    // Fine functions retain a deliberately visible recursive-datatype match.
-    // The first executable slice does not hide recursion behind a printer-only
-    // eliminator: elaboration registers this definition with the same Z3
-    // manager later used by checks and Rainfall.
-    struct FunctionDecl {
-        SourceSpan span;
-        std::string name;
-        std::vector<Parameter> parameters;
-        Type result_type;
-        Expr scrutinee;
-        std::vector<MatchArm> arms;
-        std::size_t node_id = 0;
-    };
-
-    struct SynthDecl {
-        SourceSpan span;
-        std::string name;
-        std::vector<Parameter> parameters;
-        Type result_type;
-        std::optional<Expr> scrutinee;
-        std::vector<MatchArm> arms;
-        std::vector<Expr> ensures;
-        std::size_t node_id = 0;
-    };
-
-    struct CheckDecl {
-        SourceSpan span;
-        // A reusable proof is checked exactly like an ordinary check, but a successful
-        // result is universally closed and made available to later SMT
-        // queries in the same source document.
-        bool reusable = false;
-        std::string name;
-        std::vector<Parameter> parameters;
-        std::optional<std::string> induction_parameter;
-        std::optional<SourceSpan> induction_span;
-        std::optional<Expr> predicate_induction;
-        std::vector<Expr> assumes;
-        std::vector<Expr> ensures;
-        std::size_t node_id = 0;
-    };
-
-    struct CounterexampleEntry {
-        SourceSpan span;
-        std::string name;
-        Type type;
-        Expr value;
-    };
-
-    // This is a returned, parseable witness form, not an executable assertion.
-    struct CounterexampleDecl {
-        SourceSpan span;
-        std::string name;
-        std::vector<CounterexampleEntry> entries;
-        std::size_t node_id = 0;
-    };
-
-    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, SolveDecl, ViewDecl, PredicateDecl,
-                                     FunctionDecl, SynthDecl, CheckDecl, CounterexampleDecl>;
 
     struct Document {
-        SourceSpan span;
-        std::vector<Declaration> declarations;
+        std::vector<FunctionDecl> functions;
+        RunDecl run;
     };
 
-    // Throws ParseError on the first lexical or syntactic error.
     Document parse(std::string_view source);
-
-    // Parse one ordinary Fine expression and require end of input. This is used by
-    // witness round trips; it shares the declaration parser's lexer and precedence
-    // implementation rather than introducing a printer-only syntax.
-    Expr parse_expression(std::string_view source);
 
 }  // namespace fine::syntax

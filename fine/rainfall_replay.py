@@ -296,7 +296,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                          f"event {sequence}: inst clause has an unknown relation")
 
         if operation in {"check.run.close", "synth.run.close", "bisim.run.close", "predicate-check.run.close",
-                         "predicate-induction.run.close"}:
+                         "predicate-induction.run.close", "proof-core.run.close"}:
             terminal_sequence = sequence
         if operation == "proof.run.close" and data.get("status") != "verified":
             terminal_sequence = sequence

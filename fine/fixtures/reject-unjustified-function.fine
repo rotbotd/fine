@@ -1,0 +1,12 @@
+function replace(left: Int, right: Int) -> Int
+  ensures {
+    result == right;
+  }
+{
+  left
+}
+
+run unjustified_function {
+  let x: Int = 7;
+  assert x == x;
+}

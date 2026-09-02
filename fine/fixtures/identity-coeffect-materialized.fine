@@ -1,0 +1,16 @@
+function replace(left: Int, right: Int) -> Int
+  needs [same: Id(Int, left, right)]
+  ensures {
+    result == right;
+  }
+{
+  left
+}
+
+run identity_coeffect {
+  let x: Int = 7;
+  let y: Int = x;
+  proof p: Id(Int, x, y) = refl(x);
+  let answer: Int = replace(x, y) using [same = p];
+  assert answer == y;
+}
