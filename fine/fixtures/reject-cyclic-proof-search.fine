@@ -1,0 +1,9 @@
+proof function loop(left: Bool, right: Bool)
+  needs [prior: Id(Bool, left, right)]
+  -> Id(Bool, left, right);
+
+run cyclic_proof_search {
+  let left: Bool = true;
+  let right: Bool = false;
+  proof impossible: Id(Bool, left, right) = ?;
+}

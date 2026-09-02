@@ -116,9 +116,9 @@ birth and may only use an erased predicate relation as a backend shadow.
 
 ## Current limits
 
-Only `Int`, `Bool`, identity, reflexivity, proof aliases, typed identity holes,
-straight-line functions, guarantees, lexical coeffects, lets, and assertions
-are present.
+Only `Int`, `Bool`, identity, reflexivity, proof aliases, checked named proof
+functions, bounded typed identity holes, straight-line functions, guarantees,
+lexical coeffects, lets, and assertions are present.
 There are no ordinary datatypes, inductive propositions, proof matches,
-identity composition, named proof functions, general dependent types, universes,
-or inductive proof constructor synthesis yet.
+identity transitivity search, general dependent types, universes, or inductive
+proof constructor synthesis yet.

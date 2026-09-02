@@ -71,5 +71,36 @@ one typed identity hole, one finite grammar. It must:
 6. replace the source hole, reparse, and rerun with all proof and coeffect search
    forbidden.
 
-Named proof functions are not smuggled into this grammar. Symmetry and
-transitivity are the next consumer and must arrive as typed source applications.
+## Named proof-function slice
+
+A declaration such as
+
+```fine
+proof function symm(left: Bool, right: Bool)
+  needs [given: Id(Bool, left, right)]
+  -> Id(Bool, right, left);
+```
+
+has static value indices, virtual proof parameters, and a virtual result. Fine
+introduces symbolic indices, absorbs the parameter propositions, and refutes the
+negated result before admitting the declaration. There is no runtime function
+and value expressions reject calls to it.
+
+Explicit proof application keeps indices and evidence visibly separate as
+`symm[left, right](given)`. A hole searches backward from its exact expected
+identity type. It binds index parameters from a matching result, recursively
+fills only the instantiated proof parameters, and admits application trees only
+within cost three. The frontier order remains exact local evidence, applicable
+`refl`, then proof functions in source order. Rainfall retains the application
+function, child proof sources, cost, selected event, and residual alternatives.
+
+`identity-symmetry.fine` first constructs the non-definitional but valid Boolean
+identity `x = (x == true)` using a checked zero-premise proof function. Reversing
+it cannot use the local proof or `refl`; search selects
+`symm[x, x == true](p)`. The materialized application reparses and reruns with
+search forbidden. An input-preserving cyclic proof function with no base proof
+exhausts the cost bound.
+
+Transitivity is still withheld. Its middle index does not occur in the result,
+so backward search must learn it from two proof arguments rather than pretending
+all indices can be read from the goal.

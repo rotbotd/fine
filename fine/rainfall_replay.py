@@ -49,6 +49,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     proof_candidates_by_hole: dict[str, list[str]] = {}
     proof_selections: dict[str, dict[str, Any]] = {}
     proof_holes_closed: set[str] = set()
+    proof_functions: dict[str, dict[str, Any]] = {}
     term_handles: set[int] = set()
     term_lift_validations: set[str] = set()
     event_ids: set[str] = set()
@@ -201,6 +202,31 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             _require(data.get("rendering_hash") == terms[term].get("rendering_hash"),
                      f"event {sequence}: exact lift validates a different rendering")
             term_lift_validations.add(term)
+        elif operation == "proof.function.verify":
+            function = data.get("function")
+            parameter_sources = data.get("parameter_sources")
+            _require(isinstance(function, str) and function and
+                     function not in proof_functions and
+                     isinstance(parameter_sources, list) and
+                     all(source_id in source_nodes
+                         for source_id in parameter_sources) and
+                     data.get("result_source") in source_nodes and
+                     data.get("result_proposition") in terms and
+                     data.get("status") == "unsat" and
+                     data.get("runtime_function_created") is False,
+                     f"event {sequence}: malformed or repeated proof function")
+            proof_functions[function] = data
+        elif operation == "proof.function.apply":
+            function = data.get("function")
+            arguments = data.get("proof_arguments")
+            _require(function in proof_functions and
+                     isinstance(data.get("body"), str) and
+                     data["body"].startswith(function) and
+                     isinstance(arguments, list) and
+                     all(isinstance(argument, str) and argument
+                         for argument in arguments) and
+                     data.get("runtime_call_created") is False,
+                     f"event {sequence}: malformed proof function application")
         elif operation == "proof.search.open":
             hole = data.get("id")
             source_id = data.get("source")
@@ -220,7 +246,10 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      isinstance(data.get("expected_type"), str) and
                      data["expected_type"].startswith("Id(") and
                      data.get("proposition") in terms and
-                     data.get("grammar") == ["exact-local", "refl"] and
+                     data.get("grammar") == ["exact-local", "refl",
+                                             "proof-application"] and
+                     isinstance(data.get("max_cost"), int) and
+                     data["max_cost"] > 0 and
                      data.get("ill_typed_candidates_enumerated") is False,
                      f"event {sequence}: malformed typed identity proof hole")
             proof_holes[hole] = data
@@ -230,18 +259,32 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             _require(hole in proof_holes and hole not in proof_holes_closed,
                      f"event {sequence}: proof candidate names no open proof hole")
             _require(isinstance(data.get("body"), str) and data["body"] and
-                     data.get("production") in {"exact-local", "refl"} and
+                     data.get("production") in {"exact-local", "refl",
+                                                "proof-application"} and
                      data.get("expected_type") == proof_holes[hole]["expected_type"] and
                      data.get("exact_type") is True and
-                     data.get("runtime_value_created") is False,
+                     data.get("runtime_value_created") is False and
+                     isinstance(data.get("cost"), int) and
+                     0 < data["cost"] <= proof_holes[hole]["max_cost"],
                      f"event {sequence}: malformed or ill-typed proof candidate")
             if data["production"] == "exact-local":
                 _require(data.get("proof") == data["body"],
                          f"event {sequence}: local proof candidate loses its source binding")
-            else:
+            elif data["production"] == "refl":
                 _require("proof" not in data and data["body"].startswith("refl(") and
                          data["body"].endswith(")"),
                          f"event {sequence}: reflexivity candidate is not Fine proof syntax")
+            else:
+                arguments = data.get("proof_arguments")
+                function = data.get("function")
+                _require("proof" not in data and
+                         isinstance(function, str) and function and
+                         isinstance(arguments, list) and
+                         all(isinstance(argument, str) and argument
+                             for argument in arguments) and
+                         data["body"].startswith(function) and
+                         data["body"].endswith(")"),
+                         f"event {sequence}: proof application candidate loses its source tree")
             _require(event_id not in proof_candidates,
                      f"event {sequence}: reused proof candidate event")
             proof_candidates[event_id] = data

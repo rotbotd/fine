@@ -51,15 +51,15 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 
 ## Next: named proof functions
 
-- [ ] Add proof-level function declarations whose parameters and result are
+- [x] Add proof-level function declarations whose parameters and result are
       proof evidence and which cannot enter runtime value calls.
-- [ ] Make identity symmetry the first application-only hole: it must be
+- [x] Make identity symmetry the first application-only hole: it must be
       impossible to close by exact local selection or `refl`.
-- [ ] Add type-directed application candidates only when the instantiated
+- [x] Add type-directed application candidates only when the instantiated
       result has the exact expected proof type.
 - [ ] Add transitivity only after symmetry materializes and reruns without
       search; retain its two input proofs distinctly in Rainfall.
-- [ ] Bound recursive application grammar so a cyclic proof-function set
+- [x] Bound recursive application grammar so a cyclic proof-function set
       terminates without adding a tactic language or global theorem search.
 - [ ] After symmetry works with deterministic enumeration, test a bounded
       Z3 datatype-model backend against the same exact grammar. Lift and recheck

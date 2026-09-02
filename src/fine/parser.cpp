@@ -63,8 +63,8 @@ namespace fine::syntax {
                     }
                     if (std::string_view("(){}[],:;=?").find(static_cast<char>(c)) != std::string_view::npos) {
                         advance();
-                        result.push_back({Token::Kind::symbol, std::string(1, static_cast<char>(c)),
-                                          {begin, position()}});
+                        result.push_back(
+                            {Token::Kind::symbol, std::string(1, static_cast<char>(c)), {begin, position()}});
                         continue;
                     }
                     throw ParseError({begin, after_one()},
@@ -78,7 +78,9 @@ namespace fine::syntax {
             std::size_t line_ = 1;
             std::size_t column_ = 1;
 
-            SourcePosition position() const { return {offset_, line_, column_}; }
+            SourcePosition position() const {
+                return {offset_, line_, column_};
+            }
 
             SourcePosition after_one() const {
                 SourcePosition result = position();
@@ -126,8 +128,12 @@ namespace fine::syntax {
 
             Document document() {
                 Document result;
-                while (at("function"))
-                    result.functions.push_back(function());
+                while (at("function") || (at("proof") && peek(1).text == "function")) {
+                    if (at("function"))
+                        result.functions.push_back(function());
+                    else
+                        result.proof_functions.push_back(proof_function());
+                }
                 if (!at("run"))
                     fail(peek(), "expected one `run` declaration after functions");
                 result.run = run();
@@ -145,13 +151,17 @@ namespace fine::syntax {
                 return tokens_[std::min(cursor_ + lookahead, tokens_.size() - 1)];
             }
 
-            bool at(std::string_view text) const { return peek().text == text; }
+            bool at(std::string_view text) const {
+                return peek().text == text;
+            }
 
             [[noreturn]] static void fail(Token const &token, std::string message) {
                 throw ParseError(token.span, std::move(message));
             }
 
-            Token take() { return tokens_[cursor_++]; }
+            Token take() {
+                return tokens_[cursor_++];
+            }
 
             Token expect(std::string_view text) {
                 if (!at(text))
@@ -190,8 +200,9 @@ namespace fine::syntax {
                 expect(",");
                 ValueExpr right = value_expression();
                 Token end = expect(")");
-                return {ProofType::Kind::identity, {begin.span.begin, end.span.end}, next_node_id_++,
-                        std::move(carrier), std::move(left), std::move(right)};
+                return {ProofType::Kind::identity, {begin.span.begin, end.span.end},
+                        next_node_id_++,           std::move(carrier),
+                        std::move(left),           std::move(right)};
             }
 
             CoeffectParameter coeffect_parameter() {
@@ -325,8 +336,35 @@ namespace fine::syntax {
                 result.span = token.span;
                 result.node_id = next_node_id_++;
                 if (token.text != "refl") {
-                    result.kind = ProofExpr::Kind::name;
                     result.name = token.text;
+                    if (!at("[") && !at("(")) {
+                        result.kind = ProofExpr::Kind::name;
+                        return result;
+                    }
+                    result.kind = ProofExpr::Kind::application;
+                    if (at("[")) {
+                        take();
+                        if (!at("]")) {
+                            while (true) {
+                                result.value_arguments.push_back(value_expression());
+                                if (!at(","))
+                                    break;
+                                take();
+                            }
+                        }
+                        expect("]");
+                    }
+                    expect("(");
+                    if (!at(")")) {
+                        while (true) {
+                            result.proof_arguments.push_back(proof_expression());
+                            if (!at(","))
+                                break;
+                            take();
+                        }
+                    }
+                    Token end = expect(")");
+                    result.span.end = end.span.end;
                     return result;
                 }
                 result.kind = ProofExpr::Kind::reflexivity;
@@ -334,6 +372,23 @@ namespace fine::syntax {
                 result.value = value_expression();
                 Token end = expect(")");
                 result.span.end = end.span.end;
+                return result;
+            }
+
+            ProofFunctionDecl proof_function() {
+                Token begin = expect("proof");
+                expect("function");
+                Token name = identifier("proof function name");
+                ProofFunctionDecl result;
+                result.node_id = next_node_id_++;
+                result.name = name.text;
+                result.parameters = value_parameters();
+                if (at("needs"))
+                    result.proof_parameters = coeffect_parameters();
+                expect("->");
+                result.result_type = proof_type();
+                Token end = expect(";");
+                result.span = {begin.span.begin, end.span.end};
                 return result;
             }
 
@@ -381,8 +436,10 @@ namespace fine::syntax {
                         ValueExpr value = value_expression();
                         Token end = expect(";");
                         result.statements.emplace_back(LetDecl{{statement_begin.span.begin, end.span.end},
-                                                              next_node_id_++, binding.text,
-                                                              std::move(type), std::move(value)});
+                                                               next_node_id_++,
+                                                               binding.text,
+                                                               std::move(type),
+                                                               std::move(value)});
                     }
                     else if (at("proof")) {
                         Token statement_begin = take();
@@ -393,15 +450,17 @@ namespace fine::syntax {
                         ProofExpr value = proof_expression();
                         Token end = expect(";");
                         result.statements.emplace_back(ProofDecl{{statement_begin.span.begin, end.span.end},
-                                                                next_node_id_++, binding.text,
-                                                                std::move(type), std::move(value)});
+                                                                 next_node_id_++,
+                                                                 binding.text,
+                                                                 std::move(type),
+                                                                 std::move(value)});
                     }
                     else if (at("assert")) {
                         Token statement_begin = take();
                         ValueExpr proposition = value_expression();
                         Token end = expect(";");
-                        result.statements.emplace_back(AssertDecl{{statement_begin.span.begin, end.span.end},
-                                                                 next_node_id_++, std::move(proposition)});
+                        result.statements.emplace_back(AssertDecl{
+                            {statement_begin.span.begin, end.span.end}, next_node_id_++, std::move(proposition)});
                     }
                     else {
                         fail(peek(), "expected `let`, `proof`, or `assert` in run body");
@@ -446,6 +505,8 @@ namespace fine::syntax {
         return output.str();
     }
 
-    Document parse(std::string_view source) { return Parser(source).document(); }
+    Document parse(std::string_view source) {
+        return Parser(source).document();
+    }
 
 }  // namespace fine::syntax

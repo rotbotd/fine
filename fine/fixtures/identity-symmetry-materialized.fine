@@ -1,0 +1,12 @@
+proof function bool_eta(value: Bool)
+  -> Id(Bool, value, value == true);
+
+proof function symm(left: Bool, right: Bool)
+  needs [given: Id(Bool, left, right)]
+  -> Id(Bool, right, left);
+
+run identity_symmetry {
+  let x: Bool = true;
+  proof p: Id(Bool, x, x == true) = bool_eta[x]();
+  proof reversed: Id(Bool, x == true, x) = symm[x, x == true](p);
+}

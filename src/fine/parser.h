@@ -24,7 +24,9 @@ namespace fine::syntax {
     public:
         ParseError(SourceSpan span, std::string message);
 
-        SourceSpan span() const noexcept { return span_; }
+        SourceSpan span() const noexcept {
+            return span_;
+        }
         std::string format(std::string_view filename, std::string_view source) const;
 
     private:
@@ -75,13 +77,15 @@ namespace fine::syntax {
     };
 
     struct ProofExpr {
-        enum class Kind { name, reflexivity, hole };
+        enum class Kind { name, reflexivity, application, hole };
 
         Kind kind = Kind::name;
         SourceSpan span;
         std::size_t node_id = 0;
         std::string name;
         ValueExpr value;
+        std::vector<ValueExpr> value_arguments;
+        std::vector<ProofExpr> proof_arguments;
     };
 
     struct ValueParameter {
@@ -105,6 +109,17 @@ namespace fine::syntax {
         std::vector<CoeffectParameter> coeffects;
         std::vector<ValueExpr> ensures;
         ValueExpr body;
+    };
+
+    // Value parameters are static indices for the proof signature. Calls keep
+    // them visibly separate from proof evidence as `name[indices](proofs)`.
+    struct ProofFunctionDecl {
+        SourceSpan span;
+        std::size_t node_id = 0;
+        std::string name;
+        std::vector<ValueParameter> parameters;
+        std::vector<CoeffectParameter> proof_parameters;
+        ProofType result_type;
     };
 
     struct LetDecl {
@@ -140,6 +155,7 @@ namespace fine::syntax {
 
     struct Document {
         std::vector<FunctionDecl> functions;
+        std::vector<ProofFunctionDecl> proof_functions;
         RunDecl run;
     };
 

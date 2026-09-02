@@ -1,0 +1,7 @@
+proof function bool_eta(value: Bool)
+  -> Id(Bool, value, value == true);
+
+run proof_function_as_value {
+  let x: Bool = true;
+  let bad: Bool = bool_eta(x);
+}

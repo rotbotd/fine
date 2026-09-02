@@ -16,7 +16,9 @@ namespace fine {
     public:
         SemanticError(syntax::SourceSpan span, std::string message);
 
-        syntax::SourceSpan span() const noexcept { return span_; }
+        syntax::SourceSpan span() const noexcept {
+            return span_;
+        }
         std::string format(std::string_view filename, std::string_view source) const;
 
     private:
@@ -32,6 +34,7 @@ namespace fine {
     struct ExecutionResult {
         std::vector<Materialization> materializations;
         std::size_t functions_verified = 0;
+        std::size_t proof_functions_verified = 0;
         std::size_t proofs_formed = 0;
         std::size_t proof_holes_filled = 0;
         std::size_t coeffects_resolved = 0;
@@ -43,12 +46,9 @@ namespace fine {
     };
 
     ExecutionResult execute(syntax::Document const &document, std::ostream &output,
-                            std::ostream *rainfall_output = nullptr,
-                            SourceSnapshot const *snapshot = nullptr,
-                            std::string rainfall_run = {},
-                            ExecutionOptions options = {});
+                            std::ostream *rainfall_output = nullptr, SourceSnapshot const *snapshot = nullptr,
+                            std::string rainfall_run = {}, ExecutionOptions options = {});
 
-    std::string apply_materializations(std::string_view source,
-                                       std::vector<Materialization> materializations);
+    std::string apply_materializations(std::string_view source, std::vector<Materialization> materializations);
 
 }  // namespace fine

@@ -62,14 +62,61 @@
             exit 1
           fi
 
+          symmetry_output="$($out/bin/fine run "$src/fine/fixtures/identity-symmetry.fine")"
+          echo "$symmetry_output"
+          grep -F "verified proof function: bool_eta" <<<"$symmetry_output"
+          grep -F "verified proof function: symm" <<<"$symmetry_output"
+          grep -F "filled proof hole: reversed <- symm[x, x == true](p) (typed search)" \
+            <<<"$symmetry_output"
+
+          symmetry_materialized="$(mktemp)"
+          $out/bin/fine materialize "$src/fine/fixtures/identity-symmetry.fine" \
+            > "$symmetry_materialized"
+          cmp "$src/fine/fixtures/identity-symmetry-materialized.fine" \
+            "$symmetry_materialized"
+          symmetry_rerun="$($out/bin/fine run "$symmetry_materialized")"
+          grep -F "formed proof: reversed : Id(Bool, x == true, x) (virtual)" \
+            <<<"$symmetry_rerun"
+          if grep -F "filled proof hole:" <<<"$symmetry_rerun"; then
+            echo "materialized symmetry proof unexpectedly searched again" >&2
+            exit 1
+          fi
+
           empty_hole="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-empty-proof-hole.fine" \
               >"$empty_hole" 2>&1; then
             echo "empty proof-hole grammar unexpectedly passed" >&2
             exit 1
           fi
-          grep -F 'proof hole `impossible` has no well-typed candidate in grammar [exact-local, refl]' \
+          grep -F 'proof hole `impossible` has no well-typed candidate in bounded grammar [exact-local, refl, proof-application]' \
             "$empty_hole"
+
+          unjustified_proof_function="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-unjustified-proof-function.fine" \
+              >"$unjustified_proof_function" 2>&1; then
+            echo "unjustified proof function unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'proof function `lie` does not establish its result from its proof parameters' \
+            "$unjustified_proof_function"
+
+          proof_function_value="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-proof-function-as-value.fine" \
+              >"$proof_function_value" 2>&1; then
+            echo "proof function unexpectedly entered runtime value code" >&2
+            exit 1
+          fi
+          grep -F 'proof function `bool_eta` cannot be called from a runtime value expression' \
+            "$proof_function_value"
+
+          cyclic_proof_search="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-cyclic-proof-search.fine" \
+              >"$cyclic_proof_search" 2>&1; then
+            echo "cyclic proof search unexpectedly escaped its bound" >&2
+            exit 1
+          fi
+          grep -F 'proof hole `impossible` has no well-typed candidate in bounded grammar' \
+            "$cyclic_proof_search"
 
           missing="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-missing-coeffect.fine" >"$missing" 2>&1; then
@@ -156,6 +203,34 @@
           closed = events[-1]
           assert closed["operation"] == "proof-core.run.close"
           assert closed["data"]["proof_holes_filled"] == 2
+          assert closed["data"]["runtime_proof_values"] == 0
+          PY
+
+          symmetry_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/identity-symmetry.fine" \
+            > "$symmetry_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/identity-symmetry.fine" "$symmetry_rain"
+          ${pkgs.python3}/bin/python - "$symmetry_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          verified = [e for e in events if e["operation"] == "proof.function.verify"]
+          applied = [e for e in events if e["operation"] == "proof.function.apply"]
+          candidates = [e for e in events if e["operation"] == "proof.search.candidate"]
+          assert [e["data"]["function"] for e in verified] == ["bool_eta", "symm"]
+          assert applied[0]["data"]["body"] == "bool_eta[x]()"
+          assert [e["data"]["body"] for e in candidates] == [
+              "symm[x, x == true](p)",
+              "symm[x, x == true](bool_eta[x]())",
+          ]
+          assert all(e["data"]["production"] == "proof-application"
+                     for e in candidates)
+          assert [e["data"]["cost"] for e in candidates] == [2, 2]
+          selection = next(e for e in events if e["operation"] == "proof.search.select")
+          assert selection["data"]["body"] == "symm[x, x == true](p)"
+          closed = events[-1]
+          assert closed["operation"] == "proof-core.run.close"
+          assert closed["data"]["proof_functions_verified"] == 2
           assert closed["data"]["runtime_proof_values"] == 0
           PY
 

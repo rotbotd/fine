@@ -50,8 +50,7 @@ namespace fine {
             std::string formation;
             syntax::SourceSpan span;
 
-            ProofEvidence(std::string name, IdentityType type, std::string formation,
-                          syntax::SourceSpan span)
+            ProofEvidence(std::string name, IdentityType type, std::string formation, syntax::SourceSpan span)
                 : name(std::move(name)), type(std::move(type)), formation(std::move(formation)), span(span) {}
         };
 
@@ -62,7 +61,12 @@ namespace fine {
             std::string source;
             std::string production;
             std::optional<std::string> local_proof;
+            std::optional<std::string> proof_function;
+            std::vector<std::string> proof_arguments;
+            std::size_t cost = 1;
         };
+
+        constexpr std::size_t max_proof_search_cost = 3;
 
         bool same_ast(z3::context &context, z3::expr const &left, z3::expr const &right) {
             return Z3_is_eq_ast(context, left, right);
@@ -75,12 +79,9 @@ namespace fine {
 
         std::string print_value(syntax::ValueExpr const &expression) {
             switch (expression.kind) {
-            case syntax::ValueExpr::Kind::name:
-                return expression.name;
-            case syntax::ValueExpr::Kind::integer:
-                return expression.integer_text;
-            case syntax::ValueExpr::Kind::boolean:
-                return expression.boolean_value ? "true" : "false";
+            case syntax::ValueExpr::Kind::name: return expression.name;
+            case syntax::ValueExpr::Kind::integer: return expression.integer_text;
+            case syntax::ValueExpr::Kind::boolean: return expression.boolean_value ? "true" : "false";
             case syntax::ValueExpr::Kind::equal:
                 return print_value(expression.elements[0]) + " == " + print_value(expression.elements[1]);
             case syntax::ValueExpr::Kind::call: {
@@ -97,8 +98,7 @@ namespace fine {
                     for (std::size_t i = 0; i < expression.using_proofs.size(); ++i) {
                         if (i)
                             result << ", ";
-                        result << expression.using_proofs[i].coeffect << " = "
-                               << expression.using_proofs[i].proof;
+                        result << expression.using_proofs[i].coeffect << " = " << expression.using_proofs[i].proof;
                     }
                     result << ']';
                 }
@@ -110,9 +110,63 @@ namespace fine {
 
         std::string print_identity(syntax::ProofType const &type) {
             std::ostringstream result;
-            result << "Id(" << kind_name(kind_of(type.carrier)) << ", " << print_value(type.left)
-                   << ", " << print_value(type.right) << ')';
+            result << "Id(" << kind_name(kind_of(type.carrier)) << ", " << print_value(type.left) << ", "
+                   << print_value(type.right) << ')';
             return result.str();
+        }
+
+        std::string print_proof(syntax::ProofExpr const &expression) {
+            switch (expression.kind) {
+            case syntax::ProofExpr::Kind::name: return expression.name;
+            case syntax::ProofExpr::Kind::reflexivity: return "refl(" + print_value(expression.value) + ")";
+            case syntax::ProofExpr::Kind::application: {
+                std::ostringstream result;
+                result << expression.name;
+                if (!expression.value_arguments.empty()) {
+                    result << '[';
+                    for (std::size_t i = 0; i < expression.value_arguments.size(); ++i) {
+                        if (i)
+                            result << ", ";
+                        result << print_value(expression.value_arguments[i]);
+                    }
+                    result << ']';
+                }
+                result << '(';
+                for (std::size_t i = 0; i < expression.proof_arguments.size(); ++i) {
+                    if (i)
+                        result << ", ";
+                    result << print_proof(expression.proof_arguments[i]);
+                }
+                result << ')';
+                return result.str();
+            }
+            case syntax::ProofExpr::Kind::hole: return "?";
+            }
+            return "<proof>";
+        }
+
+        std::string print_value_substituted(syntax::ValueExpr const &expression,
+                                            std::map<std::string, std::string> const &substitutions) {
+            if (expression.kind == syntax::ValueExpr::Kind::name) {
+                if (auto found = substitutions.find(expression.name); found != substitutions.end())
+                    return found->second;
+                return expression.name;
+            }
+            if (expression.kind == syntax::ValueExpr::Kind::equal)
+                return print_value_substituted(expression.elements[0], substitutions) +
+                       " == " + print_value_substituted(expression.elements[1], substitutions);
+            if (expression.kind == syntax::ValueExpr::Kind::call) {
+                std::ostringstream result;
+                result << expression.name << '(';
+                for (std::size_t i = 0; i < expression.elements.size(); ++i) {
+                    if (i)
+                        result << ", ";
+                    result << print_value_substituted(expression.elements[i], substitutions);
+                }
+                result << ')';
+                return result.str();
+            }
+            return print_value(expression);
         }
 
         std::string source_line(std::string_view source, std::size_t line_number) {
@@ -133,9 +187,8 @@ namespace fine {
 
         class Elaborator {
         public:
-            Elaborator(std::ostream &output, std::ostream *rainfall_output,
-                       SourceSnapshot const *snapshot, std::string rainfall_run,
-                       ExecutionOptions options)
+            Elaborator(std::ostream &output, std::ostream *rainfall_output, SourceSnapshot const *snapshot,
+                       std::string rainfall_run, ExecutionOptions options)
                 : output_(output), options_(options) {
                 if (rainfall_output)
                     rainfall_.emplace(context_, *rainfall_output, std::move(rainfall_run), snapshot);
@@ -143,17 +196,19 @@ namespace fine {
 
             ExecutionResult execute(syntax::Document const &document) {
                 record_boundary();
+                for (auto const &function : document.proof_functions)
+                    declare_proof_function(function);
                 for (auto const &function : document.functions)
                     declare_function(function);
                 execute_run(document.run);
                 if (rainfall_) {
                     rainfall_->validate_terms();
                     rainfall_->record(
-                        "transition", "proof-core.run.close", {"run:" + document.run.name},
-                        "fine.two-level-elaborator",
+                        "transition", "proof-core.run.close", {"run:" + document.run.name}, "fine.two-level-elaborator",
                         "All value terms checked; proof evidence remained virtual and every coeffect resolved",
                         {RainfallRecorder::string_field("status", "verified"),
                          RainfallRecorder::number_field("functions_verified", result_.functions_verified),
+                         RainfallRecorder::number_field("proof_functions_verified", result_.proof_functions_verified),
                          RainfallRecorder::number_field("proofs_formed", result_.proofs_formed),
                          RainfallRecorder::number_field("proof_holes_filled", result_.proof_holes_filled),
                          RainfallRecorder::number_field("coeffects_resolved", result_.coeffects_resolved),
@@ -171,6 +226,8 @@ namespace fine {
             ExecutionOptions options_;
             std::optional<RainfallRecorder> rainfall_;
             std::map<std::string, syntax::FunctionDecl const *> functions_;
+            std::map<std::string, syntax::ProofFunctionDecl const *> proof_functions_;
+            std::vector<std::string> proof_function_order_;
             ExecutionResult result_;
             std::map<std::pair<std::size_t, std::size_t>, std::string> materializations_;
 
@@ -178,10 +235,9 @@ namespace fine {
                 throw SemanticError(span, std::move(message));
             }
 
-            void request_materialization(std::size_t begin, std::size_t end,
-                                         std::string text, syntax::SourceSpan span) {
-                auto [found, inserted] = materializations_.emplace(
-                    std::pair{begin, end}, text);
+            void request_materialization(std::size_t begin, std::size_t end, std::string text,
+                                         syntax::SourceSpan span) {
+                auto [found, inserted] = materializations_.emplace(std::pair{begin, end}, text);
                 if (!inserted && found->second != text)
                     reject(span, "two materializations disagree at one source range");
             }
@@ -193,24 +249,22 @@ namespace fine {
             void record_boundary() {
                 if (!rainfall_)
                     return;
-                rainfall_->record(
-                    "object", "proof.erasure.boundary", {}, "fine.two-level-core",
-                    "The runtime value representation is closed over Int and Bool; ProofEvidence is a disjoint elaborator-only type",
-                    {RainfallRecorder::raw_field("runtime_value_kinds", "[\"Int\",\"Bool\"]"),
-                     RainfallRecorder::number_field("runtime_proof_variants", 0),
-                     RainfallRecorder::boolean_field("proof_evidence_elaboration_only", true)});
+                rainfall_->record("object", "proof.erasure.boundary", {}, "fine.two-level-core",
+                                  "The runtime value representation is closed over Int and Bool; ProofEvidence is a "
+                                  "disjoint elaborator-only type",
+                                  {RainfallRecorder::raw_field("runtime_value_kinds", "[\"Int\",\"Bool\"]"),
+                                   RainfallRecorder::number_field("runtime_proof_variants", 0),
+                                   RainfallRecorder::boolean_field("proof_evidence_elaboration_only", true)});
             }
 
-            void ensure_fresh(std::string const &name, syntax::SourceSpan span,
-                              ValueEnvironment const &values, ProofEnvironment const &proofs) {
+            void ensure_fresh(std::string const &name, syntax::SourceSpan span, ValueEnvironment const &values,
+                              ProofEnvironment const &proofs) {
                 if (values.contains(name) || proofs.contains(name))
                     reject(span, "duplicate local name `" + name + "`");
             }
 
-            ValueTerm elaborate_value(syntax::ValueExpr const &expression,
-                                      ValueEnvironment const &values,
-                                      ProofEnvironment const &proofs,
-                                      std::vector<std::string> const &proof_order,
+            ValueTerm elaborate_value(syntax::ValueExpr const &expression, ValueEnvironment const &values,
+                                      ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
                                       std::vector<z3::expr> const &absorbed) {
                 switch (expression.kind) {
                 case syntax::ValueExpr::Kind::name: {
@@ -218,8 +272,7 @@ namespace fine {
                     if (value != values.end())
                         return value->second;
                     if (proofs.contains(expression.name))
-                        reject(expression.span, "proof `" + expression.name +
-                                                "` cannot inhabit a runtime value");
+                        reject(expression.span, "proof `" + expression.name + "` cannot inhabit a runtime value");
                     reject(expression.span, "unknown value `" + expression.name + "`");
                 }
                 case syntax::ValueExpr::Kind::integer:
@@ -239,30 +292,216 @@ namespace fine {
                 reject(expression.span, "unsupported value expression");
             }
 
-            IdentityType elaborate_identity(syntax::ProofType const &type,
-                                             ValueEnvironment const &values,
-                                             ProofEnvironment const &proofs,
-                                             std::vector<std::string> const &proof_order,
-                                             std::vector<z3::expr> const &absorbed) {
+            IdentityType elaborate_identity(syntax::ProofType const &type, ValueEnvironment const &values,
+                                            ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
+                                            std::vector<z3::expr> const &absorbed) {
                 ValueKind carrier = kind_of(type.carrier);
                 ValueTerm left = elaborate_value(type.left, values, proofs, proof_order, absorbed);
                 ValueTerm right = elaborate_value(type.right, values, proofs, proof_order, absorbed);
                 if (left.kind != carrier || right.kind != carrier)
-                    reject(type.span, "identity endpoints do not have carrier type `" +
-                                          std::string(kind_name(carrier)) + "`");
+                    reject(type.span,
+                           "identity endpoints do not have carrier type `" + std::string(kind_name(carrier)) + "`");
                 return {carrier, std::move(left.expression), std::move(right.expression)};
             }
 
-            ProofEvidence elaborate_proof(syntax::ProofExpr const &expression,
-                                          syntax::ProofType const &expected_syntax,
-                                          IdentityType expected,
-                                          ValueEnvironment const &values,
-                                          ProofEnvironment const &proofs,
-                                          std::vector<std::string> const &proof_order,
-                                          std::vector<z3::expr> const &absorbed,
-                                          std::string name,
-                                          std::string const &run,
-                                          std::string const &proof_source,
+            bool bind_result_index(syntax::ValueExpr const &pattern, z3::expr const &target,
+                                   std::string const &target_source, std::map<std::string, ValueKind> const &parameters,
+                                   ValueEnvironment &bindings, std::map<std::string, std::string> &source_bindings) {
+                if (pattern.kind != syntax::ValueExpr::Kind::name || !parameters.contains(pattern.name))
+                    return true;
+                ValueKind kind = parameters.at(pattern.name);
+                if (!Z3_is_eq_sort(context_, target.get_sort(), sort(kind)))
+                    return false;
+                if (auto found = bindings.find(pattern.name); found != bindings.end())
+                    return same_ast(context_, found->second.expression, target);
+                bindings.emplace(pattern.name, ValueTerm(kind, target));
+                source_bindings.emplace(pattern.name, target_source);
+                return true;
+            }
+
+            bool infer_value_arguments(syntax::ProofFunctionDecl const &function, IdentityType const &expected,
+                                       std::string const &left_source, std::string const &right_source,
+                                       ValueEnvironment &bindings,
+                                       std::map<std::string, std::string> &source_bindings) {
+                if (kind_of(function.result_type.carrier) != expected.carrier)
+                    return false;
+                std::map<std::string, ValueKind> parameters;
+                for (auto const &parameter : function.parameters)
+                    parameters.emplace(parameter.name, kind_of(parameter.type));
+                if (!bind_result_index(function.result_type.left, expected.left, left_source, parameters, bindings,
+                                       source_bindings) ||
+                    !bind_result_index(function.result_type.right, expected.right, right_source, parameters, bindings,
+                                       source_bindings))
+                    return false;
+                if (bindings.size() != function.parameters.size())
+                    return false;
+                ProofEnvironment no_proofs;
+                std::vector<std::string> no_proof_order;
+                std::vector<z3::expr> no_absorbed;
+                IdentityType instantiated =
+                    elaborate_identity(function.result_type, bindings, no_proofs, no_proof_order, no_absorbed);
+                return same_type(context_, instantiated, expected);
+            }
+
+            ProofEvidence elaborate_proof_application(syntax::ProofExpr const &expression, IdentityType expected,
+                                                      ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                                      std::vector<std::string> const &proof_order,
+                                                      std::vector<z3::expr> const &absorbed, std::string name,
+                                                      std::string const &run) {
+                auto found = proof_functions_.find(expression.name);
+                if (found == proof_functions_.end()) {
+                    if (functions_.contains(expression.name))
+                        reject(expression.span, "value function `" + expression.name + "` cannot inhabit a proof");
+                    reject(expression.span, "unknown proof function `" + expression.name + "`");
+                }
+                syntax::ProofFunctionDecl const &function = *found->second;
+                if (expression.value_arguments.size() != function.parameters.size())
+                    reject(expression.span, "proof function `" + expression.name + "` expects " +
+                                                std::to_string(function.parameters.size()) + " index arguments");
+                if (expression.proof_arguments.size() != function.proof_parameters.size())
+                    reject(expression.span, "proof function `" + expression.name + "` expects " +
+                                                std::to_string(function.proof_parameters.size()) + " proof arguments");
+
+                ValueEnvironment indices;
+                for (std::size_t i = 0; i < function.parameters.size(); ++i) {
+                    ValueTerm argument =
+                        elaborate_value(expression.value_arguments[i], values, proofs, proof_order, absorbed);
+                    ValueKind expected_kind = kind_of(function.parameters[i].type);
+                    if (argument.kind != expected_kind)
+                        reject(expression.value_arguments[i].span,
+                               "index argument `" + function.parameters[i].name + "` has the wrong value type");
+                    indices.emplace(function.parameters[i].name, std::move(argument));
+                }
+                ProofEnvironment no_proofs;
+                std::vector<std::string> no_proof_order;
+                std::vector<z3::expr> no_absorbed;
+                IdentityType result_type =
+                    elaborate_identity(function.result_type, indices, no_proofs, no_proof_order, no_absorbed);
+                if (!same_type(context_, result_type, expected))
+                    reject(expression.span,
+                           "proof application `" + print_proof(expression) + "` has the wrong identity result type");
+
+                std::vector<std::string> argument_sources;
+                for (std::size_t i = 0; i < function.proof_parameters.size(); ++i) {
+                    if (expression.proof_arguments[i].kind == syntax::ProofExpr::Kind::hole)
+                        reject(expression.proof_arguments[i].span, "nested proof holes are not admitted in this slice");
+                    IdentityType parameter_type = elaborate_identity(function.proof_parameters[i].type, indices,
+                                                                     no_proofs, no_proof_order, no_absorbed);
+                    ProofEvidence argument =
+                        elaborate_proof(expression.proof_arguments[i], function.proof_parameters[i].type,
+                                        std::move(parameter_type), values, proofs, proof_order, absorbed,
+                                        name + "." + function.proof_parameters[i].name, run, {}, {});
+                    argument_sources.push_back(print_proof(expression.proof_arguments[i]));
+                }
+
+                if (rainfall_)
+                    rainfall_->record(
+                        "derive", "proof.function.apply", {"run:" + run}, "fine.proof-elaborator",
+                        "A named proof-level function is applied to checked virtual evidence; no runtime call exists",
+                        {RainfallRecorder::string_field("function", function.name),
+                         RainfallRecorder::string_field("body", print_proof(expression)),
+                         RainfallRecorder::raw_field("proof_arguments",
+                                                     RainfallRecorder::string_array(argument_sources)),
+                         RainfallRecorder::boolean_field("runtime_call_created", false)});
+                return {std::move(name), std::move(expected), "apply:" + function.name, expression.span};
+            }
+
+            std::vector<ProofCandidate>
+            enumerate_proof_candidates(syntax::ProofType const &expected_syntax, IdentityType const &expected,
+                                       std::string const &left_source, std::string const &right_source,
+                                       ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                       std::vector<std::string> const &proof_order,
+                                       std::vector<z3::expr> const &absorbed, std::size_t budget) {
+                if (budget == 0)
+                    return {};
+                std::vector<ProofCandidate> candidates;
+                for (auto const &candidate_name : proof_order) {
+                    auto found = proofs.find(candidate_name);
+                    if (found != proofs.end() && same_type(context_, found->second.type, expected))
+                        candidates.push_back({candidate_name, "exact-local", candidate_name, std::nullopt, {}, 1});
+                }
+                if (same_ast(context_, expected.left, expected.right))
+                    candidates.push_back({"refl(" + left_source + ")", "refl", std::nullopt, std::nullopt, {}, 1});
+
+                for (auto const &function_name : proof_function_order_) {
+                    syntax::ProofFunctionDecl const &function = *proof_functions_.at(function_name);
+                    ValueEnvironment indices;
+                    std::map<std::string, std::string> index_sources;
+                    if (!infer_value_arguments(function, expected, left_source, right_source, indices, index_sources))
+                        continue;
+
+                    ProofEnvironment no_proofs;
+                    std::vector<std::string> no_proof_order;
+                    std::vector<z3::expr> no_absorbed;
+                    std::vector<std::vector<ProofCandidate>> argument_frontiers;
+                    bool applicable = true;
+                    for (auto const &parameter : function.proof_parameters) {
+                        IdentityType argument_type =
+                            elaborate_identity(parameter.type, indices, no_proofs, no_proof_order, no_absorbed);
+                        std::string argument_left = print_value_substituted(parameter.type.left, index_sources);
+                        std::string argument_right = print_value_substituted(parameter.type.right, index_sources);
+                        auto frontier =
+                            enumerate_proof_candidates(parameter.type, argument_type, argument_left, argument_right,
+                                                       values, proofs, proof_order, absorbed, budget - 1);
+                        if (frontier.empty()) {
+                            applicable = false;
+                            break;
+                        }
+                        argument_frontiers.push_back(std::move(frontier));
+                    }
+                    if (!applicable)
+                        continue;
+
+                    std::vector<std::vector<ProofCandidate>> combinations(1);
+                    for (auto const &frontier : argument_frontiers) {
+                        std::vector<std::vector<ProofCandidate>> next;
+                        for (auto const &combination : combinations)
+                            for (auto const &argument : frontier) {
+                                auto extended = combination;
+                                extended.push_back(argument);
+                                next.push_back(std::move(extended));
+                            }
+                        combinations = std::move(next);
+                    }
+                    for (auto const &arguments : combinations) {
+                        std::size_t cost = 1;
+                        std::vector<std::string> argument_sources;
+                        for (auto const &argument : arguments) {
+                            cost += argument.cost;
+                            argument_sources.push_back(argument.source);
+                        }
+                        if (cost > budget)
+                            continue;
+                        std::ostringstream source;
+                        source << function.name;
+                        if (!function.parameters.empty()) {
+                            source << '[';
+                            for (std::size_t i = 0; i < function.parameters.size(); ++i) {
+                                if (i)
+                                    source << ", ";
+                                source << index_sources.at(function.parameters[i].name);
+                            }
+                            source << ']';
+                        }
+                        source << '(';
+                        for (std::size_t i = 0; i < argument_sources.size(); ++i) {
+                            if (i)
+                                source << ", ";
+                            source << argument_sources[i];
+                        }
+                        source << ')';
+                        candidates.push_back({source.str(), "proof-application", std::nullopt, function.name,
+                                              std::move(argument_sources), cost});
+                    }
+                }
+                return candidates;
+            }
+
+            ProofEvidence elaborate_proof(syntax::ProofExpr const &expression, syntax::ProofType const &expected_syntax,
+                                          IdentityType expected, ValueEnvironment const &values,
+                                          ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
+                                          std::vector<z3::expr> const &absorbed, std::string name,
+                                          std::string const &run, std::string const &proof_source,
                                           std::string const &type_source) {
                 if (expression.kind == syntax::ProofExpr::Kind::name) {
                     auto found = proofs.find(expression.name);
@@ -274,34 +513,30 @@ namespace fine {
                 }
                 if (expression.kind == syntax::ProofExpr::Kind::reflexivity) {
                     ValueTerm witness = elaborate_value(expression.value, values, proofs, proof_order, absorbed);
-                    if (witness.kind != expected.carrier ||
-                        !same_ast(context_, witness.expression, expected.left) ||
+                    if (witness.kind != expected.carrier || !same_ast(context_, witness.expression, expected.left) ||
                         !same_ast(context_, witness.expression, expected.right))
-                        reject(expression.span, "`refl` requires both identity endpoints to elaborate to its exact value");
+                        reject(expression.span,
+                               "`refl` requires both identity endpoints to elaborate to its exact value");
                     return {std::move(name), std::move(expected), "refl", expression.span};
                 }
+                if (expression.kind == syntax::ProofExpr::Kind::application)
+                    return elaborate_proof_application(expression, std::move(expected), values, proofs, proof_order,
+                                                       absorbed, std::move(name), run);
 
                 if (options_.require_materialized_proofs)
                     reject(expression.span, "proof hole remains after materialization");
 
-                std::vector<ProofCandidate> candidates;
-                for (auto const &candidate_name : proof_order) {
-                    auto found = proofs.find(candidate_name);
-                    if (found != proofs.end() && same_type(context_, found->second.type, expected))
-                        candidates.push_back({candidate_name, "exact-local", candidate_name});
-                }
-                if (same_ast(context_, expected.left, expected.right))
-                    candidates.push_back({"refl(" + print_value(expected_syntax.left) + ")", "refl", std::nullopt});
+                std::vector<ProofCandidate> candidates = enumerate_proof_candidates(
+                    expected_syntax, expected, print_value(expected_syntax.left), print_value(expected_syntax.right),
+                    values, proofs, proof_order, absorbed, max_proof_search_cost);
 
                 std::string proposition;
                 std::string hole = "proof-hole:" + proof_source;
                 std::vector<std::string> candidate_events;
                 if (rainfall_) {
-                    proposition = rainfall_->term(expected.left == expected.right,
-                                                  "proof-hole-proposition");
+                    proposition = rainfall_->term(expected.left == expected.right, "proof-hole-proposition");
                     rainfall_->record(
-                        "object", "proof.search.open", {"run:" + run, hole},
-                        "fine.typed-proof-search",
+                        "object", "proof.search.open", {"run:" + run, hole}, "fine.typed-proof-search",
                         "A source proof hole opens with a finite grammar determined by its expected identity type",
                         {RainfallRecorder::string_field("id", hole),
                          RainfallRecorder::string_field("source", proof_source),
@@ -309,7 +544,8 @@ namespace fine {
                          RainfallRecorder::string_field("binding", name),
                          RainfallRecorder::string_field("expected_type", print_identity(expected_syntax)),
                          RainfallRecorder::string_field("proposition", proposition),
-                         RainfallRecorder::raw_field("grammar", "[\"exact-local\",\"refl\"]"),
+                         RainfallRecorder::raw_field("grammar", "[\"exact-local\",\"refl\",\"proof-application\"]"),
+                         RainfallRecorder::number_field("max_cost", max_proof_search_cost),
                          RainfallRecorder::boolean_field("ill_typed_candidates_enumerated", false)});
                     for (auto const &candidate : candidates) {
                         std::vector<RainfallField> data = {
@@ -322,26 +558,32 @@ namespace fine {
                         };
                         if (candidate.local_proof)
                             data.push_back(RainfallRecorder::string_field("proof", *candidate.local_proof));
+                        if (candidate.proof_function) {
+                            data.push_back(RainfallRecorder::string_field("function", *candidate.proof_function));
+                            data.push_back(RainfallRecorder::raw_field(
+                                "proof_arguments", RainfallRecorder::string_array(candidate.proof_arguments)));
+                        }
+                        data.push_back(RainfallRecorder::number_field("cost", candidate.cost));
                         candidate_events.push_back(rainfall_->record(
-                            "derive", "proof.search.candidate", {"run:" + run, hole},
-                            "fine.typed-proof-search",
-                            "A well-typed Fine proof production entered the finite frontier; mismatched productions are absent",
+                            "derive", "proof.search.candidate", {"run:" + run, hole}, "fine.typed-proof-search",
+                            "A well-typed Fine proof production entered the finite frontier; mismatched productions "
+                            "are absent",
                             data));
                     }
                 }
 
                 if (candidates.empty())
                     reject(expression.span, "proof hole `" + name +
-                                                "` has no well-typed candidate in grammar [exact-local, refl]");
+                                                "` has no well-typed candidate in bounded grammar "
+                                                "[exact-local, refl, proof-application]");
 
                 ProofCandidate const &selected = candidates.front();
-                request_materialization(expression.span.begin.offset, expression.span.end.offset,
-                                        selected.source, expression.span);
+                request_materialization(expression.span.begin.offset, expression.span.end.offset, selected.source,
+                                        expression.span);
                 ++result_.proof_holes_filled;
                 if (rainfall_) {
                     std::string selection = rainfall_->record(
-                        "transition", "proof.search.select", {"run:" + run, hole},
-                        "fine.typed-proof-search",
+                        "transition", "proof.search.select", {"run:" + run, hole}, "fine.typed-proof-search",
                         "The first deterministic well-typed source proof is selected for checking and materialization",
                         {RainfallRecorder::string_field("hole", hole),
                          RainfallRecorder::string_field("candidate", candidate_events.front()),
@@ -349,28 +591,28 @@ namespace fine {
                          RainfallRecorder::string_field("production", selected.production)});
                     std::vector<std::string> residual(candidate_events.begin() + 1, candidate_events.end());
                     rainfall_->record(
-                        "transition", "proof.search.close", {"run:" + run, hole},
-                        "fine.typed-proof-search",
+                        "transition", "proof.search.close", {"run:" + run, hole}, "fine.typed-proof-search",
                         "The typed hole has a checked source witness and its unchosen finite frontier remains explicit",
                         {RainfallRecorder::string_field("hole", hole),
                          RainfallRecorder::string_field("selection", selection),
                          RainfallRecorder::string_field("selected_candidate", candidate_events.front()),
-                         RainfallRecorder::raw_field("residual_candidates",
-                                                     RainfallRecorder::string_array(residual)),
+                         RainfallRecorder::raw_field("residual_candidates", RainfallRecorder::string_array(residual)),
                          RainfallRecorder::string_field("status", "selected"),
                          RainfallRecorder::boolean_field("materialization_requested", true)});
                 }
-                output_ << "filled proof hole: " << name << " <- " << selected.source
-                        << " (typed search)\n";
-                std::string formation = selected.local_proof
-                                            ? "search:exact-local:" + *selected.local_proof
-                                            : "search:refl";
+                output_ << "filled proof hole: " << name << " <- " << selected.source << " (typed search)\n";
+                std::string formation;
+                if (selected.local_proof)
+                    formation = "search:exact-local:" + *selected.local_proof;
+                else if (selected.proof_function)
+                    formation = "search:proof-application:" + *selected.proof_function;
+                else
+                    formation = "search:refl";
                 return {std::move(name), std::move(expected), std::move(formation), expression.span};
             }
 
-            void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed,
-                        std::vector<std::string> within, std::string_view role,
-                        std::optional<std::string> source = std::nullopt) {
+            void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed, std::vector<std::string> within,
+                        std::string_view role, std::optional<std::string> source = std::nullopt) {
                 z3::expr proposition = proof.type.left == proof.type.right;
                 absorbed.push_back(proposition);
                 if (!rainfall_)
@@ -384,14 +626,78 @@ namespace fine {
                 };
                 if (source)
                     data.push_back(RainfallRecorder::string_field("source", *source));
-                rainfall_->record(
-                    "derive", "proof.context.absorb", within, "fine.proof-context",
-                    "Identity evidence contributes its proposition to this lexical SMT context without becoming a runtime value",
-                    data);
+                rainfall_->record("derive", "proof.context.absorb", within, "fine.proof-context",
+                                  "Identity evidence contributes its proposition to this lexical SMT context without "
+                                  "becoming a runtime value",
+                                  data);
+            }
+
+            void declare_proof_function(syntax::ProofFunctionDecl const &declaration) {
+                if (proof_functions_.contains(declaration.name) || functions_.contains(declaration.name))
+                    reject(declaration.span, "duplicate function `" + declaration.name + "`");
+                ValueEnvironment indices;
+                ProofEnvironment proofs;
+                std::vector<std::string> proof_order;
+                std::vector<z3::expr> absorbed;
+                std::set<std::string> names;
+                for (auto const &parameter : declaration.parameters) {
+                    if (!names.insert(parameter.name).second)
+                        reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
+                    ValueKind kind = kind_of(parameter.type);
+                    std::string symbol = "fine.proof-function." + declaration.name + "." + parameter.name;
+                    indices.emplace(parameter.name, ValueTerm(kind, context_.constant(symbol.c_str(), sort(kind))));
+                }
+
+                std::vector<std::string> parameter_sources;
+                for (auto const &parameter : declaration.proof_parameters) {
+                    if (!names.insert(parameter.name).second)
+                        reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
+                    IdentityType type = elaborate_identity(parameter.type, indices, proofs, proof_order, absorbed);
+                    ProofEvidence evidence(parameter.name, std::move(type), "proof-function-parameter", parameter.span);
+                    if (rainfall_)
+                        parameter_sources.push_back(
+                            rainfall_->source_node(parameter.type.node_id, parameter.type.span, "proof-type.identity"));
+                    auto [inserted, ok] = proofs.emplace(parameter.name, std::move(evidence));
+                    proof_order.push_back(parameter.name);
+                    absorb(inserted->second, absorbed, {"proof-function:" + declaration.name},
+                           "proof-function-parameter");
+                }
+                IdentityType result_type =
+                    elaborate_identity(declaration.result_type, indices, proofs, proof_order, absorbed);
+                z3::expr result_proposition = result_type.left == result_type.right;
+                z3::solver solver(context_);
+                for (auto const &assumption : absorbed)
+                    solver.add(assumption);
+                solver.add(!result_proposition);
+                if (solver.check() != z3::unsat)
+                    reject(declaration.span, "proof function `" + declaration.name +
+                                                 "` does not establish its result "
+                                                 "from its proof parameters");
+
+                proof_functions_.emplace(declaration.name, &declaration);
+                proof_function_order_.push_back(declaration.name);
+                ++result_.proof_functions_verified;
+                output_ << "verified proof function: " << declaration.name << '\n';
+                if (rainfall_) {
+                    std::string result_source = rainfall_->source_node(
+                        declaration.result_type.node_id, declaration.result_type.span, "proof-type.identity");
+                    std::string proposition = rainfall_->term(result_proposition, "proof-function-result-proposition");
+                    rainfall_->record(
+                        "transition", "proof.function.verify", {"proof-function:" + declaration.name},
+                        "fine.proof-elaborator",
+                        "A named proof-level function result is refuted under its absorbed proof parameters",
+                        {RainfallRecorder::string_field("function", declaration.name),
+                         RainfallRecorder::raw_field("parameter_sources",
+                                                     RainfallRecorder::string_array(parameter_sources)),
+                         RainfallRecorder::string_field("result_source", result_source),
+                         RainfallRecorder::string_field("result_proposition", proposition),
+                         RainfallRecorder::string_field("status", "unsat"),
+                         RainfallRecorder::boolean_field("runtime_function_created", false)});
+                }
             }
 
             void declare_function(syntax::FunctionDecl const &declaration) {
-                if (functions_.contains(declaration.name))
+                if (functions_.contains(declaration.name) || proof_functions_.contains(declaration.name))
                     reject(declaration.span, "duplicate function `" + declaration.name + "`");
                 ValueEnvironment values;
                 ProofEnvironment proofs;
@@ -412,24 +718,23 @@ namespace fine {
                     ProofEvidence evidence(coeffect.name, std::move(type), "coeffect", coeffect.span);
                     std::string source;
                     if (rainfall_) {
-                        source = rainfall_->source_node(coeffect.type.node_id, coeffect.type.span,
-                                                       "proof-type.identity");
-                        std::string proposition = rainfall_->term(evidence.type.left == evidence.type.right,
-                                                                  "coeffect-proposition");
-                        rainfall_->record(
-                            "object", "coeffect.demand.declare", {"function:" + declaration.name},
-                            "fine.two-level-elaborator",
-                            "Function signature declares identity evidence required from each caller",
-                            {RainfallRecorder::string_field("function", declaration.name),
-                             RainfallRecorder::string_field("coeffect", coeffect.name),
-                             RainfallRecorder::string_field("proof_type", print_identity(coeffect.type)),
-                             RainfallRecorder::string_field("source", source),
-                             RainfallRecorder::string_field("proposition", proposition)});
+                        source =
+                            rainfall_->source_node(coeffect.type.node_id, coeffect.type.span, "proof-type.identity");
+                        std::string proposition =
+                            rainfall_->term(evidence.type.left == evidence.type.right, "coeffect-proposition");
+                        rainfall_->record("object", "coeffect.demand.declare", {"function:" + declaration.name},
+                                          "fine.two-level-elaborator",
+                                          "Function signature declares identity evidence required from each caller",
+                                          {RainfallRecorder::string_field("function", declaration.name),
+                                           RainfallRecorder::string_field("coeffect", coeffect.name),
+                                           RainfallRecorder::string_field("proof_type", print_identity(coeffect.type)),
+                                           RainfallRecorder::string_field("source", source),
+                                           RainfallRecorder::string_field("proposition", proposition)});
                     }
                     auto [found, inserted] = proofs.emplace(coeffect.name, std::move(evidence));
                     proof_order.push_back(coeffect.name);
-                    absorb(found->second, absorbed, {"function:" + declaration.name},
-                           "hypothetical-coeffect", source.empty() ? std::nullopt : std::optional(source));
+                    absorb(found->second, absorbed, {"function:" + declaration.name}, "hypothetical-coeffect",
+                           source.empty() ? std::nullopt : std::optional(source));
                 }
                 ValueTerm body = elaborate_value(declaration.body, values, proofs, proof_order, absorbed);
                 ValueKind result_kind = kind_of(declaration.result_type);
@@ -460,24 +765,26 @@ namespace fine {
                 ++result_.functions_verified;
                 output_ << "verified function: " << declaration.name << '\n';
                 if (rainfall_)
-                    rainfall_->record(
-                        "transition", "function.verify", {"function:" + declaration.name},
-                        "fine.two-level-elaborator",
-                        "Function body and guarantees checked under absorbed declared coeffects",
-                        {RainfallRecorder::string_field("function", declaration.name),
-                         RainfallRecorder::string_field("status", "unsat"),
-                         RainfallRecorder::number_field("coeffects", declaration.coeffects.size()),
-                         RainfallRecorder::number_field("guarantees", declaration.ensures.size())});
+                    rainfall_->record("transition", "function.verify", {"function:" + declaration.name},
+                                      "fine.two-level-elaborator",
+                                      "Function body and guarantees checked under absorbed declared coeffects",
+                                      {RainfallRecorder::string_field("function", declaration.name),
+                                       RainfallRecorder::string_field("status", "unsat"),
+                                       RainfallRecorder::number_field("coeffects", declaration.coeffects.size()),
+                                       RainfallRecorder::number_field("guarantees", declaration.ensures.size())});
             }
 
-            ValueTerm elaborate_call(syntax::ValueExpr const &expression,
-                                     ValueEnvironment const &caller_values,
+            ValueTerm elaborate_call(syntax::ValueExpr const &expression, ValueEnvironment const &caller_values,
                                      ProofEnvironment const &caller_proofs,
                                      std::vector<std::string> const &caller_proof_order,
                                      std::vector<z3::expr> const &caller_absorbed) {
                 auto found = functions_.find(expression.name);
-                if (found == functions_.end())
+                if (found == functions_.end()) {
+                    if (proof_functions_.contains(expression.name))
+                        reject(expression.span, "proof function `" + expression.name +
+                                                    "` cannot be called from a runtime value expression");
                     reject(expression.span, "unknown function `" + expression.name + "`");
+                }
                 syntax::FunctionDecl const &function = *found->second;
                 if (expression.elements.size() != function.parameters.size())
                     reject(expression.span, "function `" + expression.name + "` expects " +
@@ -534,19 +841,19 @@ namespace fine {
                     if (!same_type(context_, evidence_found->second.type, demand))
                         reject(expression.span, "caller proof `" + proof_name + "` does not satisfy coeffect `" +
                                                     expression.name + "." + coeffect.name + "`");
-                    ProofEvidence supplied(coeffect.name, std::move(demand),
-                                           "caller:" + proof_name, evidence_found->second.span);
+                    ProofEvidence supplied(coeffect.name, std::move(demand), "caller:" + proof_name,
+                                           evidence_found->second.span);
                     auto [inserted, ok] = callee_proofs.emplace(coeffect.name, std::move(supplied));
                     callee_proof_order.push_back(coeffect.name);
-                    absorb(inserted->second, callee_absorbed,
-                           {"call:" + expression.name}, "resolved-coeffect");
+                    absorb(inserted->second, callee_absorbed, {"call:" + expression.name}, "resolved-coeffect");
                     chosen.emplace_back(coeffect.name, proof_name);
                     ++result_.coeffects_resolved;
-                    output_ << "resolved coeffect: " << expression.name << '.' << coeffect.name
-                            << " <- " << proof_name << (explicit_choice ? " (explicit)" : " (lexical search)") << '\n';
+                    output_ << "resolved coeffect: " << expression.name << '.' << coeffect.name << " <- " << proof_name
+                            << (explicit_choice ? " (explicit)" : " (lexical search)") << '\n';
                     if (rainfall_) {
-                        std::string demand_term = rainfall_->term(inserted->second.type.left == inserted->second.type.right,
-                                                                 "instantiated-coeffect-proposition");
+                        std::string demand_term =
+                            rainfall_->term(inserted->second.type.left == inserted->second.type.right,
+                                            "instantiated-coeffect-proposition");
                         rainfall_->record(
                             "derive", "coeffect.demand.instantiate", {"call:" + expression.name},
                             "fine.two-level-elaborator",
@@ -555,16 +862,14 @@ namespace fine {
                              RainfallRecorder::string_field("coeffect", coeffect.name),
                              RainfallRecorder::string_field("proposition", demand_term)});
                         rainfall_->record(
-                            "derive", "coeffect.resolve", {"call:" + expression.name},
-                            "fine.lexical-proof-search",
+                            "derive", "coeffect.resolve", {"call:" + expression.name}, "fine.lexical-proof-search",
                             "Exact caller-local identity evidence selected; no global instance search",
                             {RainfallRecorder::string_field("function", expression.name),
                              RainfallRecorder::string_field("coeffect", coeffect.name),
                              RainfallRecorder::string_field("proof", proof_name),
                              RainfallRecorder::string_field("mode", explicit_choice ? "explicit" : "exact-local")});
                         rainfall_->record(
-                            "derive", "coeffect.use", {"call:" + expression.name},
-                            "fine.proof-context",
+                            "derive", "coeffect.use", {"call:" + expression.name}, "fine.proof-context",
                             "Resolved proof is supplied virtually and only its proposition enters callee checking",
                             {RainfallRecorder::string_field("function", expression.name),
                              RainfallRecorder::string_field("coeffect", coeffect.name),
@@ -573,7 +878,8 @@ namespace fine {
                     }
                 }
                 if (!explicit_arguments.empty())
-                    reject(expression.span, "call supplies unknown coeffect `" + explicit_arguments.begin()->first + "`");
+                    reject(expression.span,
+                           "call supplies unknown coeffect `" + explicit_arguments.begin()->first + "`");
                 if (expression.using_proofs.empty() && !chosen.empty()) {
                     std::ostringstream insertion;
                     insertion << " using [";
@@ -583,11 +889,11 @@ namespace fine {
                         insertion << chosen[i].first << " = " << chosen[i].second;
                     }
                     insertion << ']';
-                    request_materialization(expression.call_argument_end, expression.call_argument_end,
-                                            insertion.str(), expression.span);
+                    request_materialization(expression.call_argument_end, expression.call_argument_end, insertion.str(),
+                                            expression.span);
                 }
-                ValueTerm result = elaborate_value(function.body, callee_values, callee_proofs,
-                                                   callee_proof_order, callee_absorbed);
+                ValueTerm result =
+                    elaborate_value(function.body, callee_values, callee_proofs, callee_proof_order, callee_absorbed);
                 if (result.kind != kind_of(function.result_type))
                     reject(expression.span, "internal function result type mismatch");
                 return result;
@@ -600,18 +906,19 @@ namespace fine {
                 std::vector<z3::expr> absorbed;
                 std::size_t assertion_index = 0;
                 for (auto const &statement : run.statements) {
-                    std::visit([&](auto const &item) { execute_statement(item, run.name, assertion_index,
-                                                                  values, proofs, proof_order, absorbed); },
-                               statement);
+                    std::visit(
+                        [&](auto const &item) {
+                            execute_statement(item, run.name, assertion_index, values, proofs, proof_order, absorbed);
+                        },
+                        statement);
                 }
                 for (auto const &[range, text] : materializations_)
                     result_.materializations.push_back({range.first, range.second, text});
             }
 
-            void execute_statement(syntax::LetDecl const &declaration, std::string const &run,
-                                   std::size_t &, ValueEnvironment &values,
-                                   ProofEnvironment &proofs, std::vector<std::string> &proof_order,
-                                   std::vector<z3::expr> &absorbed) {
+            void execute_statement(syntax::LetDecl const &declaration, std::string const &run, std::size_t &,
+                                   ValueEnvironment &values, ProofEnvironment &proofs,
+                                   std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed) {
                 ensure_fresh(declaration.name, declaration.span, values, proofs);
                 ValueTerm value = elaborate_value(declaration.value, values, proofs, proof_order, absorbed);
                 ValueKind expected = kind_of(declaration.type);
@@ -623,10 +930,9 @@ namespace fine {
                 values.emplace(declaration.name, std::move(value));
             }
 
-            void execute_statement(syntax::ProofDecl const &declaration, std::string const &run,
-                                   std::size_t &, ValueEnvironment &values,
-                                   ProofEnvironment &proofs, std::vector<std::string> &proof_order,
-                                   std::vector<z3::expr> &absorbed) {
+            void execute_statement(syntax::ProofDecl const &declaration, std::string const &run, std::size_t &,
+                                   ValueEnvironment &values, ProofEnvironment &proofs,
+                                   std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed) {
                 ensure_fresh(declaration.name, declaration.span, values, proofs);
                 IdentityType expected = elaborate_identity(declaration.type, values, proofs, proof_order, absorbed);
                 std::string proof_source;
@@ -636,26 +942,24 @@ namespace fine {
                                                           declaration.value.kind == syntax::ProofExpr::Kind::hole
                                                               ? "proof.expression.hole"
                                                               : "proof.expression");
-                    type_source = rainfall_->source_node(declaration.type.node_id, declaration.type.span,
-                                                         "proof-type.identity");
+                    type_source =
+                        rainfall_->source_node(declaration.type.node_id, declaration.type.span, "proof-type.identity");
                 }
-                ProofEvidence evidence = elaborate_proof(declaration.value, declaration.type,
-                                                         std::move(expected), values, proofs,
-                                                         proof_order, absorbed, declaration.name,
-                                                         run, proof_source, type_source);
+                ProofEvidence evidence =
+                    elaborate_proof(declaration.value, declaration.type, std::move(expected), values, proofs,
+                                    proof_order, absorbed, declaration.name, run, proof_source, type_source);
                 if (rainfall_) {
-                    std::string proposition = rainfall_->term(evidence.type.left == evidence.type.right,
-                                                              "identity-proposition");
-                    rainfall_->record(
-                        "object", "proof.identity.form", {"run:" + run}, "fine.proof-elaborator",
-                        "Exact source proof evidence formed at the static level; no runtime term exists",
-                        {RainfallRecorder::string_field("proof", declaration.name),
-                         RainfallRecorder::string_field("formation", evidence.formation),
-                         RainfallRecorder::string_field("proof_source", proof_source),
-                         RainfallRecorder::string_field("type_source", type_source),
-                         RainfallRecorder::string_field("proof_type", print_identity(declaration.type)),
-                         RainfallRecorder::string_field("proposition", proposition),
-                         RainfallRecorder::boolean_field("runtime_value_created", false)});
+                    std::string proposition =
+                        rainfall_->term(evidence.type.left == evidence.type.right, "identity-proposition");
+                    rainfall_->record("object", "proof.identity.form", {"run:" + run}, "fine.proof-elaborator",
+                                      "Exact source proof evidence formed at the static level; no runtime term exists",
+                                      {RainfallRecorder::string_field("proof", declaration.name),
+                                       RainfallRecorder::string_field("formation", evidence.formation),
+                                       RainfallRecorder::string_field("proof_source", proof_source),
+                                       RainfallRecorder::string_field("type_source", type_source),
+                                       RainfallRecorder::string_field("proof_type", print_identity(declaration.type)),
+                                       RainfallRecorder::string_field("proposition", proposition),
+                                       RainfallRecorder::boolean_field("runtime_value_created", false)});
                 }
                 auto [inserted, ok] = proofs.emplace(declaration.name, std::move(evidence));
                 proof_order.push_back(declaration.name);
@@ -667,11 +971,9 @@ namespace fine {
             }
 
             void execute_statement(syntax::AssertDecl const &declaration, std::string const &run,
-                                   std::size_t &assertion_index, ValueEnvironment &values,
-                                   ProofEnvironment &proofs, std::vector<std::string> &proof_order,
-                                   std::vector<z3::expr> &absorbed) {
-                ValueTerm proposition = elaborate_value(declaration.proposition, values, proofs,
-                                                        proof_order, absorbed);
+                                   std::size_t &assertion_index, ValueEnvironment &values, ProofEnvironment &proofs,
+                                   std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed) {
+                ValueTerm proposition = elaborate_value(declaration.proposition, values, proofs, proof_order, absorbed);
                 if (proposition.kind != ValueKind::boolean)
                     reject(declaration.span, "assertion is not Bool");
                 z3::solver solver(context_);
@@ -683,12 +985,10 @@ namespace fine {
                 output_ << "verified assertion: " << run << '.' << assertion_index++ << '\n';
                 if (rainfall_) {
                     rainfall_->source_term(declaration.proposition.node_id, declaration.proposition.span,
-                                           "value.assertion", proposition.expression, "exact",
-                                           {"run:" + run});
-                    rainfall_->record(
-                        "transition", "assert.verify", {"run:" + run}, "fine.two-level-elaborator",
-                        "Assertion refuted under all previously absorbed identity propositions",
-                        {RainfallRecorder::string_field("status", "unsat")});
+                                           "value.assertion", proposition.expression, "exact", {"run:" + run});
+                    rainfall_->record("transition", "assert.verify", {"run:" + run}, "fine.two-level-elaborator",
+                                      "Assertion refuted under all previously absorbed identity propositions",
+                                      {RainfallRecorder::string_field("status", "unsat")});
                 }
             }
         };
@@ -710,18 +1010,15 @@ namespace fine {
         return output.str();
     }
 
-    ExecutionResult execute(syntax::Document const &document, std::ostream &output,
-                            std::ostream *rainfall_output, SourceSnapshot const *snapshot,
-                            std::string rainfall_run, ExecutionOptions options) {
+    ExecutionResult execute(syntax::Document const &document, std::ostream &output, std::ostream *rainfall_output,
+                            SourceSnapshot const *snapshot, std::string rainfall_run, ExecutionOptions options) {
         return Elaborator(output, rainfall_output, snapshot, std::move(rainfall_run), options).execute(document);
     }
 
-    std::string apply_materializations(std::string_view source,
-                                       std::vector<Materialization> materializations) {
-        std::sort(materializations.begin(), materializations.end(),
-                  [](auto const &left, auto const &right) {
-                      return std::pair{left.begin, left.end} < std::pair{right.begin, right.end};
-                  });
+    std::string apply_materializations(std::string_view source, std::vector<Materialization> materializations) {
+        std::sort(materializations.begin(), materializations.end(), [](auto const &left, auto const &right) {
+            return std::pair{left.begin, left.end} < std::pair{right.begin, right.end};
+        });
         std::ostringstream output;
         std::size_t cursor = 0;
         for (auto const &materialization : materializations) {

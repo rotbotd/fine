@@ -101,7 +101,7 @@ fails with no well-typed production.
 This slice tests the actual Fine gimmick without first inventing inductive
 propositions, tactics, or a large term language.
 
-## Slice 2 — named proof functions and composition (next)
+## Slice 2 — named proof functions and composition (in progress)
 
 Identity search becomes useful when its grammar can apply declared proof-level
 functions such as symmetry and transitivity. These declarations live at the
@@ -126,6 +126,15 @@ Exit conditions:
   result;
 - a cyclic proof-function grammar terminates at the declared bound;
 - the chosen application tree materializes and reruns without search.
+
+The symmetry half is closed. Proof functions use explicit static indices and
+virtual `needs` parameters; their result proposition is checked under absorbed
+inputs before the declaration enters search. `identity-symmetry.fine` can close
+its reversed identity only with `symm[x, x == true](p)`, retains one nested
+application as residual frontier, materializes exactly, and reruns without
+search. `reject-cyclic-proof-search.fine` establishes that a recursive grammar
+with no base inhabitant stops at cost three. Transitivity remains open because
+its middle index must be inferred from child proof types rather than the result.
 
 ## Slice 3 — proof-only elimination
 

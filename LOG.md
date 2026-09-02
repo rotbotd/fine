@@ -3370,3 +3370,108 @@ separate facts. Native Z3 proofs remain solver evidence only; Spacer invariants
 remain excluded because prior fixtures showed they project away constructor
 support. Full analysis and primary-source links are in
 `fine/research/z3-proof-term-synthesis.md`.
+
+## 2026-09-02 — named proof functions and bounded symmetry search
+
+Closed the symmetry half of roadmap slice 2 without adding proof values to the
+runtime or allowing arbitrary solver entailment to masquerade as a proof term.
+The new declaration surface is:
+
+```fine
+proof function symm(left: Bool, right: Bool)
+  needs [given: Id(Bool, left, right)]
+  -> Id(Bool, right, left);
+```
+
+Value parameters are static indices. `needs` parameters and the result are
+virtual identity evidence. Declaration checking gives each index a symbolic Z3
+constant, elaborates and absorbs each proof parameter, then refutes the negated
+result proposition. A false zero-premise `lie(left,right) -> Id(left,right)` is
+rejected at the declaration. Proof functions occupy a separate namespace and a
+runtime value expression which calls one fails before Z3.
+
+Explicit proof application separates indices from evidence as
+`symm[left, right](given)`. Its elaborator checks the index arity and kinds,
+instantiates the result to the exact expected manager-local identity type, then
+recursively checks every proof argument against its instantiated parameter. The
+application produces only `ProofEvidence`; Rainfall records
+`proof.function.apply` with `runtime_call_created: false`.
+
+Hole search now has the ordered grammar `exact-local`, `refl`, then named proof
+applications in declaration order, bounded by total tree cost three. Search
+works backward from the expected result. In this slice a function is searchable
+only when every static index can be bound from a simple parameter occurrence in
+its result; after binding, the complete instantiated result is checked by exact
+AST identity. This is deliberately insufficient for transitivity, whose middle
+index occurs only in its premises. Each instantiated proof parameter is filled
+recursively within the remaining budget, Cartesian argument combinations are
+filtered by total cost, and the full finite application source is retained.
+
+`identity-symmetry.fine` needs a genuinely non-definitional identity so that the
+reversed goal cannot collapse to `refl`. Its separately checked `bool_eta`
+function establishes `value = (value == true)`. The run explicitly forms
+`p : Id(Bool, x, x == true)`, then asks for
+`Id(Bool, x == true, x)`. Search produces exactly two cost-two terms in order:
+
+```text
+symm[x, x == true](p)
+symm[x, x == true](bool_eta[x]())
+```
+
+The first is selected and the second remains in the residual frontier. The
+materialized fixture is byte-identical and its rerun has no hole search.
+`reject-cyclic-proof-search.fine` admits an identity-preserving `loop` theorem
+but provides no base evidence for distinct endpoints; recursion reaches the
+cost bound and returns the ordinary empty-grammar error. Additional controls
+reject an unjustified proof function and any proof-function call in runtime
+value code.
+
+Rainfall now gives proof-function declarations, explicit applications, bounded
+hole opening, application candidates, selection, and closure separate events.
+Every application candidate includes its function, child proof sources, and
+cost. Replay validation requires declarations before applications, checks all
+declaration source and proposition references, verifies application candidates
+retain their source trees, and still proves that the selected candidate plus
+the residual frontier exhausts the deterministic enumeration.
+
+Observed checks:
+
+```sh
+cmake --build build/proof-core --target fine-bin -j16
+# success
+
+build/proof-core/fine run fine/fixtures/identity-symmetry.fine
+# verified proof function: bool_eta
+# verified proof function: symm
+# filled proof hole: reversed <- symm[x, x == true](p) (typed search)
+# runtime-proof-values: 0 (unrepresentable)
+
+build/proof-core/fine materialize fine/fixtures/identity-symmetry.fine \
+  > /tmp/identity-symmetry.fine
+diff -u fine/fixtures/identity-symmetry-materialized.fine \
+  /tmp/identity-symmetry.fine
+# no diff
+
+build/proof-core/fine rain fine/fixtures/identity-symmetry.fine \
+  > /tmp/identity-symmetry.rain
+python fine/rainfall_validate.py fine/fixtures/identity-symmetry.fine \
+  /tmp/identity-symmetry.rain
+# valid rainfall: events=38, source_nodes=8, terms=6,
+# source_term_edges=1, proof_holes=1
+
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/rrfq7yh97wszvli6ld0imj8jm0m00z62-fine-0.1.0
+```
+
+One environment failure was retained: after Nix auto-GC, the cached development
+shell named `clang-format` at a removed store path and the first format/build
+command failed with `clang-format: command not found`. Running
+`codex-flake-refresh --force` restored the declared Clang tool and the build
+then passed.
+
+The remaining slice-2 edge is transitivity. Backward search must infer its
+middle index jointly from two child proof types and retain both child trees as
+distinct Rainfall inputs. Only after that deterministic grammar is closed will
+the datatype-valued Z3 model selector be connected behind the same grammar.

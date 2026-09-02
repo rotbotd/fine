@@ -1,0 +1,4 @@
+proof function lie(left: Bool, right: Bool)
+  -> Id(Bool, left, right);
+
+run unjustified_proof_function {}
