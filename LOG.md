@@ -3202,3 +3202,97 @@ rejecting control, Rainfall ownership requirement, materialization requirement,
 and verification-only rerun as its exit condition. Explicit non-goals prevent
 the old predicate system, a Z3 term universe, global theorem search, or solver
 proof reconstruction from returning by architectural drift.
+
+## 2026-09-02: typed identity proof holes (`a8774885d`)
+
+Closed the first proof-synthesis slice with a source-level `?` in proof
+declarations. The parser represents it as `ProofExpr::Kind::hole`; it is not a
+value-expression case and therefore cannot enter `ValueTerm`. The expected
+`Id(A, left, right)` is elaborated before search. Fine then constructs the
+complete finite grammar in this order:
+
+1. caller/run-local proof bindings whose carrier and both endpoints have exact
+   same-manager AST identity with the expected identity type;
+2. `refl(left)` only when the elaborated left and right endpoints themselves
+   have exact AST identity.
+
+Mismatched local proofs are filtered before a candidate event exists. Z3 does
+not enumerate, invent, or type the proof syntax in this slice. The first typed
+candidate is selected deterministically; later typed candidates remain an
+explicit residual frontier. An empty grammar fails at the hole with
+`no well-typed candidate in grammar [exact-local, refl]`.
+
+Materializations changed from insertion offsets to ordered replacement ranges.
+This lets the same checked edit list replace an exact `?` span and insert a
+`using [...]` coeffect argument. The second pass reparses the edited source with
+both `require_materialized_proofs` and `require_explicit_coeffects`; any surviving
+hole or implicit caller proof makes `fine materialize` fail before emitting
+source.
+
+Rainfall now records four source-proof operations distinct from ordinary solver
+traffic: `proof.search.open`, `proof.search.candidate`,
+`proof.search.select`, and `proof.search.close`. Open records the expected proof
+type, proposition term, exact source-hole node, finite grammar, and the fact
+that ill-typed candidates were not enumerated. Each candidate carries Fine
+source text, its production, and exact-typing status. Selection refers to the
+candidate event ID. Close refers to the selection and requires the selected
+candidate followed by its residual IDs to equal the entire enumerated frontier.
+`rainfall_replay.py` now enforces those references, validates that the source
+span is exactly `?`, rejects a local candidate which loses its proof binding,
+and requires every opened proof hole to close before the terminal event.
+
+The discriminating fixture `fine/fixtures/identity-holes.fine` first introduces
+`other : Id(Int, y, y)` with `y = 8`. The hole
+`self : Id(Int, x, x)` sees only `refl(x)`; `other` is absent rather than emitted
+and rejected. After `self` is formed, the `copied` hole sees `self` followed by
+`refl(x)`, selects `self`, and retains `refl(x)` as its one residual candidate.
+The same run resolves `hold.same` to `self`, so materialization exercises proof
+replacement and coeffect insertion together. The checked-in materialized file
+is byte-identical to the command output and its ordinary rerun contains no
+`filled proof hole` line. `reject-empty-proof-hole.fine` uses distinct exact
+values `7` and `8`, supplies no matching proof, and fails at its `?`.
+
+Observed local and replay checks:
+
+```
+cmake --build build/proof-core --target fine-bin -j16
+# success
+
+build/proof-core/fine run fine/fixtures/identity-holes.fine
+# filled proof hole: self <- refl(x) (typed search)
+# filled proof hole: copied <- self (typed search)
+# resolved coeffect: hold.same <- self (lexical search)
+# runtime-proof-values: 0 (unrepresentable)
+
+build/proof-core/fine materialize fine/fixtures/identity-holes.fine \
+  > /tmp/identity-holes-materialized.fine
+diff -u fine/fixtures/identity-holes-materialized.fine \
+  /tmp/identity-holes-materialized.fine
+# no diff
+
+build/proof-core/fine rain fine/fixtures/identity-holes.fine \
+  > /tmp/identity-holes.jsonl
+python fine/rainfall_validate.py fine/fixtures/identity-holes.fine \
+  /tmp/identity-holes.jsonl
+# valid rainfall: events=52, source_nodes=11, terms=5,
+# source_term_edges=4, proof_holes=2
+```
+
+The flake install check asserts exact output, byte materialization, the no-search
+rerun, the empty-grammar control, candidate order `refl(x), self, refl(x)`,
+absence of `other`, explicit residual size, formation provenance, terminal hole
+count, and zero runtime proof values. Clean-source verification for
+`a8774885d`:
+
+```
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths
+# /nix/store/ks67imra3ljrb4wak2ys0vxp0iri743g-fine-0.1.0
+```
+
+The next justified consumer is a named proof-level function. Identity symmetry
+must be the first fixture because neither exact-local selection nor `refl` can
+inhabit its reversed endpoint type; only a typed source application can close
+the hole. Recursive application grammars need a finite bound before transitivity
+or any larger proof search is admitted.
