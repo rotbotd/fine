@@ -13,37 +13,37 @@ namespace fine::runtime_detail {
             reject(span, role + " must return Bool");
     }
 
-    std::map<std::string, syntax::Expr const *> Runtime::take_map(syntax::ProofDecl const &proof) {
+    std::map<std::string, syntax::Expr const *> Runtime::take_map(syntax::SolveDecl const &solve) {
         std::map<std::string, syntax::Expr const *> result;
-        for (syntax::NamedArgument const &argument : proof.takes) {
+        for (syntax::NamedArgument const &argument : solve.takes) {
             if (!result.emplace(argument.name, &argument.value).second)
-                reject(argument.span, "duplicate proof input `" + argument.name + "`");
+                reject(argument.span, "duplicate solve input `" + argument.name + "`");
         }
         static std::set<std::string> const expected{"relation",   "left_step",   "right_step",
                                                     "left_label", "right_label", "initial"};
         for (auto const &[name, expression] : result) {
             (void)expression;
             if (!expected.contains(name))
-                reject(proof.span, "unexpected proof input `" + name + "`");
+                reject(solve.span, "unexpected solve input `" + name + "`");
         }
         for (std::string const &name : expected) {
             if (!result.contains(name))
-                reject(proof.span, "missing proof input `" + name + "`");
+                reject(solve.span, "missing solve input `" + name + "`");
         }
         return result;
     }
 
-    int Runtime::execute_bisimulation(syntax::ProofDecl const &proof) {
-        if (proof.name != "bisimulation")
-            reject(proof.span, "unknown proof form `" + proof.name + "`; this slice admits `proof bisimulation`");
-        auto inputs = take_map(proof);
+    int Runtime::execute_bisimulation(syntax::SolveDecl const &solve) {
+        if (solve.name != "bisimulation")
+            reject(solve.span, "unknown solve form `" + solve.name + "`; this slice admits `solve bisimulation`");
+        auto inputs = take_map(solve);
         Binding const &relation = binding(*inputs.at("relation"), "relation");
         Binding const &left_step = binding(*inputs.at("left_step"), "left_step");
         Binding const &right_step = binding(*inputs.at("right_step"), "right_step");
         Binding const &left_label = binding(*inputs.at("left_label"), "left_label");
         Binding const &right_label = binding(*inputs.at("right_label"), "right_label");
 
-        expect_bool_range(relation, proof.span, "relation");
+        expect_bool_range(relation, solve.span, "relation");
         if (!relation.is_model)
             reject(inputs.at("relation")->span, "relation must name the `model` hole");
         TypePtr relation_domain = relation.type->arguments[0];
@@ -59,8 +59,8 @@ namespace fine::runtime_detail {
         validate_label(left_label, left_type, inputs.at("left_label")->span, "left_label");
         validate_label(right_label, right_type, inputs.at("right_label")->span, "right_label");
 
-        if (proof.gives.kind != syntax::Expr::Kind::name || proof.gives.name != inputs.at("relation")->name)
-            reject(proof.gives.span, "`gives` must return the relation model hole");
+        if (solve.gives.kind != syntax::Expr::Kind::name || solve.gives.name != inputs.at("relation")->name)
+            reject(solve.gives.span, "`gives` must return the relation model hole");
         z3::expr initial = value(*inputs.at("initial"), relation_domain);
 
         std::string run_scope = "bisim:" + inputs.at("relation")->name;
@@ -140,7 +140,7 @@ namespace fine::runtime_detail {
             if (rainfall_) {
                 std::string reference = rainfall_->term(assertion);
                 assertion_references.push_back(reference);
-                rainfall_->source_term(proof.node_id, proof.span, "decl.proof", assertion, "generated", {run_scope});
+                rainfall_->source_term(solve.node_id, solve.span, "decl.solve", assertion, "generated", {run_scope});
                 rainfall_->record("constraint", "bisim.clause.assert", {run_scope}, "fine.bisimulation",
                                   "Fully elaborated bisimulation clause asserted through Z3's public solver API",
                                   {RainfallRecorder::string_field("role", role),
@@ -183,7 +183,7 @@ namespace fine::runtime_detail {
         }
         if (result != z3::sat) {
             std::string detail = result == z3::unknown ? "unknown: " + solver.reason_unknown() : "unsatisfiable";
-            reject(proof.span, "bisimulation model hole was " + detail);
+            reject(solve.span, "bisimulation model hole was " + detail);
         }
 
         z3::model model = solver.get_model();
@@ -196,7 +196,7 @@ namespace fine::runtime_detail {
                 z3::expr selection = z3::select(relation.value, key);
                 z3::expr cell = model.eval(selection, true);
                 if (!cell.is_true() && !cell.is_false())
-                    reject(proof.span, "model returned a non-Boolean relation cell");
+                    reject(solve.span, "model returned a non-Boolean relation cell");
                 if (rainfall_) {
                     std::string key_reference = rainfall_->term(key);
                     std::string selection_reference = rainfall_->term(selection);
@@ -247,7 +247,7 @@ namespace fine::runtime_detail {
             throw std::runtime_error("internal Fine witness parser changed the model type");
         z3::expr roundtrip = table_value(parsed_type, *witness->value);
         if (!Z3_is_eq_ast(context_, canonical, roundtrip))
-            reject(proof.span, "parse(print(lift(x))) violated exact AST identity after reification");
+            reject(solve.span, "parse(print(lift(x))) violated exact AST identity after reification");
 
         if (rainfall_) {
             rainfall_->record(

@@ -15,6 +15,7 @@ namespace fine::syntax {
             let_kw,
             model_kw,
             proof_kw,
+            solve_kw,
             view_kw,
             family_kw,
             constructor_kw,
@@ -24,7 +25,6 @@ namespace fine::syntax {
             witness_kw,
             function_kw,
             synth_kw,
-            lemma_kw,
             check_kw,
             counterexample_kw,
             match_kw,
@@ -76,6 +76,7 @@ namespace fine::syntax {
             case TokenKind::let_kw: return "`let`";
             case TokenKind::model_kw: return "`model`";
             case TokenKind::proof_kw: return "`proof`";
+            case TokenKind::solve_kw: return "`solve`";
             case TokenKind::view_kw: return "`view`";
             case TokenKind::family_kw: return "`family`";
             case TokenKind::constructor_kw: return "`constructor`";
@@ -85,7 +86,6 @@ namespace fine::syntax {
             case TokenKind::witness_kw: return "`witness`";
             case TokenKind::function_kw: return "`function`";
             case TokenKind::synth_kw: return "`synth`";
-            case TokenKind::lemma_kw: return "`lemma`";
             case TokenKind::check_kw: return "`check`";
             case TokenKind::counterexample_kw: return "`counterexample`";
             case TokenKind::match_kw: return "`match`";
@@ -234,6 +234,8 @@ namespace fine::syntax {
                     return TokenKind::model_kw;
                 if (text == "proof")
                     return TokenKind::proof_kw;
+                if (text == "solve")
+                    return TokenKind::solve_kw;
                 if (text == "view")
                     return TokenKind::view_kw;
                 if (text == "family")
@@ -252,8 +254,6 @@ namespace fine::syntax {
                     return TokenKind::function_kw;
                 if (text == "synth")
                     return TokenKind::synth_kw;
-                if (text == "lemma")
-                    return TokenKind::lemma_kw;
                 if (text == "check")
                     return TokenKind::check_kw;
                 if (text == "counterexample")
@@ -301,10 +301,10 @@ namespace fine::syntax {
                     case TokenKind::proof_kw:
                         result.declarations.emplace_back(proof_or_family_decl());
                         break;
+                    case TokenKind::solve_kw: result.declarations.emplace_back(solve_decl()); break;
                     case TokenKind::view_kw: result.declarations.emplace_back(view_decl()); break;
                     case TokenKind::function_kw: result.declarations.emplace_back(function_decl()); break;
                     case TokenKind::synth_kw: result.declarations.emplace_back(synth_decl()); break;
-                    case TokenKind::lemma_kw: result.declarations.emplace_back(check_decl(true)); break;
                     case TokenKind::check_kw: result.declarations.emplace_back(check_decl(false)); break;
                     case TokenKind::counterexample_kw: result.declarations.emplace_back(counterexample_decl()); break;
                     default: fail("expected a Fine declaration");
@@ -433,9 +433,14 @@ namespace fine::syntax {
                 Token first = take(TokenKind::proof_kw);
                 if (accept(TokenKind::family_kw))
                     return proof_family_decl(first);
-                Token name = take(TokenKind::identifier, "after `proof`");
-                take(TokenKind::left_brace, "after the proof name");
-                take(TokenKind::takes_kw, "as the first proof clause");
+                return check_decl_after(first, true, "proof");
+            }
+
+            SolveDecl solve_decl() {
+                Token first = take(TokenKind::solve_kw);
+                Token name = take(TokenKind::identifier, "after `solve`");
+                take(TokenKind::left_brace, "after the solve name");
+                take(TokenKind::takes_kw, "as the first solve clause");
                 std::vector<NamedArgument> takes = arguments();
                 take(TokenKind::semicolon, "after `takes(...)`");
                 take(TokenKind::gives_kw, "after the `takes` clause");
@@ -443,8 +448,8 @@ namespace fine::syntax {
                 Expr gives = expr();
                 take(TokenKind::right_paren, "after the result expression");
                 take(TokenKind::semicolon, "after `gives(...)`");
-                Token close = take(TokenKind::right_brace, "to close the proof");
-                return ProofDecl{joined(first.span, close.span), std::string(name.text), std::move(takes),
+                Token close = take(TokenKind::right_brace, "to close the solve declaration");
+                return SolveDecl{joined(first.span, close.span), std::string(name.text), std::move(takes),
                                  std::move(gives)};
             }
 
@@ -661,10 +666,14 @@ namespace fine::syntax {
             }
 
             CheckDecl check_decl(bool reusable) {
-                Token first = take(reusable ? TokenKind::lemma_kw : TokenKind::check_kw);
-                Token name = take(TokenKind::identifier, reusable ? "after `lemma`" : "after `check`");
+                Token first = take(TokenKind::check_kw);
+                return check_decl_after(first, reusable, "check");
+            }
+
+            CheckDecl check_decl_after(Token first, bool reusable, std::string_view keyword) {
+                Token name = take(TokenKind::identifier, "after `" + std::string(keyword) + "`");
                 std::vector<Parameter> inputs = parameters();
-                take(TokenKind::left_brace, "before the check specification");
+                take(TokenKind::left_brace, "before the " + std::string(keyword) + " specification");
                 std::optional<std::string> induction_parameter;
                 std::optional<SourceSpan> induction_span;
                 std::optional<Expr> proof_induction;

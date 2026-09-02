@@ -24,7 +24,7 @@ let right_label: Table(RightState, Bool) = table(default: false) {
 // `model` denotes an actual model-shaped hole, not a typeclass mechanism.
 model bisim: Table((LeftState, RightState), Bool);
 
-proof bisimulation {
+solve bisimulation {
     takes(
         relation: bisim,
         left_step: left_step,

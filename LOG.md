@@ -2112,3 +2112,58 @@ timeout 5 .build/fine run /tmp/no-lemma.fine  # status 124
 The next semantic work is not “more lemma infrastructure.” It is the full STLC
 fixture whose beta and abstraction branches determine which substitution,
 opening, and typing lemmas are actually necessary.
+
+## 2026-09-02 — one proof vocabulary; model search is `solve`
+
+The first reusable-theorem slice used `lemma` because it retained a theorem but
+no source proof term. h objected that Fine should simply use `proof`. The prior
+name was defending a hypothetical distinction which the rest of the language
+already rejects: `proof family` deliberately carries compiler-owned derivation
+structure whose value witnesses erase. The more coherent surface gives `proof`
+to both erased theorem declarations and indexed proof families, while moving the
+old finite-model query out of the way.
+
+The three forms now have non-overlapping grammar and behavior:
+
+```
+proof append_length(xs: List, ys: List) { ... }
+proof family Step(before: Tm, after: Tm) { ... }
+solve bisimulation { takes(...); gives(bisim); }
+```
+
+A named `proof` still has exactly the verified-theorem semantics implemented in
+the preceding slice: Fine refutes its negation, universally closes the original
+source theorem only on `unsat`, and then makes the theorem available to later
+ordinary and proof-branch SMT queries. Rainfall now calls these boundaries
+`proof.admit` and `proof.use`, gives the source node kind `decl.proof`, and uses
+qid `fine.proof.<name>`. A refuted proof prints its typed counterexample and
+stops. The obsolete `lemma` keyword has no compatibility alias.
+
+The former `ProofDecl` model-query AST is renamed `SolveDecl`; its source node is
+`decl.solve`, and `two-state-bisim.fine` now says `solve bisimulation`. This is
+not cosmetic: the declaration asks Z3 to fill a `model` hole and returns that
+model, so it was the form least entitled to monopolize the word `proof`.
+Projection tests now require its four generated bisimulation clauses to attach
+to `decl.solve`.
+
+The executable `proof-append-length.fine` is the larger ordinary consumer h
+requested. Fine proves `length(append(xs,ys)) = length(xs)+length(ys)` by exact
+constructor/direct-field induction, then a later non-inductive
+`three_chunk_size` check instantiates the retained proof twice. Removing the
+proof makes that raw recursive check exceed two seconds. The existing locally
+nameless fixture is renamed `reusable-proof-induction.fine` and still proves one
+source theorem before using it in a native-index proof-family branch.
+
+Local validation commands:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/proof-append-length.fine
+.build/fine run fine/fixtures/reusable-proof-induction.fine
+.build/fine run fine/fixtures/two-state-bisim.fine
+.build/fine rain fine/fixtures/reusable-proof-induction.fine > /tmp/proof.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/reusable-proof-induction.fine /tmp/proof.rain
+.build/fine rain fine/fixtures/two-state-bisim.fine > /tmp/solve.rain
+python3 fine/rainfall_validate.py fine/fixtures/two-state-bisim.fine /tmp/solve.rain
+```

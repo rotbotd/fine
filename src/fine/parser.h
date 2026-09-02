@@ -116,7 +116,7 @@ namespace fine::syntax {
         Expr value;
     };
 
-    struct ProofDecl {
+    struct SolveDecl {
         SourceSpan span;
         std::string name;
         std::vector<NamedArgument> takes;
@@ -210,7 +210,7 @@ namespace fine::syntax {
 
     struct CheckDecl {
         SourceSpan span;
-        // A lemma is checked exactly like an ordinary check, but a successful
+        // A reusable proof is checked exactly like an ordinary check, but a successful
         // result is universally closed and made available to later SMT
         // queries in the same source document.
         bool reusable = false;
@@ -239,7 +239,7 @@ namespace fine::syntax {
         std::size_t node_id = 0;
     };
 
-    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, ProofDecl, ViewDecl, ProofFamilyDecl,
+    using Declaration = std::variant<EnumDecl, LetDecl, ModelDecl, SolveDecl, ViewDecl, ProofFamilyDecl,
                                      FunctionDecl, SynthDecl, CheckDecl, CounterexampleDecl>;
 
     struct Document {

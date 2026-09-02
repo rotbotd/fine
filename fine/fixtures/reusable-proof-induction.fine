@@ -37,7 +37,7 @@ function rename(term: Tm, source: Int, target: Int): Tm {
   }
 }
 
-lemma opening_equivariant(term: Tm, depth: Int, fresh: Int, other: Int) {
+proof opening_equivariant(term: Tm, depth: Int, fresh: Int, other: Int) {
   inducts(term);
   assumes {
     fresh >= support_cutoff(term) + 1;

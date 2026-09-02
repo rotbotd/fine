@@ -149,7 +149,7 @@ namespace fine::runtime_detail {
         std::vector<SurfaceEntry> entries;
     };
 
-    struct AdmittedLemma {
+    struct AdmittedProof {
         std::string name;
         z3::expr theorem;
     };
@@ -179,7 +179,7 @@ namespace fine::runtime_detail {
         std::map<std::string, ViewInfo> views_;
         std::map<std::string, std::unique_ptr<ProofFamilyInfo>> proof_families_;
         std::map<std::string, Binding> bindings_;
-        std::vector<AdmittedLemma> admitted_lemmas_;
+        std::vector<AdmittedProof> admitted_proofs_;
         std::map<std::string, TypePtr> compound_types_;
         std::set<std::string> value_names_;
         unsigned tuple_sequence_ = 0;
@@ -257,9 +257,9 @@ namespace fine::runtime_detail {
 
         static void expect_bool_range(Binding const &binding, syntax::SourceSpan span, std::string const &role);
 
-        static std::map<std::string, syntax::Expr const *> take_map(syntax::ProofDecl const &proof);
+        static std::map<std::string, syntax::Expr const *> take_map(syntax::SolveDecl const &solve);
 
-        int execute_bisimulation(syntax::ProofDecl const &proof);
+        int execute_bisimulation(syntax::SolveDecl const &solve);
 
         static void validate_step(Binding const &step, TypePtr const &state, syntax::SourceSpan span,
                                   std::string const &role);

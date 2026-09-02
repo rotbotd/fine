@@ -259,15 +259,28 @@
           grep -F "verified: opening_equivariant" <<<"$equivariance"
           grep -F "induction: direct-subterm on term" <<<"$equivariance"
           grep -F "counterexample: none" <<<"$equivariance"
-          reusable_lemma="$($out/bin/fine run \
-            "$src/fine/fixtures/reusable-lemma-proof-induction.fine")"
-          echo "$reusable_lemma"
-          grep -F "verified-lemma: opening_equivariant" <<<"$reusable_lemma"
-          grep -F "verified-proof-induction: safe_opening" <<<"$reusable_lemma"
-          grep -F "constructor-branches: 1 verified" <<<"$reusable_lemma"
-          false_lemma="$(mktemp)"
-          cat >"$false_lemma" <<'EOF'
-          lemma impossible(x: Int) {
+          reusable_proof="$($out/bin/fine run \
+            "$src/fine/fixtures/reusable-proof-induction.fine")"
+          echo "$reusable_proof"
+          grep -F "verified-proof: opening_equivariant" <<<"$reusable_proof"
+          grep -F "verified-proof-induction: safe_opening" <<<"$reusable_proof"
+          grep -F "constructor-branches: 1 verified" <<<"$reusable_proof"
+          append_proof="$($out/bin/fine run \
+            "$src/fine/fixtures/proof-append-length.fine")"
+          echo "$append_proof"
+          grep -F "verified-proof: append_length" <<<"$append_proof"
+          grep -F "verified: three_chunk_size" <<<"$append_proof"
+          old_lemma="$(mktemp)"
+          sed 's/^proof append_length/lemma append_length/' \
+            "$src/fine/fixtures/proof-append-length.fine" >"$old_lemma"
+          if $out/bin/fine run "$old_lemma" >"$old_lemma.out" 2>&1; then
+            echo "accepted the removed lemma alias" >&2
+            exit 1
+          fi
+          grep -F "expected a Fine declaration" "$old_lemma.out"
+          false_proof="$(mktemp)"
+          cat >"$false_proof" <<'EOF'
+          proof impossible(x: Int) {
             assumes {}
             ensures { x == x + 1; }
           }
@@ -276,51 +289,51 @@
             ensures { x == x; }
           }
           EOF
-          if $out/bin/fine run "$false_lemma" >"$false_lemma.out" 2>&1; then
-            echo "admitted a refuted reusable lemma" >&2
+          if $out/bin/fine run "$false_proof" >"$false_proof.out" 2>&1; then
+            echo "admitted a refuted reusable proof" >&2
             exit 1
           fi
-          grep -F "refuted-lemma: impossible" "$false_lemma.out"
-          if grep -F "unreachable" "$false_lemma.out"; then
-            echo "continued after a refuted reusable lemma" >&2
+          grep -F "refuted-proof: impossible" "$false_proof.out"
+          if grep -F "unreachable" "$false_proof.out"; then
+            echo "continued after a refuted reusable proof" >&2
             exit 1
           fi
-          lemma_rain="$(mktemp)"
+          proof_rain="$(mktemp)"
           $out/bin/fine rain \
-            "$src/fine/fixtures/reusable-lemma-proof-induction.fine" >"$lemma_rain"
+            "$src/fine/fixtures/reusable-proof-induction.fine" >"$proof_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
-            "$src/fine/fixtures/reusable-lemma-proof-induction.fine" "$lemma_rain"
-          ${pkgs.python3}/bin/python - "$lemma_rain" <<'PY'
+            "$src/fine/fixtures/reusable-proof-induction.fine" "$proof_rain"
+          ${pkgs.python3}/bin/python - "$proof_rain" <<'PY'
           import json, pathlib, sys
           events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
-          admissions = [event for event in events if event["operation"] == "lemma.admit"]
+          admissions = [event for event in events if event["operation"] == "proof.admit"]
           assert len(admissions) == 1
-          assert admissions[0]["data"]["lemma"] == "opening_equivariant"
-          assert admissions[0]["data"]["qid"] == "fine.lemma.opening_equivariant"
+          assert admissions[0]["data"]["proof"] == "opening_equivariant"
+          assert admissions[0]["data"]["qid"] == "fine.proof.opening_equivariant"
           assert admissions[0]["data"]["verified_before_admission"] is True
-          uses = [event for event in events if event["operation"] == "lemma.use"]
+          uses = [event for event in events if event["operation"] == "proof.use"]
           assert len(uses) == 1
-          assert uses[0]["data"]["lemma"] == "opening_equivariant"
+          assert uses[0]["data"]["proof"] == "opening_equivariant"
           assert uses[0]["data"]["consumer"] == "safe_opening"
           assert uses[0]["data"]["constructor"] == "generated"
           source_kinds = {event["data"]["syntax_kind"] for event in events
                           if event["operation"] == "source.node.declare"}
-          assert "decl.lemma" in source_kinds
+          assert "decl.proof" in source_kinds
           PY
-          no_lemma="$(mktemp)"
+          no_proof="$(mktemp)"
           ${pkgs.python3}/bin/python - \
-            "$src/fine/fixtures/reusable-lemma-proof-induction.fine" "$no_lemma" <<'PY'
+            "$src/fine/fixtures/reusable-proof-induction.fine" "$no_proof" <<'PY'
           import pathlib, sys
           source = pathlib.Path(sys.argv[1]).read_text()
-          start = source.index("lemma opening_equivariant")
+          start = source.index("proof opening_equivariant")
           end = source.index("\nproof family SafeOpening")
           pathlib.Path(sys.argv[2]).write_text(source[:start] + source[end + 1:])
           PY
           set +e
-          timeout 2 $out/bin/fine run "$no_lemma" >"$no_lemma.out" 2>&1
-          no_lemma_status="$?"
+          timeout 2 $out/bin/fine run "$no_proof" >"$no_proof.out" 2>&1
+          no_proof_status="$?"
           set -e
-          test "$no_lemma_status" -eq 124 || { cat "$no_lemma.out"; exit 1; }
+          test "$no_proof_status" -eq 124 || { cat "$no_proof.out"; exit 1; }
           bad_recursion="$(mktemp)"
           sed 's/length(tail)/length(xs)/' \
             "$src/fine/fixtures/induction-length.fine" > "$bad_recursion"
@@ -750,7 +763,7 @@
           annotations = projection["annotations"]
           assert len(annotations) == 4
           assert len({item["claim"]["source"] for item in annotations}) == 1
-          assert all(item["syntax_kind"] == "decl.proof" for item in annotations)
+          assert all(item["syntax_kind"] == "decl.solve" for item in annotations)
           assert all(item["claim"]["correspondence"] == "generated"
                      for item in annotations)
           activity = {item["activity"]["role"]: item["activity"]

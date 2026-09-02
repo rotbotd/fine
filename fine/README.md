@@ -108,15 +108,15 @@ query scope never substitutes for a causal link. The translation, papers, and
 remaining STLC boundary are in `research/induction-translation.md`.
 
 A verified result can cross a source declaration boundary without becoming an
-axiom by fiat. `lemma name(parameters) { ... }` has the same obligation and
+axiom by fiat. `proof name(parameters) { ... }` has the same obligation and
 optional `inducts` clause as `check`. Fine first runs its counterexample query;
-only `unsat` permits universal closure under the qid `fine.lemma.name`. The
+only `unsat` permits universal closure under the qid `fine.proof.name`. The
 closed theorem is then an assumption in later ordinary SMT checks,
 proof-constructor branches, and arbitrary-field availability queries in the
-same document. A refuted lemma returns its typed counterexample and stops the
+same document. A refuted proof returns its typed counterexample and stops the
 document before any later declaration runs. Rainfall retains separate
-`lemma.admit` and `lemma.use` events and the exact same-manager theorem; this
-does not inject arbitrary lemmas into Spacer's least-relation rules.
+`proof.admit` and `proof.use` events and the exact same-manager theorem; this
+does not inject arbitrary theorems into Spacer's least-relation rules.
 
 Proof-family induction is a separate first-order path. Given an erased least
 relation such as `Step(before, after)`, a check writes

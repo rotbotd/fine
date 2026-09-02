@@ -468,14 +468,14 @@ namespace fine::runtime_detail {
                     availability = z3::forall(constructor_parameters, availability);
                 }
                 z3::solver availability_solver(context_);
-                for (AdmittedLemma const &lemma : admitted_lemmas_) {
-                    availability_solver.add(lemma.theorem);
+                for (AdmittedProof const &proof : admitted_proofs_) {
+                    availability_solver.add(proof.theorem);
                     if (rainfall_)
                         rainfall_->record(
-                            "constraint", "lemma.use", {run_scope, branch_scope}, "fine.induction",
-                            "Previously verified source lemma admitted to the arbitrary-field availability query",
-                            {RainfallRecorder::string_field("lemma", lemma.name),
-                             RainfallRecorder::string_field("theorem", rainfall_->term(lemma.theorem)),
+                            "constraint", "proof.use", {run_scope, branch_scope}, "fine.induction",
+                            "Previously verified source proof admitted to the arbitrary-field availability query",
+                            {RainfallRecorder::string_field("proof", proof.name),
+                             RainfallRecorder::string_field("theorem", rainfall_->term(proof.theorem)),
                              RainfallRecorder::string_field("consumer", declaration.name),
                              RainfallRecorder::string_field("constructor", constructor.name),
                              RainfallRecorder::string_field("phase", "arbitrary-availability")});
@@ -558,15 +558,15 @@ namespace fine::runtime_detail {
             }
 
             z3::solver solver(context_);
-            for (AdmittedLemma const &lemma : admitted_lemmas_) {
-                solver.add(lemma.theorem);
+            for (AdmittedProof const &proof : admitted_proofs_) {
+                solver.add(proof.theorem);
                 if (rainfall_)
                     rainfall_->record(
-                        "constraint", "lemma.use", {run_scope, branch_scope}, "fine.induction",
-                        "Previously verified source lemma admitted to this constructor branch as a universal SMT "
+                        "constraint", "proof.use", {run_scope, branch_scope}, "fine.induction",
+                        "Previously verified source proof admitted to this constructor branch as a universal SMT "
                         "assumption",
-                        {RainfallRecorder::string_field("lemma", lemma.name),
-                         RainfallRecorder::string_field("theorem", rainfall_->term(lemma.theorem)),
+                        {RainfallRecorder::string_field("proof", proof.name),
+                         RainfallRecorder::string_field("theorem", rainfall_->term(proof.theorem)),
                          RainfallRecorder::string_field("consumer", declaration.name),
                          RainfallRecorder::string_field("constructor", constructor.name)});
             }

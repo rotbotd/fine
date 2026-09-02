@@ -248,7 +248,7 @@ let right_label: Table(RightState, Bool) = table(default: false) {
 
 model bisim: Table((LeftState, RightState), Bool);
 
-proof bisimulation {
+solve bisimulation {
   takes(
     relation: bisim,
     left_step: left_step,
@@ -263,7 +263,7 @@ proof bisimulation {
 
 `Table` is Z3 `Array`, including the product index sort; it is not a
 compiler-owned function type. `model` introduces exactly one model-shaped
-array hole. `proof bisimulation` is a named proof form, not a first-class
+array hole. `solve bisimulation` is a named model-finding form, not a first-class
 function: its named `takes` fields elaborate to the quantified two-directional
 bisimulation clauses, and `gives` names the hole to return. The parser produces
 syntax containing source spans and no Z3 objects. Elaboration resolves that
@@ -272,7 +272,7 @@ syntax against manager-owned enum, product, array, and Boolean sorts.
 The parser accepts both a model-shaped hole, `model r: Table(...);`, and a
 concrete model witness, `model r: Table(...) = table(...);`. The former is a
 solver input; the latter is the parseable output form used to close the source
-round trip. Proof/runtime policy, including the current one-hole restriction,
+round trip. Solve/runtime policy, including the current one-hole restriction,
 belongs to elaboration rather than the parser.
 
 ## Synthesis boundary
@@ -366,13 +366,13 @@ admitted value domain. `sat` is not collapsed to a diagnostic string: Fine
 completes every parameter under that returned model and emits a typed,
 parseable `counterexample name { ... }` declaration.
 
-`lemma` uses the same syntax and verification path as `check`, including
+`proof` uses the same syntax and verification path as `check`, including
 constructor/direct-field induction. On an unsatisfiable counterexample query,
 Fine universally closes the original source theorem—not its generated induction
-step—and retains it under a stable `fine.lemma.<name>` qid. Only then may later
+step—and retains it under a stable `fine.proof.<name>` qid. Only then may later
 ordinary solver and proof-induction branch queries assert it. Source order is
-semantic: lemmas must precede proof-family and executable declarations, and a
-refuted lemma terminates execution rather than leaving a missing assumption for
+semantic: reusable proofs must precede proof-family and executable declarations,
+and a refuted proof terminates execution rather than leaving a missing assumption for
 later code. Rainfall records admission separately from each use. Fixedpoint
 relations never acquire these theorems as unowned background axioms.
 
@@ -421,7 +421,7 @@ snapshot reference and the parse-local ID; neither a span nor a repeated node ID
 is a cross-parse identity. The compiler emits `source.term.evidence` edges for
 the original `check` expressions while elaborating them, labelled `exact` for
 names and literals or `desugared` for constructors and compound syntax. The
-`proof bisimulation` declaration also has four `generated` edges to the exact
+`solve bisimulation` declaration also has four `generated` edges to the exact
 fully elaborated clause terms produced from that proof form. Generated witness
 parses and post-preprocessing Z3 terms do not inherit those edges.
 
