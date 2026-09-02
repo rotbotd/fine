@@ -4303,3 +4303,52 @@ repeated-index control, passed. Final clean artifacts:
 /nix/store/xib8cmpg3nn9gwj72jrxjxxjxq2z3jhj-fine-0.1.0
 /nix/store/sm1wbvydwk83fj3wjwsfqi3vavfwvaq6-fine-playground-0.1.0
 ```
+
+## 2026-09-02 — `takes` replaces `needs` at every static-input declaration
+
+h preferred Latte's `takes` spelling and left the final choice to me. I removed
+`needs` rather than keeping two names for one mechanism. The declaration is a
+static function/constructor input; caller omission triggers coeffect search, but
+that search policy does not turn the parameter itself into an ambient condition.
+The resulting surface is deliberately asymmetric and concrete:
+
+```fine
+proof function symm(left: Bool, right: Bool)
+  takes [given: Id(Bool, left, right)]
+  -> Id(Bool, right, left);
+
+proof reversed: Id(Bool, right, left) = symm[left, right](given);
+replace(x, y) using [same = p]
+```
+
+`takes` declares virtual evidence inputs. Parentheses still carry ordinary
+runtime/static value parameters according to the declaration kind. `using`
+still supplies a taken coeffect explicitly at a value call; omitting it retains
+exact caller-local lexical resolution. Rainfall operation names remain about
+coeffects because that is the checking mechanism, not the source keyword.
+
+The parser now recognizes only `takes`; it does not retain `needs` as a
+compatibility alias. Every executable and materialized fixture, architecture and
+proof-term document, roadmap example, README example, install check, playground
+sample, language-reference row, and CodeMirror keyword was migrated together.
+`reject-needs-keyword.fine` preserves the removed spelling as a red test. The
+served-page smoke requires `takes [` and rejects a reference that still contains
+`<code>needs [`.
+
+Validation:
+
+```
+cmake --build .build -j2
+# every non-rejecting fine/fixtures/*.fine ran successfully
+.build/fine run fine/fixtures/reject-needs-keyword.fine  # exits 1 at `needs`
+nix flake check -L
+nix build --no-link --print-out-paths .#default .#playground
+```
+
+The full native install check, materialization comparisons, Rainfall validation,
+Wasm execution smoke, and served-page smoke pass. Pre-commit artifacts:
+
+```
+/nix/store/ahygax0jpfjlld2sbcni2vmzcnwdwbc1-fine-0.1.0
+/nix/store/r422nz7zfy8bwsag29acjgyjw8srym4p-fine-playground-0.1.0
+```

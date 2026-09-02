@@ -55,13 +55,13 @@
                 <td><code>proof p: Id(Int, n, n) = refl(n);</code></td>
               </tr>
               <tr>
-                <td>needed evidence</td>
+                <td>static evidence input</td>
                 <td>The function is checked with the identity available; each call must supply matching local evidence.</td>
-                <td><code>needs [same: Id(Int, left, right)]</code></td>
+                <td><code>takes [same: Id(Int, left, right)]</code></td>
               </tr>
               <tr>
                 <td>explicit evidence</td>
-                <td>The named local proof exactly matches the callee's instantiated need.</td>
+                <td>The named local proof exactly matches the callee's instantiated static input.</td>
                 <td><code>replace(x, y) using [same = p]</code></td>
               </tr>
               <tr>
@@ -71,13 +71,13 @@
               </tr>
               <tr>
                 <td>proof function</td>
-                <td>Its result follows from its value indices and needed evidence; it cannot be called as runtime code.</td>
-                <td><code>proof function symm(left: Bool, right: Bool)<br>needs [p: Id(Bool, left, right)]<br>-&gt; Id(Bool, right, left);</code></td>
+                <td>Its result follows from its value indices and taken evidence; it cannot be called as runtime code.</td>
+                <td><code>proof function symm(left: Bool, right: Bool)<br>takes [p: Id(Bool, left, right)]<br>-&gt; Id(Bool, right, left);</code></td>
               </tr>
               <tr>
                 <td>indexed proof family</td>
                 <td>Its indices are runtime values, but its constructors and evidence exist only in the static proof layer.</td>
-                <td><code>proof inductive Even(value: Nat) {<br>&nbsp;&nbsp;even_zero() -&gt; Even(zero);<br>&nbsp;&nbsp;even_next(previous: Nat)<br>&nbsp;&nbsp;&nbsp;&nbsp;needs [prior: Even(previous)]<br>&nbsp;&nbsp;&nbsp;&nbsp;-&gt; Even(succ(succ(previous)));<br>}</code></td>
+                <td><code>proof inductive Even(value: Nat) {<br>&nbsp;&nbsp;even_zero() -&gt; Even(zero);<br>&nbsp;&nbsp;even_next(previous: Nat)<br>&nbsp;&nbsp;&nbsp;&nbsp;takes [prior: Even(previous)]<br>&nbsp;&nbsp;&nbsp;&nbsp;-&gt; Even(succ(succ(previous)));<br>}</code></td>
               </tr>
               <tr>
                 <td>indexed constructor evidence</td>

@@ -27,7 +27,7 @@ elaborating and checking. There is deliberately no sum type with value and proof
 cases and no proof case in `ValueTerm`.
 
 An identity proof remains exact source evidence. Introducing it automatically
-adds its equality proposition to the local solver context. A function `needs`
+adds its equality proposition to the local solver context. A function `takes`
 identity evidence from its caller; a call resolves that coeffect from exact
 lexical proof evidence and may materialize the chosen proof as an explicit
 `using` argument. The argument is checked again but never becomes a runtime
@@ -77,7 +77,7 @@ A declaration such as
 
 ```fine
 proof function symm(left: Bool, right: Bool)
-  needs [given: Id(Bool, left, right)]
+  takes [given: Id(Bool, left, right)]
   -> Id(Bool, right, left);
 ```
 

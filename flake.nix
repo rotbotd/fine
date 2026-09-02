@@ -122,6 +122,14 @@
           fi
           grep -F 'unreachable proof match arm `even_zero` must be omitted' "$unreachable_proof_match"
 
+          legacy_needs="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-needs-keyword.fine" \
+              >"$legacy_needs" 2>&1; then
+            echo "legacy needs keyword unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'expected `{`' "$legacy_needs"
+
           bad_inductive_index="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-proof-inductive-index.fine" \
               >"$bad_inductive_index" 2>&1; then

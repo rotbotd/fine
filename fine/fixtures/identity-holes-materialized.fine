@@ -1,5 +1,5 @@
 function hold(left: Int, right: Int) -> Int
-  needs [same: Id(Int, left, right)]
+  takes [same: Id(Int, left, right)]
   ensures { result == right; }
 {
   left

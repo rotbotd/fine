@@ -31,7 +31,7 @@ The destination has four fixed parts:
    `Id(A, x, y)` contributes `x == y` to the lexical Z3 context. The evidence's
    source span, name, constructor, and provenance remain separately available to
    materialization and Rainfall.
-3. **Caller-local coeffects.** A function declares proof demands with `needs`.
+3. **Caller-local coeffects.** A function declares proof demands with `takes`.
    Its body is checked under those hypothetical propositions. A call must provide
    matching evidence explicitly or find it among exact lexical caller bindings;
    there is no global instance or typeclass search.
@@ -51,7 +51,7 @@ The current fixture is deliberately small:
 
 ```fine
 function replace(left: Int, right: Int) -> Int
-  needs [same: Id(Int, left, right)]
+  takes [same: Id(Int, left, right)]
   ensures { result == right; }
 {
   left
@@ -129,7 +129,7 @@ Exit conditions:
 - the chosen application tree materializes and reruns without search.
 
 This slice is closed. Proof functions use explicit static indices and
-virtual `needs` parameters; their result proposition is checked under absorbed
+virtual `takes` parameters; their result proposition is checked under absorbed
 inputs before the declaration enters search. `identity-symmetry.fine` can close
 its reversed identity only with `symm[x, x == true](p)`, retains one nested
 application as residual frontier, materializes exactly, and reruns without

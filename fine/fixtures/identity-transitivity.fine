@@ -2,11 +2,11 @@ proof function bool_eta(value: Bool)
   -> Id(Bool, value, value == true);
 
 proof function symm(left: Bool, right: Bool)
-  needs [given: Id(Bool, left, right)]
+  takes [given: Id(Bool, left, right)]
   -> Id(Bool, right, left);
 
 proof function trans(left: Bool, middle: Bool, right: Bool)
-  needs [first: Id(Bool, left, middle), second: Id(Bool, middle, right)]
+  takes [first: Id(Bool, left, middle), second: Id(Bool, middle, right)]
   -> Id(Bool, left, right);
 
 run identity_transitivity {

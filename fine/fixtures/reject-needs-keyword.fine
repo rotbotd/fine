@@ -1,0 +1,8 @@
+function legacy(left: Int, right: Int) -> Int
+  needs [same: Id(Int, left, right)]
+{
+  left
+}
+
+run reject_needs_keyword {
+}

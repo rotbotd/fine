@@ -1,5 +1,5 @@
 proof function loop(left: Bool, right: Bool)
-  needs [prior: Id(Bool, left, right)]
+  takes [prior: Id(Bool, left, right)]
   -> Id(Bool, left, right);
 
 run cyclic_proof_search {

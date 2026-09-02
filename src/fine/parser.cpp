@@ -286,7 +286,7 @@ namespace fine::syntax {
                     item.node_id = next_node_id_++;
                     item.name = constructor.text;
                     item.parameters = value_parameters();
-                    if (at("needs"))
+                    if (at("takes"))
                         item.proof_parameters = coeffect_parameters();
                     expect("->");
                     item.result_type = proof_type();
@@ -323,7 +323,7 @@ namespace fine::syntax {
 
             std::vector<CoeffectParameter> coeffect_parameters() {
                 std::vector<CoeffectParameter> result;
-                expect("needs");
+                expect("takes");
                 expect("[");
                 if (!at("]")) {
                     while (true) {
@@ -565,7 +565,7 @@ namespace fine::syntax {
                 result.node_id = next_node_id_++;
                 result.name = name.text;
                 result.parameters = value_parameters();
-                if (at("needs"))
+                if (at("takes"))
                     result.proof_parameters = coeffect_parameters();
                 expect("->");
                 result.result_type = proof_type();
@@ -592,7 +592,7 @@ namespace fine::syntax {
                 result.parameters = value_parameters();
                 expect("->");
                 result.result_type = value_type();
-                if (at("needs"))
+                if (at("takes"))
                     result.coeffects = coeffect_parameters();
                 if (at("ensures")) {
                     take();

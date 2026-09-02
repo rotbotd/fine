@@ -5,11 +5,11 @@ enum Nat {
 
 proof inductive Even(value: Nat) {
   even_zero() -> Even(zero);
-  even_next(previous: Nat) needs [prior: Even(previous)] -> Even(succ(succ(previous)));
+  even_next(previous: Nat) takes [prior: Even(previous)] -> Even(succ(succ(previous)));
 }
 
 proof function impossible_even()
-  needs [impossible: Even(succ(zero))]
+  takes [impossible: Even(succ(zero))]
   -> Id(Int, 0, 1) {
   match impossible {
     even_zero() => refl(0),

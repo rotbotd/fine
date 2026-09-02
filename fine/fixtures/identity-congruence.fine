@@ -2,7 +2,7 @@ proof function neg_characterization(value: Bool)
   -> Id(Bool, value == false, (value == true) == false);
 
 proof function truth_congruence(left: Bool, right: Bool)
-  needs [same: Id(Bool, left, right)]
+  takes [same: Id(Bool, left, right)]
   -> Id(Bool, left == true, right == true);
 
 run identity_congruence {

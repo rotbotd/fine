@@ -6,7 +6,7 @@ disjoint from runtime values, so there is no runtime proof case to erase.
 
 ```fine
 function replace(left: Int, right: Int) -> Int
-  needs [same: Id(Int, left, right)]
+  takes [same: Id(Int, left, right)]
   ensures { result == right; }
 {
   left
@@ -49,7 +49,7 @@ Static indexed families use a separate form:
 ```fine
 proof inductive Even(value: Nat) {
   even_zero() -> Even(zero);
-  even_next(previous: Nat) needs [prior: Even(previous)]
+  even_next(previous: Nat) takes [prior: Even(previous)]
     -> Even(succ(succ(previous)));
 }
 

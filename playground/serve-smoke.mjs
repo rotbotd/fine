@@ -66,6 +66,8 @@ try {
   for (const form of ["runtime enum", "runtime match", "indexed proof family", "indexed constructor evidence", "indexed proof match", "empty proof match"])
     if (!reference.includes(form))
       throw new Error(`language reference is missing current form: ${form}`);
+  if (!reference.includes("takes [") || reference.includes("<code>needs ["))
+    throw new Error("language reference does not expose only the current static-input keyword");
   console.log(`serve smoke passed: ${plain.body.length} -> ${compressed.body.length} bytes`);
 } finally {
   server.kill("SIGTERM");

@@ -5,11 +5,11 @@ enum Nat {
 
 proof inductive Even(value: Nat) {
   even_zero() -> Even(zero);
-  even_next(previous: Nat) needs [prior: Even(previous)] -> Even(succ(succ(previous)));
+  even_next(previous: Nat) takes [prior: Even(previous)] -> Even(succ(succ(previous)));
 }
 
 proof function incomplete(value: Nat)
-  needs [evidence: Even(value)]
+  takes [evidence: Even(value)]
   -> Id(Nat, value, value) {
   match evidence {
     even_zero() => refl(value),

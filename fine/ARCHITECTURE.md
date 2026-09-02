@@ -64,7 +64,7 @@ only as `ProofEvidence`:
 proof inductive Even(value: Nat) {
   even_zero() -> Even(zero);
   even_next(previous: Nat)
-    needs [prior: Even(previous)]
+    takes [prior: Even(previous)]
     -> Even(succ(succ(previous)));
 }
 ```
@@ -80,7 +80,7 @@ Proof functions with bodies eliminate indexed evidence by proof-level matching:
 
 ```fine
 proof function expose_even(value: Nat)
-  needs [evidence: Even(value)]
+  takes [evidence: Even(value)]
   -> EvenShape(value) {
   match evidence {
     even_zero() => shape_zero[value](refl(value)),
@@ -108,7 +108,7 @@ A function declares evidence required from its caller:
 
 ```fine
 function replace(left: Int, right: Int) -> Int
-  needs [same: Id(Int, left, right)]
+  takes [same: Id(Int, left, right)]
   ensures { result == right; }
 {
   left
