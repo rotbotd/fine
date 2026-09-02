@@ -149,6 +149,63 @@
           assert branch["data"]["context_assumptions"]
           assert branch["data"]["goal"]
           PY
+          preservation="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-preservation.fine")"
+          echo "$preservation"
+          grep -F "verified-predicate-induction: marked_preservation" <<<"$preservation"
+          grep -F "constructor-branches: 2 verified" <<<"$preservation"
+          preservation_false="$($out/bin/fine run \
+            "$src/fine/fixtures/predicate-preservation-false.fine")"
+          echo "$preservation_false"
+          grep -F "refuted-predicate-induction: odd_mark_preservation" <<<"$preservation_false"
+          grep -F "failed-constructor: root" <<<"$preservation_false"
+          preservation_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/predicate-preservation.fine" \
+            > "$preservation_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/predicate-preservation.fine" "$preservation_rain"
+          ${pkgs.python3}/bin/python - "$preservation_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          opened = next(event for event in events
+                        if event["operation"] == "predicate-induction.run.open")
+          assert opened["data"]["predicate_assumptions"] == 1
+          assert opened["data"]["predicate_guarantee"] == "Marked"
+          inversions = [event for event in events
+                        if event["operation"] == "predicate-induction.assumption.invert"]
+          constructions = [event for event in events
+                           if event["operation"] == "predicate-induction.goal.construct"]
+          assert [event["data"]["constructor"] for event in inversions] == ["root", "under"]
+          assert [event["data"]["constructor"] for event in constructions] == ["root", "under"]
+          assert all(event["data"]["predicate"] == "Marked" for event in inversions + constructions)
+          assert all(event["data"]["alternatives"] == 2 for event in inversions + constructions)
+          assert not any(event["operation"] == "predicate-induction.goal-constructor" for event in events)
+          terms = {event["data"]["id"]: event["data"]["text"]
+                   for event in events if event["operation"] == "term.declare"}
+          under_inversion = next(event for event in inversions
+                                 if event["data"]["constructor"] == "under")
+          under_construction = next(event for event in constructions
+                                    if event["data"]["constructor"] == "under")
+          assert len({under_inversion["data"][key]
+                      for key in ("assumption", "inversion", "resource")}) == 3
+          assert "exists[" in terms[under_inversion["data"]["inversion"]]
+          assert "_d_Marked" in terms[under_inversion["data"]["inversion"]]
+          assert "exists[" in terms[under_construction["data"]["construction"]]
+          hypothesis = next(event for event in events
+                            if event["operation"] == "predicate-induction.hypothesis"
+                            and event["data"]["constructor"] == "under")
+          assert "_d_Marked" in terms[hypothesis["data"]["induction_hypothesis"]]
+          branch = next(event for event in events
+                        if event["operation"] == "predicate-induction.branch.open"
+                        and event["data"]["constructor"] == "under")
+          assert branch["data"]["inverted_assumptions"] == 1
+          assert branch["data"]["goal_constructor_alternatives"] == 2
+          assert branch["data"]["context_assumptions"] != branch["data"]["context_resources"]
+          assert branch["data"]["goal"] != branch["data"]["goal_resource"]
+          results = [event for event in events
+                     if event["operation"] == "predicate-induction.branch.result"]
+          assert all(event["data"]["status"] == "unsat" for event in results)
+          PY
           predicate_induction_rain="$(mktemp)"
           $out/bin/fine rain "$src/fine/fixtures/predicate-induction-two-premises.fine" \
             > "$predicate_induction_rain"

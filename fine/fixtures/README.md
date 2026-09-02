@@ -110,6 +110,14 @@ strict-ceiling fixture fails at `root`. Their Rainfall traces distinguish the
 source context assumption, constructor-result specialization, generalized IH,
 and public branch result.
 
+`predicate-preservation.fine` is the first theorem whose assumptions and goal
+both contain a second constructor-generated predicate. The `under` branch must
+invert one `Marked(succ(succ(before)))` layer, use the `Step` induction
+hypothesis, and construct one `Marked(succ(succ(after)))` layer. Rainfall keeps
+those three resources distinct. `predicate-preservation-false.fine` asks for an
+odd marked result and fails at `root`; it also guards against reintroducing the
+unbounded recursive constructor-axiom matching loop.
+
 The fixture prints both Z3's array value and all four selected cells; the cell
 listing is the stable extensional expectation even if a Z3 release chooses a
 different but equivalent store order.

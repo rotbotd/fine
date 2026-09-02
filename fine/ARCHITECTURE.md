@@ -114,9 +114,32 @@ ceiling fixture closes its recursive branch only by instantiating the IH at
 `ceiling - 1`, not at the branch's free ceiling constant. Rainfall records the
 context arity, original auxiliary assumptions, result-specialized assumptions,
 and generalized IH independently. Every constructor branch must be
-unsatisfiable; constructors with premises from another predicate, predicate
+unsatisfiable. Constructors with premises from another predicate, predicate
 atoms in guarantees, and derivation inversion of auxiliary predicate assumptions
-remain outside this slice.
+were outside this first contextual slice.
+
+The next preservation slice admits a predicate resource only in two syntactic
+positions: a direct auxiliary assumed atom, or the sole direct ensured atom.
+For a Horn-complete constructor-generated predicate `P(indices)`, Fine expands
+one source-semantic layer as a disjunction over retained constructors. Each
+alternative existentially binds that constructor's parameters, equates its
+result indices with `indices`, and includes every retained premise. On the left,
+the branch receives both the original assumed atom and this inversion formula.
+On the right, the branch must establish the same formula as a bounded
+one-constructor construction obligation. Recursive premise atoms remain visible
+inside the alternatives, so the induction hypothesis supplies the recursive
+step rather than a solver-invented summary.
+
+This bounded expansion is deliberate. Universally asserting every constructor
+introduction rule is sound, and it verified the true fixture, but the false
+control triggered an unbounded E-matching chain through
+`Marked(x) -> Marked(succ(succ(x)))`. Fine therefore never installs those
+recursive axioms in an induction branch. Rainfall records assumption inversion,
+goal construction, original atoms, resources, and constructor alternative
+counts as distinct compiler-owned evidence. This is not a source derivation
+witness or general predicate elimination: arbitrary-field predicates, nested or
+negative atoms, multiple predicate goals, and a user-facing inversion form are
+still rejected.
 
 An arbitrary constrained field has the source form
 `arbitrary x: View(arguments) { recursive_atoms; }` inside a constructor's

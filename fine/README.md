@@ -129,12 +129,19 @@ antecedent of that IH and are separately specialized to the constructor result
 in the branch query. This is what lets a recursive branch instantiate a context
 parameter differently from its source occurrence; `predicate-context-induction.fine`
 requires the IH at `ceiling - 1`. Each branch remains a separate ordinary SMT
-refutation query. Rainfall keeps the constructor result, specialized context,
-and every premise/hypothesis pair before the derivation witness erases; it does
-not reconstruct branches from Spacer's projected learned lemmas. Predicate
-atoms in guarantees and inversion of auxiliary predicate assumptions remain
-outside this slice, so this is setup for preservation rather than preservation
-itself.
+refutation query. A direct auxiliary predicate atom is now kept together with
+its compiler-owned one-constructor inversion, and a sole direct predicate goal
+is checked through the corresponding one-constructor construction formula.
+Both predicates must be Horn-complete. The preservation fixture needs the
+inverted `Marked` premise, the `Step` IH, and the `Marked` construction in that
+order. Fine deliberately does not install recursive universal introduction
+axioms: the first implementation made the false control generate an unbounded
+`Marked(succ(succ(...)))` matching chain. Rainfall keeps the original atom,
+inversion or construction resource, specialized context, and every
+premise/hypothesis pair separately before the derivation witness erases; it does
+not reconstruct branches from Spacer's projected learned lemmas. Nested or
+negative predicate formulas, multiple predicate goals, and inversion of
+predicates with arbitrary fields remain outside this slice.
 
 The first non-Horn derivation field is explicit rather than smuggled through a body
 variable:

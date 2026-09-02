@@ -2389,3 +2389,101 @@ constructor-owned inversion of that typing derivation. The next justified slice
 is the smallest target-predicate construction/inversion mechanism forced by the
 application and abstraction preservation branches, not a general relaxation of
 predicate atoms inside formulas.
+
+## 2026-09-02 — bounded predicate preservation
+
+The contextual induction slice left the first actual preservation branch unable
+to consume or produce a second constructor-generated predicate. An auxiliary
+`Marked(before)` was only an uninterpreted Boolean application in the ordinary
+branch solver, and `Marked(after)` was rejected syntactically as a guarantee.
+The missing object was not a general formula rewrite. It was exactly one source
+constructor layer on each side of the implication.
+
+Each retained predicate constructor now keeps its complete elaborated premise
+list in addition to its result indices and recursive-premise bookkeeping. For a
+Horn-complete predicate atom `P(indices)`, Fine can therefore build the finite
+one-layer formula
+
+```
+or over constructors C:
+  exists C.parameters.
+    indices == C.result_indices && C.premises
+```
+
+with the appropriate equality for every predicate index. A direct auxiliary
+predicate assumption becomes the conjunction of the original atom and that
+one-layer inversion. Keeping the atom is intentional: the branch receives both
+the exact assumed proposition and the compiler-owned elimination resources,
+rather than silently replacing source evidence with a derived formula. A sole
+direct predicate guarantee is checked by refuting the same one-layer formula at
+the constructor-specialized goal indices. Recursive premise atoms remain in the
+formula and must be supplied by the predicate-induction IH. Nested or negative
+predicate formulas, more than one ensured atom when a predicate is present, and
+predicates containing arbitrary fields are rejected rather than incompletely
+expanded.
+
+The first implementation used the ordinary logical introduction direction. It
+universally asserted every retained `Marked` constructor rule in each Step
+branch. This is sound and the true preservation fixture verified, but the false
+control did not return: the recursive rule
+`Marked(x) -> Marked(succ(succ(x)))` caused E-matching to keep manufacturing
+larger marked terms. After more than thirty seconds the `.build/fine` process
+was still at approximately 99.7% CPU and 433 MB, and was killed. This null is
+retained rather than hidden with a larger timeout. The replacement never installs
+recursive universal axioms. It asks only for the bounded top-constructor
+construction formula at the particular branch goal, which closes the true
+fixture and refutes the false one immediately.
+
+`fine/fixtures/predicate-preservation.fine` gives `Marked` the constructors
+`base: Marked(zero)` and `grow: Marked(x) -> Marked(succ(succ(x)))`. Its `Step`
+relation maps zero to two and is closed under adding two at both indices. The
+recursive preservation branch now has to perform three distinct moves:
+
+1. invert `Marked(succ(succ(before)))` to recover `Marked(before)`;
+2. apply the exact Step IH to get `Marked(after)`;
+3. select the `grow` alternative to construct `Marked(succ(succ(after)))`.
+
+The theorem verifies in two branches. `predicate-preservation-false.fine` asks
+for `Marked(succ(after))` and identifies `root` as the failing constructor.
+This is a minimal preservation skeleton, not full locally nameless STLC.
+
+Rainfall adds `predicate-induction.assumption.invert` and
+`predicate-induction.goal.construct` events. Each records the Step branch owner,
+secondary predicate name, original atom or goal, exact generated inversion or
+construction, and constructor-alternative count. Assumption inversion also
+retains the distinct conjunction used as the branch resource. The run-open
+event counts direct predicate
+assumptions and names the direct predicate guarantee. Branch-open retains the
+original specialized assumptions separately from their inversion resources, and
+the original goal separately from its construction resource. The install check
+requires two `Marked` alternatives in both Step branches, a distinct recursive
+IH in `under`, different atom/resource handles, two unsatisfiable public branch
+results, and the absence of the discarded universal
+`predicate-induction.goal-constructor` events.
+
+Regression and release commands:
+
+```
+cmake --build .build -j2
+for f in predicate-context-induction predicate-induction-two-premises \
+  predicate-cofinite-support-induction reusable-proof-induction \
+  predicate-preservation; do
+  .build/fine run fine/fixtures/$f.fine
+  .build/fine rain fine/fixtures/$f.fine > /tmp/$f.rain
+  python3 fine/rainfall_replay.py schemas/rainfall-v2.schema.json \
+    schemas/rainfall-v2-semantics.schema.json /tmp/$f.rain
+done
+.build/fine run fine/fixtures/predicate-preservation-false.fine
+# refuted-predicate-induction: odd_mark_preservation
+# failed-constructor: root
+nix flake check
+nix build --no-link --print-out-paths
+# /nix/store/qcjd64z5yab6k82rhn2w37nl6l577744-fine-0.0.1
+```
+
+The remaining STLC edge is now narrower and harsher. A real typing derivation
+will need environment lookup and beta/opening lemmas, while the abstraction rule
+contains an arbitrary cofinite field. The current inversion is intentionally
+limited to Horn-complete predicates, so it cannot yet eliminate precisely that
+mixed first-order/arbitrary typing evidence. Broadening formula syntax before
+that source-semantic rule is fixed would only obscure the boundary.

@@ -92,6 +92,7 @@ namespace fine::runtime_detail {
         std::string name;
         std::vector<z3::expr> parameters;
         std::vector<z3::expr> result_indices;
+        std::vector<z3::expr> premise_terms;
         std::vector<std::vector<z3::expr>> recursive_premise_indices;
         std::vector<ArbitraryField> arbitrary_fields;
         std::size_t premise_count = 0;

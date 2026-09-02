@@ -109,6 +109,7 @@ namespace fine::runtime_detail {
                 z3::expr elaborated = atom(premise, "predicate-constructor premise");
                 premises = premises && elaborated;
                 premise_terms.push_back(elaborated);
+                retained_constructor.premise_terms.push_back(elaborated);
                 if (premise.name == declaration.name) {
                     ++recursive_premises;
                     std::vector<z3::expr> indices;
@@ -376,14 +377,44 @@ namespace fine::runtime_detail {
                 context_terms.push_back(term);
         }
 
-        std::function<void(syntax::Expr const &)> reject_predicate_in_guarantee = [&](syntax::Expr const &expression) {
-            if (expression.kind == syntax::Expr::Kind::call && predicates_.contains(expression.name))
-                reject(expression.span, "predicate atoms are not yet admitted inside induction guarantees");
-            for (syntax::Expr const &child : expression.elements)
-                reject_predicate_in_guarantee(child);
+        auto direct_predicate = [&](syntax::Expr const &expression) -> PredicateInfo const * {
+            if (expression.kind != syntax::Expr::Kind::call)
+                return nullptr;
+            auto found = predicates_.find(expression.name);
+            return found == predicates_.end() ? nullptr : found->second.get();
         };
-        for (syntax::Expr const &condition : declaration.ensures)
-            reject_predicate_in_guarantee(condition);
+        std::function<bool(syntax::Expr const &)> contains_predicate = [&](syntax::Expr const &expression) {
+            if (direct_predicate(expression))
+                return true;
+            return std::any_of(expression.elements.begin(), expression.elements.end(), contains_predicate);
+        };
+
+        std::vector<PredicateInfo const *> auxiliary_predicates;
+        for (std::size_t i = 1; i < declaration.assumes.size(); ++i) {
+            syntax::Expr const &condition = declaration.assumes[i];
+            PredicateInfo const *item = direct_predicate(condition);
+            if (!item && contains_predicate(condition))
+                reject(condition.span,
+                       "a predicate-induction context may use predicate evidence only as a direct assumed atom");
+            if (item && !item->horn_complete)
+                reject(condition.span,
+                       "predicate-induction inversion needs a Horn-complete constructor predicate; `" + item->name +
+                           "` has an arbitrary field");
+            auxiliary_predicates.push_back(item);
+        }
+
+        PredicateInfo const *goal_predicate = nullptr;
+        for (syntax::Expr const &condition : declaration.ensures) {
+            if (!contains_predicate(condition))
+                continue;
+            if (declaration.ensures.size() != 1 || !(goal_predicate = direct_predicate(condition)))
+                reject(condition.span,
+                       "predicate induction admits a predicate guarantee only as its one direct ensured atom");
+            if (!goal_predicate->horn_complete)
+                reject(condition.span,
+                       "predicate-induction construction needs a Horn-complete constructor predicate; `" +
+                           goal_predicate->name + "` has an arbitrary field");
+        }
 
         std::string run_scope = "predicate-induction:" + declaration.name;
         capture_source_edges_ = true;
@@ -393,19 +424,24 @@ namespace fine::runtime_detail {
         if (!Z3_is_eq_ast(context_, target_term.expression, assumed_term.expression))
             reject(assumed.span, "`inducts` target and assumed predicate atom must elaborate identically");
         z3::expr auxiliary_assumptions = context_.bool_val(true);
+        std::vector<z3::expr> auxiliary_terms;
         for (std::size_t i = 1; i < declaration.assumes.size(); ++i) {
             syntax::Expr const &condition = declaration.assumes[i];
             TypedExpression elaborated = elaborate_expression(condition, environment);
             if (!same(elaborated.type, bool_type_))
                 reject(condition.span, "predicate-induction context assumption must have type Bool");
             auxiliary_assumptions = auxiliary_assumptions && elaborated.expression;
+            auxiliary_terms.push_back(elaborated.expression);
         }
         z3::expr guarantees = context_.bool_val(true);
+        std::optional<z3::expr> predicate_goal_atom;
         for (syntax::Expr const &condition : declaration.ensures) {
             TypedExpression elaborated = elaborate_expression(condition, environment);
             if (!same(elaborated.type, bool_type_))
                 reject(condition.span, "predicate-induction guarantee must have type Bool");
             guarantees = guarantees && elaborated.expression;
+            if (goal_predicate)
+                predicate_goal_atom = elaborated.expression;
         }
         capture_source_edges_ = false;
         source_edge_within_.clear();
@@ -420,6 +456,11 @@ namespace fine::runtime_detail {
                  RainfallRecorder::number_field("constructors", predicate.constructors.size()),
                  RainfallRecorder::number_field("context_parameters", context_terms.size()),
                  RainfallRecorder::number_field("context_assumptions", declaration.assumes.size() - 1),
+                 RainfallRecorder::number_field(
+                     "predicate_assumptions",
+                     std::count_if(auxiliary_predicates.begin(), auxiliary_predicates.end(),
+                                   [](PredicateInfo const *item) { return item != nullptr; })),
+                 RainfallRecorder::string_field("predicate_guarantee", goal_predicate ? goal_predicate->name : ""),
                  RainfallRecorder::string_field("target", rainfall_->term(target_term.expression)),
                  RainfallRecorder::string_field("auxiliary_assumptions", rainfall_->term(auxiliary_assumptions)),
                  RainfallRecorder::string_field("guarantees", rainfall_->term(guarantees))});
@@ -462,6 +503,27 @@ namespace fine::runtime_detail {
             return z3::expr(context_, quantified);
         };
 
+        auto inversion = [&](PredicateInfo const &item, z3::expr const &atom) {
+            if (!atom.is_app() || atom.num_args() != item.index_types.size())
+                throw std::runtime_error("internal predicate inversion arity mismatch");
+            z3::expr alternatives = context_.bool_val(false);
+            for (PredicateConstructorInfo const &constructor : item.constructors) {
+                z3::expr branch = context_.bool_val(true);
+                for (unsigned i = 0; i < atom.num_args(); ++i)
+                    branch = branch && atom.arg(i) == constructor.result_indices[i];
+                for (z3::expr const &premise : constructor.premise_terms)
+                    branch = branch && premise;
+                if (!constructor.parameters.empty()) {
+                    z3::expr_vector parameters(context_);
+                    for (z3::expr const &parameter : constructor.parameters)
+                        parameters.push_back(parameter);
+                    branch = z3::exists(parameters, branch);
+                }
+                alternatives = alternatives || branch;
+            }
+            return alternatives;
+        };
+
         std::string failed_branch;
         for (PredicateConstructorInfo const &constructor : predicate.constructors) {
             if (constructor.premise_count != constructor.recursive_premise_indices.size())
@@ -471,7 +533,47 @@ namespace fine::runtime_detail {
             z3::expr constructor_result = predicate.relation(static_cast<unsigned>(constructor.result_indices.size()),
                                                           constructor.result_indices.data());
             z3::expr branch_goal = instantiate(guarantees, constructor.result_indices);
+            z3::expr branch_goal_atom =
+                goal_predicate ? instantiate(*predicate_goal_atom, constructor.result_indices) : branch_goal;
+            z3::expr branch_goal_resource =
+                goal_predicate ? inversion(*goal_predicate, branch_goal_atom) : branch_goal;
+            if (goal_predicate && rainfall_)
+                rainfall_->record(
+                    "derive", "predicate-induction.goal.construct", {run_scope, branch_scope}, "fine.induction",
+                    "Compiler-owned one-constructor construction obligation for a positive predicate goal; this "
+                    "bounded unfolding avoids a recursive universal introduction axiom",
+                    {RainfallRecorder::string_field("constructor", constructor.name),
+                     RainfallRecorder::string_field("predicate", goal_predicate->name),
+                     RainfallRecorder::string_field("goal", rainfall_->term(branch_goal_atom)),
+                     RainfallRecorder::string_field("construction", rainfall_->term(branch_goal_resource)),
+                     RainfallRecorder::number_field("alternatives", goal_predicate->constructors.size())});
             z3::expr branch_assumptions = instantiate(auxiliary_assumptions, constructor.result_indices);
+            z3::expr branch_resources = context_.bool_val(true);
+            std::size_t inverted_assumptions = 0;
+            for (std::size_t i = 0; i < auxiliary_terms.size(); ++i) {
+                z3::expr specialized = instantiate(auxiliary_terms[i], constructor.result_indices);
+                z3::expr resource = specialized;
+                if (PredicateInfo const *assumption_predicate = auxiliary_predicates[i]) {
+                    z3::expr unfolded = inversion(*assumption_predicate, specialized);
+                    resource = specialized && unfolded;
+                    ++inverted_assumptions;
+                    if (rainfall_)
+                        rainfall_->record(
+                            "derive", "predicate-induction.assumption.invert", {run_scope, branch_scope},
+                            "fine.induction",
+                            "Compiler-owned one-constructor unfolding of a positive predicate assumption under its "
+                            "least constructor-generated interpretation",
+                            {RainfallRecorder::string_field("constructor", constructor.name),
+                             RainfallRecorder::number_field("assumption_ordinal", i),
+                             RainfallRecorder::string_field("predicate", assumption_predicate->name),
+                             RainfallRecorder::string_field("assumption", rainfall_->term(specialized)),
+                             RainfallRecorder::string_field("inversion", rainfall_->term(unfolded)),
+                             RainfallRecorder::string_field("resource", rainfall_->term(resource)),
+                             RainfallRecorder::number_field("alternatives",
+                                                            assumption_predicate->constructors.size())});
+                }
+                branch_resources = branch_resources && resource;
+            }
             z3::expr hypotheses = context_.bool_val(true);
             std::vector<z3::expr> hypothesis_terms;
             for (std::size_t i = 0; i < constructor.recursive_premise_indices.size(); ++i) {
@@ -593,7 +695,7 @@ namespace fine::runtime_detail {
                              RainfallRecorder::string_field("scope_owner", "fine-arbitrary-field")});
                 }
             }
-            z3::expr branch_query = hypotheses && branch_assumptions && !branch_goal;
+            z3::expr branch_query = hypotheses && branch_resources && !branch_goal_resource;
             if (rainfall_) {
                 rainfall_->source_term(declaration.node_id, declaration.span, "decl.check", branch_query, "generated",
                                        {run_scope, branch_scope});
@@ -604,7 +706,12 @@ namespace fine::runtime_detail {
                      RainfallRecorder::number_field("constructor_parameters", constructor.parameters.size()),
                      RainfallRecorder::string_field("constructor_result", rainfall_->term(constructor_result)),
                      RainfallRecorder::string_field("context_assumptions", rainfall_->term(branch_assumptions)),
-                     RainfallRecorder::string_field("goal", rainfall_->term(branch_goal)),
+                     RainfallRecorder::string_field("context_resources", rainfall_->term(branch_resources)),
+                     RainfallRecorder::number_field("inverted_assumptions", inverted_assumptions),
+                     RainfallRecorder::string_field("goal", rainfall_->term(branch_goal_atom)),
+                     RainfallRecorder::string_field("goal_resource", rainfall_->term(branch_goal_resource)),
+                     RainfallRecorder::number_field("goal_constructor_alternatives",
+                                                    goal_predicate ? goal_predicate->constructors.size() : 0),
                      RainfallRecorder::string_field("counterexample_query", rainfall_->term(branch_query)),
                      RainfallRecorder::number_field("recursive_hypotheses", hypothesis_terms.size()),
                      RainfallRecorder::number_field("arbitrary_fields", constructor.arbitrary_fields.size())});

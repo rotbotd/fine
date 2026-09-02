@@ -107,6 +107,11 @@ carriers.
       subtyping.
 - [x] Generate indexed pattern refinement and induction on a proof derivation,
       rather than structural induction on the indexed `Tm` value.
+- [x] Admit one direct auxiliary predicate atom and one direct predicate goal in
+      predicate induction through compiler-owned, one-constructor inversion and
+      construction formulas. Preserve both exact resources in Rainfall and keep
+      the recursive universal introduction-axiom matching loop as a rejected
+      experiment.
 - [x] Preserve the selected rule, opened bodies, arbitrary fresh name,
       recursive premise, and induction hypothesis as exact Rainfall evidence
       before erasing derivation witnesses from value/model construction.
@@ -175,8 +180,22 @@ free source occurrence of `ceiling` cannot close it. Its false strict-ceiling
 control fails at `root`. Rainfall retains the context arity, exact auxiliary
 assumption, result-specialized branch assumption, qid-bearing universal IH, and
 branch result. This admits the shape of a preservation context, but not yet its
-substance: predicate atoms remain forbidden in guarantees and Fine cannot invert
-an auxiliary typing derivation.
+substance in the contextual slice alone.
+
+The minimal predicate-preservation skeleton is closed by
+`predicate-preservation.fine`. `Marked(before)` is a second least
+constructor-generated predicate. In the recursive `Step` branch, Fine inverts
+`Marked(succ(succ(before)))` by one retained constructor layer, applies the
+exact Step IH to obtain `Marked(after)`, and checks one constructor layer for
+`Marked(succ(succ(after)))`. The odd-result control fails at `root`. Rainfall
+retains the original assumption and goal, their separate inversion/construction
+resources, both constructor alternatives, and the recursive IH. The first sound
+implementation using universal constructor introduction axioms verified the
+theorem but made the false control grow a recursive matching chain indefinitely;
+the bounded formula replaces it rather than increasing fuel. This is the
+preservation mechanism, not the full STLC theorem: typing/reduction predicates,
+environment lookup, beta substitution/opening lemmas, and inversion of a typing
+predicate containing an arbitrary cofinite field remain unresolved.
 
 The arbitrary-field mechanism now has a real locally nameless consumer at the
 evidence boundary. `predicate-cofinite-support-induction.fine` represents
