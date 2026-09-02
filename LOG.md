@@ -3475,3 +3475,10 @@ The remaining slice-2 edge is transitivity. Backward search must infer its
 middle index jointly from two child proof types and retain both child trees as
 distinct Rainfall inputs. Only after that deterministic grammar is closed will
 the datatype-valued Z3 model selector be connected behind the same grammar.
+
+Post-commit clean-source verification for `7f02e214d` reran every install check:
+
+```sh
+nix build --no-link --print-out-paths
+# /nix/store/rxlz6jfrwvsby9gj6fnamgdz2ww5hmsm-fine-0.1.0
+```
