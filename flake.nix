@@ -204,6 +204,12 @@
           import json, pathlib, sys
           events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
           one = lambda operation: next(event for event in events if event["operation"] == operation)
+          functions = {event["data"]["function"]: event
+                       for event in events
+                       if event["operation"] == "function.recursive-definition"}
+          assert set(functions) >= {"open_at", "support_cutoff"}
+          assert functions["open_at"]["data"]["arms"] == 4
+          assert functions["support_cutoff"]["data"]["arms"] == 4
           view = one("fine.view.declare")
           assert view["data"]["view"] == "FreshFor"
           assert view["data"]["availability"] == "declared-witness"
@@ -220,6 +226,12 @@
           assert hypothesis["data"]["binder_term"] != field["data"]["availability_witness"]
           assert hypothesis["data"]["recursive_premise"]
           assert hypothesis["data"]["induction_hypothesis"]
+          terms = {event["data"]["id"]: event["data"]["text"]
+                   for event in events if event["operation"] == "term.declare"}
+          premise_text = terms[hypothesis["data"]["recursive_premise"]]
+          assert "open_at" in premise_text
+          assert terms[hypothesis["data"]["binder_term"]] in premise_text
+          assert "support_cutoff" in terms[hypothesis["data"]["requirement"]]
           PY
           invalid_witness="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-invalid-view-witness.fine" \

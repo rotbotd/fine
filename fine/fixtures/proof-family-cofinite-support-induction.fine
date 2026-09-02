@@ -1,65 +1,64 @@
-enum Name {
-  zero,
-  succ(previous: Name),
-}
-
-enum Support {
-  below(limit: Name),
-}
-
 enum Tm {
-  left,
-  right,
-  opened(body: Tm, fresh: Name),
+  bound(index: Int),
+  free(name: Int),
+  app(fn: Tm, argument: Tm),
   abs(body: Tm),
 }
 
-function above(candidate: Name, limit: Name): Bool {
-  match candidate {
-    zero => false,
-    succ(previous) => if previous == limit { true } else { above(previous, limit) },
+function open_at(term: Tm, depth: Int, fresh: Int): Tm {
+  match term {
+    bound(index) => if index == depth { free(fresh) } else { bound(index) },
+    free(name) => free(name),
+    app(fn, argument) => app(open_at(fn, depth, fresh), open_at(argument, depth, fresh)),
+    abs(body) => abs(open_at(body, depth + 1, fresh)),
   }
 }
 
-function outside(candidate: Name, support: Support): Bool {
-  match support {
-    below(limit) => above(candidate, limit),
+function support_cutoff(term: Tm): Int {
+  match term {
+    bound(_) => 0,
+    free(name) => name,
+    app(fn, argument) => if support_cutoff(fn) >= support_cutoff(argument) {
+      support_cutoff(fn)
+    } else {
+      support_cutoff(argument)
+    },
+    abs(body) => support_cutoff(body),
   }
 }
 
-function fresh_after(support: Support): Name {
-  match support {
-    below(limit) => succ(limit),
-  }
-}
-
-view FreshFor(support: Support) over Name {
+view FreshFor(before: Tm, after: Tm) over Int {
   requires {
-    outside(value, support);
+    value >= support_cutoff(before) + 1;
+    value >= support_cutoff(after) + 1;
   }
-  witness fresh_after(support);
+  witness if support_cutoff(before) >= support_cutoff(after) {
+    support_cutoff(before) + 1
+  } else {
+    support_cutoff(after) + 1
+  };
 }
 
-proof family Step(before: Tm, after: Tm, support: Support) {
-  constructor root(support: Support) {
+proof family Step(before: Tm, after: Tm) {
+  constructor root() {
     takes {}
-    gives Step(left, right, support);
+    gives Step(bound(0), free(0));
   }
 
-  constructor under_abs(before: Tm, after: Tm, support: Support) {
+  constructor under_abs(before: Tm, after: Tm) {
     takes {
-      arbitrary fresh: FreshFor(support) {
-        Step(opened(before, fresh), opened(after, fresh), support);
+      arbitrary fresh: FreshFor(before, after) {
+        Step(open_at(before, 0, fresh), open_at(after, 0, fresh));
       }
     }
-    gives Step(abs(before), abs(after), support);
+    gives Step(abs(before), abs(after));
   }
 }
 
-check distinct_indices(before: Tm, after: Tm, support: Support) {
-  inducts(Step(before, after, support));
+check distinct_indices(before: Tm, after: Tm) {
+  inducts(Step(before, after));
   assumes {
-    Step(before, after, support);
+    Step(before, after);
   }
   ensures {
     (before == after) == false;

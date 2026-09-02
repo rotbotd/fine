@@ -1892,3 +1892,84 @@ nix build --no-link --print-out-paths
 
 The full declarative fixture suite passed and the clean pre-commit realization
 was `/nix/store/mg4n8wxsm0qdmmarwkx0z1cm9qgqmb63-fine-0.0.1`.
+
+## 2026-09-02 — Real locally nameless opening and computed support; equivariance remains a null
+
+The promoted `proof-family-cofinite-support-induction.fine` removes the visible
+`opened(body, fresh)` proxy and the externally supplied cutoff datatype. Its
+native `Tm` datatype is now the actual locally nameless representation:
+
+```fine
+enum Tm {
+  bound(index: Int),
+  free(name: Int),
+  app(fn: Tm, argument: Tm),
+  abs(body: Tm),
+}
+```
+
+Two exhaustive recursive Fine functions define the operations rather than
+asking the compiler to recognize their names. `open_at(term, depth, fresh)`
+replaces `bound(depth)` by `free(fresh)`, recurses at the same depth through
+application, and increments the depth below abstraction. `support_cutoff(term)`
+recurses through the same datatype and returns an integer at least as large as
+every free name in the term. Its zero base also safely bounds negative free
+names; the construction needs a finite upper bound, not an exact set.
+
+`FreshFor(before, after)` now has two requirements, placing its carrier above
+the independently computed cutoffs of both bodies. Its declared witness is the
+larger cutoff plus one. Fine universally verifies that witness against both
+requirements, then uses a separate arbitrary integer in the `under_abs` branch:
+
+```fine
+arbitrary fresh: FreshFor(before, after) {
+  Step(open_at(before, 0, fresh), open_at(after, 0, fresh));
+}
+```
+
+The two-branch derivation induction verifies. The structured trace validates
+with 395 events, 107 source nodes, 75 strong terms, and 120 source-term edges.
+The flake assertions now require separate `function.recursive-definition`
+events for `open_at` and `support_cutoff`; the arbitrary field's requirement must
+contain `support_cutoff`, while its exact recursive premise must contain both the
+retained arbitrary term and the `open_at` applications. The availability
+witness remains a different strong term.
+
+This is actual opening, support computation, and arbitrary-branch trace identity,
+not yet the theorem that makes all above-cutoff choices interchangeable. I tried
+the direct source statement
+
+```
+rename(open_at(term, depth, fresh), fresh, other)
+  == open_at(term, depth, other)
+```
+
+under assumptions that `fresh` and `other` both exceed `support_cutoff(term)`.
+Fine's ordinary `inducts(term)` translation exceeded twenty seconds without an
+answer. No solver fuel was added. The exact failed source and reproduction are
+retained in `fine/spikes/indexed-proof/open-equivariance-timeout.fine` and its
+README. The likely missing object is constructor-owned induction evidence for
+the nested `rename`/`open_at` recursion, not another freshness witness. Until it
+is proved, Rainfall records availability and arbitrary scope but never calls it
+equivariance.
+
+Validation:
+
+```
+nix run . -- run fine/fixtures/proof-family-cofinite-support-induction.fine
+nix run . -- rain fine/fixtures/proof-family-cofinite-support-induction.fine \
+  > /tmp/proof-family-locally-nameless-open.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/proof-family-cofinite-support-induction.fine \
+  /tmp/proof-family-locally-nameless-open.rain
+
+timeout 20 nix run . -- run \
+  fine/spikes/indexed-proof/open-equivariance-timeout.fine
+# status 124, deliberately retained
+
+nix flake check
+nix build --no-link --print-out-paths
+```
+
+The clean pre-commit realization was
+`/nix/store/q37ghy05v9256r2582ipkg3m0kjiak77-fine-0.0.1`.

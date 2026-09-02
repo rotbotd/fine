@@ -107,7 +107,7 @@ carriers.
       subtyping.
 - [x] Generate indexed pattern refinement and induction on a proof derivation,
       rather than structural induction on the indexed `Tm` value.
-- [ ] Preserve the selected rule, opened bodies, arbitrary fresh name,
+- [x] Preserve the selected rule, opened bodies, arbitrary fresh name,
       recursive premise, and induction hypothesis as exact Rainfall evidence
       before erasing proof witnesses from value/model construction.
 - [ ] Verify preservation for full locally nameless reduction under
@@ -165,31 +165,29 @@ real induction over Fine's constructor table, not a reconstruction from Spacer
 lemmas. It still has no explicit source match body, proof-term value,
 existential constructor field, cofinite branch, or lifted branch counterexample.
 
-The arbitrary-field mechanism is now executable without claiming the full
-locally nameless exit. `proof-family-arbitrary-fresh-induction.fine` declares a
-named `FreshApart` view over the existing native `Name` carrier and gives
-`under_abs` one `arbitrary fresh: FreshApart(excluded) { ... }` recursive field.
-Fine keeps the whole family out of fixedpoint once any constructor is non-Horn,
-rejects membership or fixedpoint-invariant queries for it, checks
-`forall constructor parameters. exists fresh. FreshApart(fresh, excluded)` to
-exclude vacuity, and then checks the constructor branch with the view requirement
-and exact opened recursive IH. Rainfall retains the view, arbitrary term,
-requirement, availability obligation, opened premise, and IH as distinct strong
-objects. The impossible-view control is rejected. The TODO remains open until
-the proxy `opened` constructor is replaced by actual locally nameless open/support
-operations and the freshness/equivariance argument is retained rather than
-assumed by naming the view.
+The arbitrary-field mechanism now has a real locally nameless consumer at the
+evidence boundary. `proof-family-cofinite-support-induction.fine` represents
+terms by bound indices, free integer names, application, and abstraction.
+`open_at` increments depth below abstractions and replaces the selected bound
+index by a free name; `support_cutoff` recursively computes a maximum containing
+all free names. `FreshFor(before, after)` requires a name above both computed
+cutoffs and proposes their maximum plus one as its separately checked
+availability witness. `under_abs` then retains one arbitrary such name and the
+exact recursive premise/IH over `open_at(before, 0, fresh)` and
+`open_at(after, 0, fresh)`. Rainfall validates 395 events and keeps both recursive
+function bodies, the support requirement, availability witness, distinct
+arbitrary binder, two opened terms, premise, and IH as exact same-manager terms.
+The older `FreshApart` and invalid-witness fixtures remain controls for the
+generic mechanism.
 
-Finite cofinite support is no longer a one-name toy.
-`proof-family-cofinite-support-induction.fine` represents names by Peano
-constructors and a finite exclusion set by its greatest-name cutoff. The
-`FreshFor` view requires a name strictly above that cutoff and declares
-`fresh_after(support)` as a candidate. Fine checks the candidate's instantiated
-requirement universally, keeps it distinct from the arbitrary branch name, and
-rejects the predecessor-valued control. This closes fresh-name availability for
-the cutoff representation. It still does not define locally nameless `open`,
-compute a term's support cutoff, or prove the equivariance lemma connecting
-different choices above the cutoff.
+This closes the trace-preservation item but not the quantified-field or STLC exit.
+The direct name-choice theorem—renaming an opening at one above-cutoff name to a
+second equals opening at the second—exceeded twenty seconds under Fine's weak
+structural-induction translation. Its exact source is retained as
+`fine/spikes/indexed-proof/open-equivariance-timeout.fine`; it receives no extra
+fuel and the compiler does not label availability as equivariance. Full locally
+nameless preservation still needs a source-owned proof of that obligation and
+the typing/reduction families that consume it.
 
 ## Later language test: an elementary topos without ceremony
 
