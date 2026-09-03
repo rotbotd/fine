@@ -314,7 +314,9 @@ also closed in the browser. A disposable worker repeatedly materializes and
 validates the previous epoch; each completed source is posted, while stop
 terminates the in-flight epoch before the main thread commits only the last
 posted source in one undoable edit. The source checkpoint, rather than a private
-Z3 state, is the persistent frontier.
+Z3 state, is the persistent frontier. Each source post carries Rainfall emitted
+by that same elaboration, and the browser updates the trace pane only at this
+paired boundary.
 
 This is where Rainfall becomes an editing instrument rather than a log viewer.
 The user should see which source hole and production Fine is working on, not a

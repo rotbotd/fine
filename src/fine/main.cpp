@@ -97,7 +97,8 @@ namespace {
         }
     }
 
-    int checkpoint_file(char const *path, std::size_t budget, char const *output_path = nullptr) {
+    int checkpoint_file(char const *path, std::size_t budget, char const *output_path = nullptr,
+                        char const *rainfall_output_path = nullptr) {
         std::string source = read_file(path);
         try {
             fine::syntax::ConcreteSyntaxTree tree = fine::syntax::parse_tree(source);
@@ -106,8 +107,11 @@ namespace {
             first_options.synthesize_partial_proofs = true;
             first_options.proof_search_cost = budget;
             std::ostringstream first_output;
-            fine::ExecutionResult result =
-                fine::execute(tree.ast, first_output, nullptr, nullptr, {}, first_options);
+            std::ostringstream rainfall_output;
+            fine::SourceSnapshot snapshot = fine::make_source_snapshot(path, source);
+            fine::ExecutionResult result = fine::execute(
+                tree.ast, first_output, rainfall_output_path ? &rainfall_output : nullptr,
+                rainfall_output_path ? &snapshot : nullptr, {}, first_options);
             std::string checkpoint = fine::apply_materializations(tree, result.materializations);
             fine::syntax::ConcreteSyntaxTree reparsed = fine::syntax::parse_tree(checkpoint);
             fine::ExecutionOptions validation;
@@ -123,6 +127,8 @@ namespace {
                 write_file(output_path, checkpoint);
             else
                 std::cout << checkpoint;
+            if (rainfall_output_path)
+                write_file(rainfall_output_path, rainfall_output.str());
             return EXIT_SUCCESS;
         } catch (fine::syntax::ParseError const &error) {
             std::cerr << error.format(path, source) << '\n';
@@ -172,6 +178,16 @@ int main(int argc, char **argv) try {
             return EXIT_FAILURE;
         }
         return checkpoint_file(argv[6], budget, argv[5]);
+    }
+    if (argc == 9 && std::string_view(argv[1]) == "checkpoint" &&
+        std::string_view(argv[2]) == "--proof-budget" && std::string_view(argv[4]) == "--output" &&
+        std::string_view(argv[6]) == "--rain-output") {
+        std::size_t budget = 0;
+        if (!parse_revision(argv[3], budget) || budget == 0) {
+            std::cerr << "fine: proof budget must be a positive integer\n";
+            return EXIT_FAILURE;
+        }
+        return checkpoint_file(argv[8], budget, argv[5], argv[7]);
     }
     if (argc == 6 && std::string_view(argv[1]) == "rain" && std::string_view(argv[2]) == "--checkpoint" &&
         std::string_view(argv[3]) == "--proof-budget") {
@@ -231,6 +247,8 @@ int main(int argc, char **argv) try {
                  "       fine roundtrip <source.fine>\n"
                  "       fine checkpoint --proof-budget <n> <source.fine>\n"
                  "       fine checkpoint --proof-budget <n> --output <output.fine> <source.fine>\n"
+                 "       fine checkpoint --proof-budget <n> --output <output.fine> "
+                 "--rain-output <trace.rain> <source.fine>\n"
                  "       fine rain --checkpoint --proof-budget <n> <source.fine>\n"
                  "       fine {run|rain|materialize} --proof-selector z3 <source.fine>\n"
                  "       fine rain --document <id> --revision <n> "

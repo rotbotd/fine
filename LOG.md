@@ -4882,3 +4882,63 @@ it and `rc-publish-fine.service` were active. Localhost and the public HTTPS pag
 served the checkpoint controls and interruption-boundary text. The emitted
 module worker and its content-hashed Fine module dependency both returned 200
 with `Content-Type: text/javascript`.
+
+## 2026-09-03 — Rainfall paired with each published checkpoint epoch
+
+The checkpoint worker no longer leaves the Rainfall pane blank and does not run
+a second solver merely to produce presentation data. The CLI now accepts:
+
+```
+fine checkpoint --proof-budget N --output next.fine \
+  --rain-output epoch.rain current.fine
+```
+
+`checkpoint_file` creates one source snapshot and passes a Rainfall stream into
+the same elaboration whose materialization edits become `next.fine`. It performs
+the existing no-search reparse and validation before writing either requested
+output. The sidecar therefore owns the candidate frontier, datatype model, lift,
+selection, and terminal status of the exact run which produced the source—not a
+nominally equivalent replay.
+
+`runCheckpointEpoch` now reads both MEMFS files and returns one
+`{ source, rainfall }` value. The worker publishes that pair only after both files
+exist and removes both files in its epoch cleanup. The main thread replaces the
+visible Rainfall pane when an `epoch` pair arrives while leaving the editor bytes
+unchanged. A settled epoch also publishes its final verification trace before the
+last source is installed. An interrupted in-flight epoch publishes neither file,
+so its partial callback stream cannot overwrite the last coherent trace.
+
+The Wasm discriminator now checks semantics across all three epochs. The partial
+source is paired with 75 replay-shaped events ending in `checkpointed` and a
+`proof.model.lift`. The completing source is paired with a `verified` trace which
+still contains a model lift for the residual hole. The settled source is paired
+with a `verified` trace and no model lift because that source contains no hole.
+All three source strings still match the checked-in fixtures byte-for-byte. The
+native install check validates the first sidecar with `fine-rain-validate`, so
+source-node ownership and event closure are checked rather than merely parsed as
+JSON.
+
+Validation:
+
+```
+cmake --build .build -j2
+.build/fine checkpoint --proof-budget 2 --output /tmp/checkpoint.fine \
+  --rain-output /tmp/checkpoint.rain \
+  fine/fixtures/identity-checkpoint.fine
+cmp fine/fixtures/identity-checkpoint-materialized.fine /tmp/checkpoint.fine
+python3 fine/rainfall_replay.py fine/fixtures/identity-checkpoint.fine \
+  /tmp/checkpoint.rain
+nix flake check
+nix build --no-link --print-out-paths .#playground
+node playground/smoke.mjs <new-wasm-package> \
+  fine/fixtures/identity-transitivity.fine \
+  fine/fixtures/cst-roundtrip-ugly.fine \
+  fine/fixtures/cst-roundtrip-ugly-materialized.fine \
+  fine/fixtures/identity-checkpoint.fine \
+  fine/fixtures/identity-checkpoint-materialized.fine \
+  fine/fixtures/identity-checkpoint-complete.fine
+```
+
+The local native sidecar replayed with 75 events. The dirty-tree playground
+package, including the paired-epoch Wasm smoke and served reference check,
+produced `/nix/store/fnr75da236xcklcj59qpxdw1p983ljj2-fine-playground-0.1.0`.

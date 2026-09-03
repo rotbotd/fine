@@ -119,10 +119,22 @@ if (checkpointPath && partialCheckpointPath && completeCheckpointPath) {
     return { code: epochCode, stdout: [...stdout], stderr: [...stderr] };
   };
   const partial = runCheckpointEpoch(fine, invokeEpoch, original, 2, 1);
-  const complete = runCheckpointEpoch(fine, invokeEpoch, partial, 2, 2);
-  const settled = runCheckpointEpoch(fine, invokeEpoch, complete, 2, 3);
-  if (partial !== expectedPartial || complete !== expectedComplete || settled !== complete)
+  const complete = runCheckpointEpoch(fine, invokeEpoch, partial.source, 2, 2);
+  const settled = runCheckpointEpoch(fine, invokeEpoch, complete.source, 2, 3);
+  if (partial.source !== expectedPartial || complete.source !== expectedComplete
+      || settled.source !== complete.source)
     throw new Error("checkpoint epochs did not retain partial, complete, and settled source snapshots exactly");
+  for (const [name, epoch, status, hasLift] of [
+    ["partial", partial, "checkpointed", true],
+    ["complete", complete, "verified", true],
+    ["settled", settled, "verified", false],
+  ]) {
+    const events = epoch.rainfall.map((line) => JSON.parse(line));
+    if (events.some((event) => event.operation === "proof.model.lift") !== hasLift
+        || events.at(-1)?.operation !== "proof-core.run.close"
+        || events.at(-1)?.data?.status !== status)
+      throw new Error(`${name} checkpoint did not pair its source with a complete Rainfall trace`);
+  }
 }
 
-console.log(`wasm smoke passed with ${events.length} Rainfall events, atomic materialization, and checkpoint epochs`);
+console.log(`wasm smoke passed with ${events.length} Rainfall events, atomic materialization, and paired checkpoint epochs`);

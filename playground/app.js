@@ -340,12 +340,14 @@ function beginCheckpointSearch() {
     if (data?.type === "epoch") {
       lastCheckpoint = data.source;
       completedEpochs = data.epoch;
+      rainfall.textContent = showRainfall(data.rainfall);
       result.textContent = `completed checkpoint epoch ${completedEpochs}\nthe editor is unchanged until stop`;
       return;
     }
     if (data?.type === "done") {
       lastCheckpoint = data.source;
       completedEpochs = data.epoch;
+      rainfall.textContent = showRainfall(data.rainfall);
       installLastCheckpoint("checkpoint search settled");
       return;
     }

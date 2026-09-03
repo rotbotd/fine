@@ -368,7 +368,9 @@
             "$z3_transitivity_materialized"
 
           checkpoint="$(mktemp)"
+          checkpoint_rain="$(mktemp)"
           $out/bin/fine checkpoint --proof-budget 2 --output "$checkpoint" \
+            --rain-output "$checkpoint_rain" \
             "$src/fine/fixtures/identity-checkpoint.fine"
           cmp "$src/fine/fixtures/identity-checkpoint-materialized.fine" "$checkpoint"
 
@@ -646,9 +648,6 @@
           assert selected["data"]["candidate"] == lifted["data"]["candidate"]
           PY
 
-          checkpoint_rain="$(mktemp)"
-          $out/bin/fine rain --checkpoint --proof-budget 2 \
-            "$src/fine/fixtures/identity-checkpoint.fine" > "$checkpoint_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/identity-checkpoint.fine" "$checkpoint_rain"
           ${pkgs.python3}/bin/python - "$checkpoint_rain" <<'PY'

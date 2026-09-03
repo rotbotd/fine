@@ -34,7 +34,9 @@ source rewrite as one CodeMirror transaction. Failed checks do not edit the
 document, and one undo restores the exact prior comments, spacing, and holes.
 Checkpoint search runs successive source epochs in a disposable worker. Stop
 terminates the current epoch first, then installs only the last completely
-validated snapshot through that same atomic edit.
+validated snapshot through that same atomic edit. Rainfall beside the editor is
+the trace from the exact elaboration which produced the latest published source,
+not a second presentation-only solver run.
 
 See [`fine/README.md`](fine/README.md) to run it,
 [`fine/ARCHITECTURE.md`](fine/ARCHITECTURE.md) for the current boundary, and

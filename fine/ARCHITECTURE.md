@@ -237,8 +237,11 @@ in-flight state.
 Checkpoint interruption uses process ownership rather than solver-private
 state. A dedicated Web Worker owns a second Wasm runtime and repeatedly runs
 `checkpoint --proof-budget n --output ...` on its last source. Only a completely
-reparsed and validated epoch may post a source snapshot to the main thread. On
-stop, the main thread first terminates the worker, thereby discarding the
+reparsed and validated epoch may post a source snapshot to the main thread. That
+same execution optionally writes `--rain-output`; source and trace are read
+and posted as one pair, so the visible Rainfall can never come from a second
+solver run over nominally similar source. On stop, the main thread first
+terminates the worker, thereby discarding the
 in-flight Z3 context, and only then installs the last posted snapshot with the
 atomic editor transaction. The editor is read-only during the episode. No
 partially written MEMFS file, callback trace, or learned clause crosses this

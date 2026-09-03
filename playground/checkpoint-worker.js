@@ -49,12 +49,12 @@ self.addEventListener("message", async ({ data }) => {
   try {
     for (let epoch = 1; epoch <= data.maxEpochs; ++epoch) {
       const checkpoint = runCheckpointEpoch(fine, invoke, source, data.budget, epoch);
-      if (checkpoint === source) {
-        self.postMessage({ type: "done", epoch: epoch - 1, source });
+      if (checkpoint.source === source) {
+        self.postMessage({ type: "done", epoch: epoch - 1, source, rainfall: checkpoint.rainfall });
         return;
       }
-      source = checkpoint;
-      self.postMessage({ type: "epoch", epoch, source });
+      source = checkpoint.source;
+      self.postMessage({ type: "epoch", epoch, source, rainfall: checkpoint.rainfall });
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     self.postMessage({ type: "limit", epoch: data.maxEpochs, source });

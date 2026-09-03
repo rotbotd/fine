@@ -71,7 +71,7 @@
               </tr>
               <tr>
                 <td>partial proof checkpoint</td>
-                <td><code>fine checkpoint --proof-budget n</code> writes the best typed partial term as ordinary Fine. In the browser, <code>search checkpoints</code> repeats exact epochs in a disposable worker; stopping kills the current epoch and installs only the last completed source snapshot.</td>
+                <td><code>fine checkpoint --proof-budget n</code> writes the best typed partial term as ordinary Fine. In the browser, <code>search checkpoints</code> repeats exact epochs in a disposable worker; each completed source-and-Rainfall pair updates the trace pane, and stopping installs only the last completed source snapshot.</td>
                 <td><code>trans[left, middle, right](p, ?)</code></td>
               </tr>
               <tr>

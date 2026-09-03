@@ -193,8 +193,10 @@ not reconstruct source from line-oriented stdout callbacks.
 `search checkpoints` creates a separate Web Worker with its own Wasm runtime and
 repeatedly applies the selected proof budget to the last completed source. Each
 epoch writes, reparses, and validates an exact MEMFS checkpoint before posting it
-to the main thread. The editor remains unchanged and read-only while search is
-active. `stop and materialize` terminates the worker immediately, discards the
+to the main thread. The same elaboration writes a Rainfall sidecar, so the trace
+pane changes only when its corresponding validated source snapshot is published;
+an epoch is never rerun merely to obtain presentation data. The editor remains
+unchanged and read-only while search is active. `stop and materialize` terminates the worker immediately, discards the
 in-flight epoch, and installs only the last posted source through the same one-
 transaction edit. A settled search installs its last source automatically.
 
@@ -211,7 +213,9 @@ structural lift, and closed-run Rainfall events. It also materializes the ugly
 CST fixture byte-for-byte, applies the result as one editor transaction, and
 requires one undo to recover the original bytes. Three checkpoint epochs must
 produce the exact partial fixture, exact complete fixture, and then no change;
-the termination helper is required to kill its worker before dispatching the
+their paired traces must respectively close as checkpointed, verified, and
+verified, with model lifts exactly in the two epochs which still contain holes.
+The termination helper is required to kill its worker before dispatching the
 editor transaction. The production service is a
 static file server: source and solver execution remain in the visitor's browser.
 
