@@ -5032,3 +5032,46 @@ nix build --no-link --print-out-paths .#default .#playground-wasm
 # /nix/store/w2iscjmfsk8gnawalxq9v8qvawf9jq9h-fine-0.1.0
 # /nix/store/vdrfwihnyd5w2m4i4nyhpiad8b6w4wz3-fine-playground-wasm-0.1.0
 ```
+
+## 2026-09-03 — cross-origin-isolated pthread Wasm substrate
+
+h chose to pay the browser deployment cost now rather than wait for the first
+unbounded proof producer. Kept the ordinary single-threaded Wasm output and added
+an independent `playground-wasm-pthreads` derivation. It compiles both Z3 and
+Fine with `-pthread`, leaves `Z3_SINGLE_THREADED` off, includes the native
+live-lifting sources through `FINE_ENABLE_LIVE_LIFT`, and preallocates the two
+workers used simultaneously by the gated probe. Emscripten exposes `HEAP8` only
+for the smoke to verify that the live linear-memory buffer is a
+`SharedArrayBuffer`.
+
+The frontend now copies both modules, hashes and Zstandard-compresses each one,
+and generates a selection module. A cross-origin-isolated client with
+`SharedArrayBuffer` imports the pthread build; every other client imports the
+unchanged single-threaded build. The same selection runs in the editor and the
+disposable checkpoint worker. The new Node smoke loads the pthread artifact,
+requires shared Wasm memory, and runs `live-lift-probe` through all two real C++
+threads.
+
+Vite sends `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` in development and preview. The
+first served-response test exposed that the precompressed-Wasm middleware ended
+the response before Vite's configured header middleware ran: HTML was isolated,
+but the Wasm response was not. The custom response now sets both headers itself.
+The smoke requires them independently on HTML, ordinary Wasm, and pthread Wasm.
+
+Dirty-tree validation:
+
+```text
+nix build --no-link --print-out-paths .#playground-wasm-pthreads
+# /nix/store/c14ivj44a33vanxk5j8m1xnfdgv4hl1c-fine-playground-wasm-pthreads-0.1.0
+node playground/pthread-smoke.mjs \
+  /nix/store/c14ivj44a33vanxk5j8m1xnfdgv4hl1c-fine-playground-wasm-pthreads-0.1.0
+# pthread wasm smoke passed with shared memory and two live C++ worker threads
+nix build --no-link --print-out-paths .#playground
+# /nix/store/qhar5vxrvynxdpxvhkqbni7zx074rkly-fine-playground-0.1.0
+```
+
+The two Wasm payloads remain distinct and independently cacheable: the ordinary
+module is 10,825,383 bytes (2,598,205 bytes Zstandard), while the pthread module
+is 11,147,585 bytes (2,660,817 bytes Zstandard). These figures measure encoded
+artifact sizes, not browser heap use or startup time.

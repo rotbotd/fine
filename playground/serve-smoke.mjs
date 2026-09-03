@@ -42,18 +42,27 @@ async function waitForServer(wasmPath) {
 try {
   const files = await readdir("dist");
   const wasmName = files.find((file) => /^fine-[0-9a-f]+\.wasm$/.test(file));
+  const pthreadWasmName = files.find((file) => /^fine-pthreads-[0-9a-f]+\.wasm$/.test(file));
   if (!wasmName)
     throw new Error("versioned Wasm asset is missing");
+  if (!pthreadWasmName)
+    throw new Error("versioned pthread Wasm asset is missing");
   const wasmPath = `/${wasmName}`;
   const plain = await waitForServer(wasmPath);
   const compressed = await request(wasmPath, { "Accept-Encoding": "zstd" });
   const explicit = await request(`${wasmPath}.zst`);
   const page = await request("/");
+  const pthreadWasm = await request(`/${pthreadWasmName}`);
   const expectedPlain = await readFile(`dist/${wasmName}`);
   const expectedCompressed = await readFile(`dist/${wasmName}.zst`);
 
   if (!plain.body.equals(expectedPlain))
     throw new Error("plain Wasm response differs from the built module");
+  for (const [name, response] of [["page", page], ["wasm", plain], ["pthread wasm", pthreadWasm]]) {
+    if (response.headers["cross-origin-opener-policy"] !== "same-origin"
+        || response.headers["cross-origin-embedder-policy"] !== "require-corp")
+      throw new Error(`${name} response is not cross-origin isolated`);
+  }
   if (!String(plain.headers["cache-control"] ?? "").startsWith("public"))
     throw new Error(`plain Wasm response is not cacheable: ${plain.headers["cache-control"]}`);
   if (compressed.headers["content-encoding"] !== "zstd")

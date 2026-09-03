@@ -7,7 +7,8 @@ add_executable(fine-bin
   runtime.cpp
   source.cpp
 )
-if (NOT EMSCRIPTEN)
+option(FINE_ENABLE_LIVE_LIFT "Build the nonblocking live-lifting prototype" OFF)
+if (NOT EMSCRIPTEN OR FINE_ENABLE_LIVE_LIFT)
   target_sources(fine-bin PRIVATE
     live_lift.cpp
     live_lift_probe.cpp
@@ -37,12 +38,19 @@ if (EMSCRIPTEN)
     "-sMODULARIZE=1"
     "-sEXPORT_ES6=1"
     "-sEXPORT_NAME=createFine"
-    "-sEXPORTED_RUNTIME_METHODS=['FS','callMain']"
+    "-sEXPORTED_RUNTIME_METHODS=['FS','callMain','HEAP8']"
     "-sINVOKE_RUN=0"
     "-sEXIT_RUNTIME=0"
     "-sALLOW_MEMORY_GROWTH=1"
     "-sENVIRONMENT=web,node"
   )
+  if (FINE_ENABLE_LIVE_LIFT)
+    target_compile_options(fine-bin PRIVATE "-pthread")
+    target_link_options(fine-bin PRIVATE
+      "-pthread"
+      "-sPTHREAD_POOL_SIZE=2"
+    )
+  endif()
 endif()
 
 install(TARGETS fine-bin

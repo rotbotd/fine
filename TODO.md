@@ -176,9 +176,12 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       not access one Z3 manager concurrently from two threads. A deliberately
       slow lifter must not extend solver time; cancellation must preserve the
       last validated source while safely discarding queued intermediate views.
-- [ ] Move the validated ownership handoff into a Wasm pthread build only when
-      an unbounded source-proof grammar supplies a real browser producer. Until
-      then, keep cooperative disposable-worker epochs as the served boundary.
+- [x] Build and serve a separate pthread Wasm variant behind cross-origin
+      isolation, with feature-detected fallback to the single-threaded module
+      and a shared-memory smoke that runs the two C++ worker threads.
+- [ ] Connect the pthread pipeline to the browser only when an unbounded
+      source-proof grammar supplies a real producer. Until then, keep cooperative
+      disposable-worker epochs as the visible search boundary.
 
 - [ ] Add proof-only elimination only when a proof consumer cannot be expressed
       by context absorption and a checked proof function; reject elimination

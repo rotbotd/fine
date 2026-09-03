@@ -273,11 +273,24 @@ publishes the newest term, drops ten intermediate snapshots, and closes with
 gate, rather than a timing threshold, proves the producer does not wait for
 rendering.
 
-This prototype is native-only. It is deliberately excluded from the current
-single-threaded Emscripten target, and it does not replace the browser's
-disposable checkpoint worker. A Wasm pthread integration waits for a real
-unbounded source-proof producer rather than shipping a thread around a synthetic
-demo.
+The prototype also has a separate Emscripten pthread build. The default Wasm
+package remains single-threaded; `playground-wasm-pthreads` compiles Z3 and Fine
+with shared memory, enables the live-lifting sources, and preallocates two worker
+threads. The playground serves both content-hashed modules and selects the
+pthread module only when `crossOriginIsolated` is true and `SharedArrayBuffer`
+exists. Other clients retain the ordinary module rather than failing at startup.
+
+The Fine origin sends `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` on the document and every Wasm path,
+including the custom precompressed response. The pthread smoke inspects the
+module's live heap to require shared backing memory and runs the complete
+two-thread C++ probe. The served-response smoke separately requires both headers
+on HTML, ordinary Wasm, and pthread Wasm.
+
+This establishes the Wasm ownership and deployment substrate; it does not claim
+that the visible browser search uses live lifting. The browser still uses
+disposable checkpoint epochs until a real unbounded source-proof producer can
+feed the queue.
 
 ## Rainfall boundary
 

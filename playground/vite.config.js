@@ -2,6 +2,11 @@ import { createReadStream, statSync } from "node:fs";
 import path from "node:path";
 import { defineConfig } from "vite";
 
+const isolationHeaders = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+};
+
 function precompressedZstd() {
   return {
     name: "fine-precompressed-zstd",
@@ -41,6 +46,8 @@ function precompressedZstd() {
           return next();
         }
 
+        for (const [name, value] of Object.entries(isolationHeaders))
+          response.setHeader(name, value);
         response.statusCode = 200;
         response.setHeader("Content-Type", isWasm ? "application/wasm" : "text/plain; charset=utf-8");
         if (sendsZstd)
@@ -57,7 +64,7 @@ function precompressedZstd() {
 }
 
 function externalFine(id) {
-  return /^\/fine-[0-9a-f]+\.mjs$/.test(id);
+  return /^\/fine(?:-pthreads)?-[0-9a-f]+\.mjs$/.test(id);
 }
 
 export default defineConfig({
@@ -70,7 +77,9 @@ export default defineConfig({
   },
   preview: {
     allowedHosts: ["fine.shit.yachts"],
+    headers: isolationHeaders,
   },
+  server: { headers: isolationHeaders },
   build: {
     outDir: "dist",
     emptyOutDir: true,

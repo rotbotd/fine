@@ -739,6 +739,38 @@
         '';
       };
 
+      playground-wasm-pthreads = pkgs.stdenv.mkDerivation {
+        pname = "fine-playground-wasm-pthreads";
+        version = "0.1.0";
+        src = wasmSource;
+        nativeBuildInputs = with pkgs; [ cmake ninja python3 emscripten ];
+        dontUseCmakeConfigure = true;
+        dontConfigure = true;
+
+        buildPhase = ''
+          runHook preBuild
+          emcmake cmake -S . -B build-wasm-pthreads -G Ninja \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_C_FLAGS=-pthread \
+            -DCMAKE_CXX_FLAGS=-pthread \
+            -DZ3_BUILD_LIBZ3_SHARED=OFF \
+            -DZ3_BUILD_EXECUTABLE=OFF \
+            -DZ3_BUILD_TEST_EXECUTABLES=OFF \
+            -DZ3_SINGLE_THREADED=OFF \
+            -DFINE_BUILD_EXECUTABLE=ON \
+            -DFINE_ENABLE_LIVE_LIFT=ON
+          cmake --build build-wasm-pthreads --target fine-bin
+          runHook postBuild
+        '';
+
+        installPhase = ''
+          runHook preInstall
+          mkdir -p "$out"
+          cp build-wasm-pthreads/fine.* "$out/"
+          runHook postInstall
+        '';
+      };
+
       playground = pkgs.buildNpmPackage {
         pname = "fine-playground";
         version = "0.1.0";
@@ -751,6 +783,10 @@
           cp ${./fine/fixtures/identity-transitivity.fine} public/sample.fine
           cp ${self.packages.${system}.playground-wasm}/fine.mjs \
             ${self.packages.${system}.playground-wasm}/fine.wasm public/
+          cp ${self.packages.${system}.playground-wasm-pthreads}/fine.mjs \
+            public/fine-pthreads.mjs
+          cp ${self.packages.${system}.playground-wasm-pthreads}/fine.wasm \
+            public/fine-pthreads.wasm
         '';
 
         doCheck = true;
@@ -763,6 +799,7 @@
             ${./fine/fixtures/identity-checkpoint.fine} \
             ${./fine/fixtures/identity-checkpoint-materialized.fine} \
             ${./fine/fixtures/identity-checkpoint-complete.fine}
+          node pthread-smoke.mjs ${self.packages.${system}.playground-wasm-pthreads}
           node serve-smoke.mjs
           runHook postCheck
         '';
