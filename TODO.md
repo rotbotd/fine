@@ -167,6 +167,15 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 - [x] Drive checkpointing from cooperative source epochs in a disposable browser
       worker; stop by killing the in-flight epoch and commit only the last
       validated snapshot as one undoable document transaction.
+- [ ] Prototype nonblocking live lifting for an unbounded solver run. The active
+      solver thread must never wait for Fine rendering: each observed term gets
+      a monotone sequence number and an independently owned snapshot suitable
+      for a Wasm pthread, ownership passes through a bounded queue, and the Fine
+      lifter frees that snapshot immediately after exact lift/reparse/reify
+      validation. Do not retain a run-lifetime arena under infinite fuel and do
+      not access one Z3 manager concurrently from two threads. A deliberately
+      slow lifter must not extend solver time; cancellation must preserve the
+      last validated source while safely discarding queued intermediate views.
 
 - [ ] Add proof-only elimination only when a proof consumer cannot be expressed
       by context absorption and a checked proof function; reject elimination

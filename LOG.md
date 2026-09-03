@@ -4951,3 +4951,23 @@ The clean playground package is
 After public head `f6d9f6a05`, `fine-playground.service` was restarted and both
 it and `rc-publish-fine.service` were active. Localhost and the public HTTPS page
 served the source-and-Rainfall epoch boundary.
+
+## 2026-09-03 — recorded nonblocking live-lifting boundary
+
+Recorded, without implementing, the intended successor to cooperative source
+epochs. One thread owns an unbounded Z3 search; observer callbacks assign
+monotone `(run, sequence)` identities and transfer independently owned term
+snapshots through a bounded queue. A second Fine worker may trail the solver,
+lift and render each snapshot, reparse/reify it to exact identity in the
+snapshot's manager, publish a source view, and then free the snapshot itself.
+
+The closed allocation decision is per-observation lifter ownership, not a
+run-lifetime arena: infinite fuel must not imply infinite retained AST storage.
+The active Z3 manager is never accessed concurrently, intermediate presentation
+frames may be dropped under pressure, and the last validated source/checkpoint
+may not be dropped. The first implementation experiment is a native stress
+fixture with an artificially delayed lifter and cancellation while the queue is
+nonempty; only after solver timing, exact validation, and lifetime safety hold
+does the same ownership handoff move to a Wasm pthread build. The current
+disposable-worker checkpoint protocol remains the truthful browser boundary
+until that experiment closes.

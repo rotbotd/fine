@@ -322,6 +322,25 @@ This is where Rainfall becomes an editing instrument rather than a log viewer.
 The user should see which source hole and production Fine is working on, not a
 story inferred from solver callback order.
 
+The later live boundary is deliberately different from these source epochs. A
+long-running Z3 search may continue on one solver-owning thread while a second
+Fine worker trails it, lifts observed terms, and replaces only validated source
+for the reader. Callback order receives monotone `(run, sequence)` identities;
+presentation may lag and may drop intermediate frames, but it may not reorder
+them or invent a solver state.
+
+This requires ownership transfer, not concurrent use of the active Z3 manager.
+Every queued observation must own a self-contained term snapshot whose storage
+is released by the Fine lifter after `lift`, rendering, reparsing, reification,
+and exact identity validation. In particular, an infinite-fuel search must not
+accumulate observations in an arena whose lifetime is the solver run. The queue
+is bounded, the last validated source/checkpoint is never dropped, and stopping
+must be safe while the lifter trails the solver. Before changing the playground,
+a native stress fixture must show that an artificially slow lifter does not
+lengthen solver time and that cancellation causes neither concurrent-manager
+access nor use-after-free; the same ownership code then moves to an Emscripten
+pthread build with the required browser isolation headers.
+
 ## Slice 7 — recover value-language consumers when forced
 
 Tuples, enums beyond the minimal STLC data, refinements, arrays, models, and
