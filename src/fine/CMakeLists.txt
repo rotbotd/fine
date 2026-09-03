@@ -7,6 +7,13 @@ add_executable(fine-bin
   runtime.cpp
   source.cpp
 )
+if (NOT EMSCRIPTEN)
+  target_sources(fine-bin PRIVATE
+    live_lift.cpp
+    live_lift_probe.cpp
+  )
+  target_compile_definitions(fine-bin PRIVATE FINE_HAS_LIVE_LIFT=1)
+endif()
 set_target_properties(fine-bin PROPERTIES OUTPUT_NAME fine)
 target_link_libraries(fine-bin PRIVATE libz3)
 target_compile_options(fine-bin PRIVATE ${Z3_COMPONENT_CXX_FLAGS})

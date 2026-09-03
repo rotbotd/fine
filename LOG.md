@@ -4971,3 +4971,54 @@ nonempty; only after solver timing, exact validation, and lifetime safety hold
 does the same ownership handoff move to a Wasm pthread build. The current
 disposable-worker checkpoint protocol remains the truthful browser boundary
 until that experiment closes.
+
+## 2026-09-03 — native nonblocking live-lifting prototype
+
+Implemented the first ownership slice as `LiveLiftPipeline` rather than tying a
+presentation thread to the active Z3 manager. `observe(run, context, term)` is
+called by the manager-owning producer. It assigns a monotone sequence and uses
+`Z3_translate` there to create one independent context and strong term snapshot.
+Only that snapshot crosses the mutex-protected bounded queue. The consumer runs
+`lift_rainfall_term(..., exact_reify = true)`, publishes the generated Fine
+rendering, and then destroys the term before its owning context. Full queues
+drop their oldest unrendered snapshot. Cancellation retains only the newest
+queued snapshot, so an already-running lift may publish first but the final
+published sequence is the last observation. Worker exceptions are retained and
+rethrown from `join`; the destructor cancels and joins without throwing.
+
+The first probe was intentionally not a sleep-and-stopwatch benchmark. A gated
+lifter blocks before rendering while a separate producer emits twelve translated
+terms into a three-slot queue. The producer completes before the gate opens;
+cancellation then yields two publications, ten dropped intermediate snapshots,
+and `latest_observed == latest_published == 11`. The final rendering reparses and
+reifies to exact identity in its snapshot manager.
+
+The initial real-optimizer probe returned the expected unsat query but no lemma
+observations. This retained a known Spacer boundary rather than treating the null
+as a threading failure: public lemma export is gated. Enabling
+`spacer.p3.share_lemmas` and `spacer.p3.share_invariants` produced three exported
+lemmas. Their callback copied each term into the queue while the Fine worker was
+held at the gate, and Spacer still completed the query before rendering resumed.
+Twenty consecutive native runs reproduced three callback observations and the
+same queue accounting.
+
+The native-only sources are compiled behind `FINE_HAS_LIVE_LIFT`; the
+single-threaded Emscripten target does not link `std::thread` or advertise the
+probe. The existing disposable browser worker remains authoritative until a
+real unbounded source-proof grammar justifies a Wasm pthread producer.
+
+Local validation at this point:
+
+```text
+cmake --build .build --target fine-bin -j2
+.build/fine live-lift-probe
+# spacer-completed-while-lifter-blocked: true
+# spacer-lemma-observations: 3
+# producer-completed-while-lifter-blocked: true
+# observed: 12
+# published: 2
+# dropped-intermediate: 10
+# latest-observed: 11
+# latest-published: 11
+for i in $(seq 1 20); do .build/fine live-lift-probe; done
+```

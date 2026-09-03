@@ -1,4 +1,7 @@
 #include "parser.h"
+#ifdef FINE_HAS_LIVE_LIFT
+#include "live_lift_probe.h"
+#endif
 #include "runtime.h"
 #include "source.h"
 
@@ -142,6 +145,10 @@ namespace {
 }  // namespace
 
 int main(int argc, char **argv) try {
+#ifdef FINE_HAS_LIVE_LIFT
+    if (argc == 2 && std::string_view(argv[1]) == "live-lift-probe")
+        return fine::run_live_lift_probe(std::cout);
+#endif
     if (argc == 3 && std::string_view(argv[1]) == "run")
         return run_file(argv[2]);
     if (argc == 3 && std::string_view(argv[1]) == "rain")
@@ -255,6 +262,9 @@ int main(int argc, char **argv) try {
                  "--generation <id> <source.fine>\n"
                  "       fine rain --proof-selector z3 --document <id> --revision <n> "
                  "--generation <id> <source.fine>\n";
+#ifdef FINE_HAS_LIVE_LIFT
+    std::cerr << "       fine live-lift-probe\n";
+#endif
     return EXIT_FAILURE;
 } catch (z3::exception const &error) {
     std::cerr << "z3: " << error.msg() << '\n';

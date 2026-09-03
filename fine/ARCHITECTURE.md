@@ -247,6 +247,38 @@ atomic editor transaction. The editor is read-only during the episode. No
 partially written MEMFS file, callback trace, or learned clause crosses this
 boundary.
 
+### Native nonblocking live lifting prototype
+
+`LiveLiftPipeline` fixes the manager and allocation boundary for a later
+unbounded run. The active solver thread is the only thread which touches its Z3
+context. An observer assigns a monotone sequence number, translates the observed
+term into a newly owned Z3 context, and places that snapshot in a bounded queue.
+The Fine worker touches only the snapshot context, emits canonical generated
+Fine, reparses/reifies it to exact identity in that context, publishes the view,
+and destroys the term before destroying its context. There is no run-lifetime
+arena and no concurrent access to one manager.
+
+Queue pressure discards the oldest unrendered views while always accepting the
+newest one. Cancellation reduces the queued tail to that newest snapshot; a
+snapshot already being lifted may finish first, but the final publication must
+carry the latest observed sequence. The publisher owns the last validated view
+after the pipeline releases its snapshot.
+
+`fine live-lift-probe` exercises two distinct contracts. A real Spacer
+new-lemma callback copies three exported lemmas while the Fine lifter is blocked
+on a gate, and the fixedpoint query still returns. A deterministic twelve-term
+burst then fills a three-slot queue under the same blocked lifter; cancellation
+publishes the newest term, drops ten intermediate snapshots, and closes with
+`latest_observed == latest_published == 11`. The counts diagnose ownership; the
+gate, rather than a timing threshold, proves the producer does not wait for
+rendering.
+
+This prototype is native-only. It is deliberately excluded from the current
+single-threaded Emscripten target, and it does not replace the browser's
+disposable checkpoint worker. A Wasm pthread integration waits for a real
+unbounded source-proof producer rather than shipping a thread around a synthetic
+demo.
+
 ## Rainfall boundary
 
 The existing manager-local term registry and `fine.generated-term.v1` renderer

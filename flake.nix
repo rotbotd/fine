@@ -54,6 +54,14 @@
         installCheckPhase = ''
           runHook preInstallCheck
 
+          live_lift="$($out/bin/fine live-lift-probe)"
+          echo "$live_lift"
+          grep -F "spacer-completed-while-lifter-blocked: true" <<<"$live_lift"
+          grep -F "producer-completed-while-lifter-blocked: true" <<<"$live_lift"
+          grep -F "observed: 12" <<<"$live_lift"
+          grep -F "latest-observed: 11" <<<"$live_lift"
+          grep -F "latest-published: 11" <<<"$live_lift"
+
           for source in \
             "$src/fine/fixtures/cst-roundtrip-ugly.fine" \
             "$src/fine/fixtures/identity-coeffect.fine" \
