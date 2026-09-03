@@ -14,6 +14,7 @@ const expectedMaterializedPath = process.argv[5] ? path.resolve(process.argv[5])
 const checkpointPath = process.argv[6] ? path.resolve(process.argv[6]) : null;
 const partialCheckpointPath = process.argv[7] ? path.resolve(process.argv[7]) : null;
 const completeCheckpointPath = process.argv[8] ? path.resolve(process.argv[8]) : null;
+const definitionsPath = process.argv[9] ? path.resolve(process.argv[9]) : null;
 const createFine = (await import(pathToFileURL(path.join(root, "fine.mjs")))).default;
 const stdout = [];
 const stderr = [];
@@ -135,6 +136,26 @@ if (checkpointPath && partialCheckpointPath && completeCheckpointPath) {
         || events.at(-1)?.data?.status !== status)
       throw new Error(`${name} checkpoint did not pair its source with a complete Rainfall trace`);
   }
+}
+
+if (definitionsPath) {
+  stdout.length = 0;
+  stderr.length = 0;
+  fine.FS.writeFile("/definitions.fine", await readFile(definitionsPath, "utf8"));
+  try {
+    code = fine.callMain(["rain", "/definitions.fine"]) ?? 0;
+  } catch (error) {
+    if (typeof error?.status === "number")
+      code = error.status;
+    else
+      throw error;
+  }
+  if (code !== 0)
+    throw new Error(`definition-only Fine document exited ${code}: ${stderr.join("\n")}`);
+  const definitionEvents = stdout.map((line) => JSON.parse(line));
+  if (definitionEvents.at(-1)?.operation !== "proof-core.document.close"
+      || definitionEvents.at(-1)?.data?.proof_functions_verified !== 2)
+    throw new Error("definition-only Wasm document did not close without a fabricated run");
 }
 
 console.log(`wasm smoke passed with ${events.length} Rainfall events, atomic materialization, and paired checkpoint epochs`);

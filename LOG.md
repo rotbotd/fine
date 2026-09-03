@@ -5212,3 +5212,64 @@ nix build --no-link --print-out-paths .#default .#playground-wasm-pthreads .#pla
 `fine-playground.service` and `rc-publish-fine.service` were active after the
 deployment restart. The public HTML response retained both cross-origin
 isolation headers.
+
+## 2026-09-03 — removed top-level declaration phases and empty-run ceremony
+
+h's `Even`/`Plus` example exposed that the parser treated declaration categories
+as irreversible phases: after reading `proof function even_pred`, it could no
+longer accept `proof inductive Plus` and reported that it expected `run`. This
+was not a proof-system restriction. `Parser::document` now dispatches each
+top-level declaration by its actual prefix until EOF. Enums, proof families,
+value functions, and proof functions may therefore be interleaved; the runtime
+still registers the complete declaration environment before checking bodies.
+
+`Document::run` is now optional. Definition-only files close after checking
+their declarations and print `verified definitions` rather than manufacturing
+an empty executable block. Rainfall preserves the difference with a terminal
+`proof-core.document.close` event whose scope is empty; the replay validator
+accepts and checks that terminal event separately from `proof-core.run.close`.
+An actual `run name { ... }` remains the only source of executable `let`,
+`proof`, and `assert` statements, and a second run declaration is rejected at
+its own source span.
+
+The executable fixture `top-level-declarations.fine` is the corrected example:
+`Plus` follows the body-bearing `even_pred`, `plus_shift` performs structural
+induction, and no run block appears. It verifies both proof functions and
+roundtrips byte-for-byte. The install check also generates a two-run document
+and requires the direct duplicate-run diagnostic. The ordinary Wasm smoke runs
+the definition-only fixture through Rainfall and requires its distinct terminal
+event; the public language reference now states interleaved declarations,
+optional run, and the one-run upper bound. No highlighter change was needed
+because no token or lexical role changed.
+
+Local discriminating checks before the package build:
+
+```text
+.build/fine run fine/fixtures/top-level-declarations.fine
+# declared proof inductive: Even (2 constructors, static)
+# declared proof inductive: Plus (2 constructors, static)
+# verified proof function: even_pred
+# verified proof function: plus_shift
+# verified definitions
+.build/fine roundtrip fine/fixtures/top-level-declarations.fine
+PYTHONPATH=fine python fine/rainfall_validate.py \
+  fine/fixtures/top-level-declarations.fine /tmp/top-level.rain
+# valid rainfall: events=20, source_nodes=4, terms=0,
+# source_term_edges=0, proof_holes=0
+```
+
+Dirty-tree package validation, including native install checks, ordinary Wasm,
+pthread Wasm, the extended Wasm definition-only check, and served reference
+smoke:
+
+```text
+nix flake check /root/projects/fine
+# all checks passed
+nix build --no-link --print-out-paths \
+  /root/projects/fine#default \
+  /root/projects/fine#playground-wasm-pthreads \
+  /root/projects/fine#playground
+# /nix/store/3524lgc8vm7bkrkn4yawhaawwhfvlddf-fine-0.1.0
+# /nix/store/gvpdsqwizryd8p9yrj64r4girqldfr54-fine-playground-wasm-pthreads-0.1.0
+# /nix/store/j95kaa8z0sc4a5wzx83i9g6kknaylf0q-fine-playground-0.1.0
+```

@@ -18,6 +18,20 @@ retains its source term while automatically absorbing its equality proposition
 into the lexical solver context. Functions declare contextual proof demands;
 callers synthesize or supply the evidence.
 
+## Closed: honest top-level declaration surface
+
+- [x] Parse enums, proof families, value functions, and proof functions in any
+      source order instead of closing a declaration category forever when the
+      next category begins.
+- [x] Make `run` optional for definition-only documents while retaining at most
+      one explicit named block for executable bindings and assertions.
+- [x] Preserve source-ordered CST declaration ranges and reject a second `run`
+      with a direct diagnostic.
+
+Exit test: `top-level-declarations.fine` places `Plus` after `even_pred`, omits
+`run`, roundtrips byte-for-byte, and verifies both proof functions. A generated
+two-run control fails at the second declaration.
+
 ## Closed: identity coeffect boundary
 
 - [x] Preserve the former implementation at `pre-pat-1d7222a23` and cut the

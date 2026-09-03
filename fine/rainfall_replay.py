@@ -82,7 +82,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                  all(isinstance(scope, str) and scope for scope in within),
                  f"event {sequence}: malformed scope path")
         _require(terminal_sequence is None,
-                 f"event {sequence}: event after terminal run close at {terminal_sequence}")
+                 f"event {sequence}: event after terminal close at {terminal_sequence}")
 
         operation = event.get("operation")
         data = event.get("data")
@@ -592,8 +592,13 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                          "accepted-instance-became-admitted-clause",
                          f"event {sequence}: inst clause has an unknown relation")
 
+        if operation == "proof-core.document.close":
+            _require(within == [],
+                     f"event {sequence}: definition-only document close has a run scope")
+            _require(data.get("status") in {"verified", "checkpointed"},
+                     f"event {sequence}: definition-only document close has an invalid status")
         if operation in {"check.run.close", "synth.run.close", "bisim.run.close", "predicate-check.run.close",
-                         "predicate-induction.run.close", "proof-core.run.close"}:
+                         "predicate-induction.run.close", "proof-core.run.close", "proof-core.document.close"}:
             terminal_sequence = sequence
         if operation == "proof.run.close" and data.get("status") != "verified":
             terminal_sequence = sequence
@@ -601,7 +606,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     _require(len(documents) == 1, "replay must declare exactly one document")
     _require(len(snapshots) == 1, "replay must declare exactly one snapshot")
     _require(terminal_sequence == len(events) - 1,
-             "replay has no terminal run close")
+             "replay has no terminal close")
     _require(term_lift_validations == set(terms),
              "replay does not exact-validate every generated Fine term")
     _require(not match_run or match_witness_count == 1,

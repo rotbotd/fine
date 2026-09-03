@@ -13,7 +13,7 @@
 
       <details class="reference" open>
         <summary>language reference</summary>
-        <p class="reference-note"><code>Int</code>, <code>Bool</code>, and declared <code>enum</code>s are runtime types. <code>Id(A, left, right)</code> and declared <code>proof inductive</code> families are proof-only: Fine retains their source evidence, but a running program cannot inspect it. Declarations appear in this order: enums, proof inductives, functions, then one run.</p>
+        <p class="reference-note"><code>Int</code>, <code>Bool</code>, and declared <code>enum</code>s are runtime types. <code>Id(A, left, right)</code> and declared <code>proof inductive</code> families are proof-only: Fine retains their source evidence, but a running program cannot inspect it. Top-level declarations may be interleaved. A definition-only document needs no <code>run</code>; at most one named <code>run</code> block contains executable checks.</p>
         <div class="reference-scroll">
           <table>
             <thead>
@@ -111,7 +111,7 @@
               </tr>
               <tr>
                 <td>executable check</td>
-                <td>A <code>run</code> block is closed over runtime values and every assertion must hold.</td>
+                <td>An optional named <code>run</code> block is closed over runtime values and every assertion must hold. A document may contain at most one.</td>
                 <td><code>run demo {<br>&nbsp;&nbsp;let n: Int = 7;<br>&nbsp;&nbsp;assert n == 7;<br>}</code></td>
               </tr>
             </tbody>

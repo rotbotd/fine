@@ -374,14 +374,21 @@ namespace fine {
                     declare_proof_function(function);
                 for (auto const &function : document.functions)
                     declare_function(function);
-                execute_run(document.run);
+                if (document.run)
+                    execute_run(*document.run);
                 if (rainfall_) {
                     rainfall_->validate_terms();
+                    std::vector<std::string> dependencies;
+                    if (document.run)
+                        dependencies.push_back("run:" + document.run->name);
                     rainfall_->record(
-                        "transition", "proof-core.run.close", {"run:" + document.run.name}, "fine.two-level-elaborator",
+                        "transition", document.run ? "proof-core.run.close" : "proof-core.document.close",
+                        std::move(dependencies), "fine.two-level-elaborator",
                         result_.checkpoint_open
                             ? "A typed partial proof was checked through its fixed subtree; unresolved leaves remain holes"
-                            : "All value terms checked; proof evidence remained virtual and every coeffect resolved",
+                            : document.run
+                                  ? "All value terms checked; proof evidence remained virtual and every coeffect resolved"
+                                  : "All declarations checked without manufacturing an empty executable run",
                         {RainfallRecorder::string_field("status",
                                                        result_.checkpoint_open ? "checkpointed" : "verified"),
                          RainfallRecorder::number_field("functions_verified", result_.functions_verified),
@@ -393,8 +400,12 @@ namespace fine {
                          RainfallRecorder::number_field("coeffects_resolved", result_.coeffects_resolved),
                          RainfallRecorder::number_field("runtime_proof_values", 0)});
                 }
-                output_ << (result_.checkpoint_open ? "checkpointed run: " : "verified run: ")
-                        << document.run.name << '\n' << "runtime-value-kinds: Int, Bool";
+                if (document.run)
+                    output_ << (result_.checkpoint_open ? "checkpointed run: " : "verified run: ")
+                            << document.run->name << '\n';
+                else
+                    output_ << (result_.checkpoint_open ? "checkpointed definitions\n" : "verified definitions\n");
+                output_ << "runtime-value-kinds: Int, Bool";
                 for (auto const &[name, enumeration] : enums_)
                     output_ << ", " << name;
                 output_ << '\n' << "runtime-proof-values: 0 (unrepresentable)\n";

@@ -151,21 +151,31 @@ namespace fine::syntax {
 
             Document document() {
                 Document result;
-                while (at("enum"))
-                    result.enums.push_back(enum_declaration());
-                while (at("proof") && peek(1).text == "inductive")
-                    result.proof_inductives.push_back(proof_inductive());
-                while (at("function") || (at("proof") && peek(1).text == "function")) {
-                    if (at("function"))
+                while (peek().kind != Token::Kind::end) {
+                    if (at("enum")) {
+                        result.enums.push_back(enum_declaration());
+                        continue;
+                    }
+                    if (at("proof") && peek(1).text == "inductive") {
+                        result.proof_inductives.push_back(proof_inductive());
+                        continue;
+                    }
+                    if (at("function")) {
                         result.functions.push_back(function());
-                    else
+                        continue;
+                    }
+                    if (at("proof") && peek(1).text == "function") {
                         result.proof_functions.push_back(proof_function());
+                        continue;
+                    }
+                    if (at("run")) {
+                        if (result.run)
+                            fail(peek(), "a document may contain at most one `run` declaration");
+                        result.run = run();
+                        continue;
+                    }
+                    fail(peek(), "expected `enum`, `proof inductive`, `function`, `proof function`, or `run`");
                 }
-                if (!at("run"))
-                    fail(peek(), "expected one `run` declaration after functions");
-                result.run = run();
-                if (peek().kind != Token::Kind::end)
-                    fail(peek(), "unexpected declaration after `run`");
                 return result;
             }
 
@@ -755,7 +765,8 @@ namespace fine::syntax {
             declarations.push_back({ConcreteNodeKind::function_declaration, declaration.span});
         for (auto const &declaration : tree.ast.proof_functions)
             declarations.push_back({ConcreteNodeKind::proof_function_declaration, declaration.span});
-        declarations.push_back({ConcreteNodeKind::run_declaration, tree.ast.run.span});
+        if (tree.ast.run)
+            declarations.push_back({ConcreteNodeKind::run_declaration, tree.ast.run->span});
         std::sort(declarations.begin(), declarations.end(), [](auto const &left, auto const &right) {
             return left.span.begin.offset < right.span.begin.offset;
         });

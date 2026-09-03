@@ -13,6 +13,10 @@ literal, symbol, whitespace byte, and line comment with an exact source span.
 `ConcreteSyntaxTree` owns that stream, a document root with ordered declaration
 children, and the semantic `Document`. Concatenating the concrete tokens must
 reproduce the input byte-for-byte before parsing is considered successful.
+The root accepts enums, proof families, value functions, and proof functions in
+source order without treating their order as parser phases. At most one named
+`run` block supplies executable bindings and assertions; definition-only
+documents omit it entirely.
 
 The AST still owns meaning. The concrete tree owns preservation and edits.
 Every semantic span maps to a named `ConcreteRange`, so proof-hole replacements

@@ -231,7 +231,7 @@ namespace fine::syntax {
         std::vector<ProofInductiveDecl> proof_inductives;
         std::vector<FunctionDecl> functions;
         std::vector<ProofFunctionDecl> proof_functions;
-        RunDecl run;
+        std::optional<RunDecl> run;
     };
 
     enum class ConcreteNodeKind {

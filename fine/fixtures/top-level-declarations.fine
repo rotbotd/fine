@@ -1,0 +1,38 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat)
+    takes [prior: Even(previous)]
+    -> Even(succ(succ(previous)));
+}
+
+proof function even_pred(value: Nat)
+  takes [evidence: Even(succ(succ(value)))]
+  -> Even(value) {
+  match evidence {
+    even_next[previous](prior) => prior,
+  }
+}
+
+// Proof families may follow proof functions; source order is not a phase boundary.
+proof inductive Plus(a: Nat, b: Nat, c: Nat) {
+  plus_zero(base: Nat) -> Plus(zero, base, base);
+  plus_succ(a: Nat, b: Nat, c: Nat)
+    takes [rest: Plus(a, b, c)]
+    -> Plus(succ(a), b, succ(c));
+}
+
+proof function plus_shift(a: Nat, b: Nat, c: Nat)
+  takes [evidence: Plus(a, b, c)]
+  inducts(evidence)
+  -> Plus(a, succ(b), succ(c)) {
+  match evidence {
+    plus_zero[base]() => plus_zero[succ(base)](),
+    plus_succ[pa, pb, pc](rest) =>
+      plus_succ[pa, succ(pb), succ(pc)](plus_shift[pa, pb, pc](rest)),
+  }
+}

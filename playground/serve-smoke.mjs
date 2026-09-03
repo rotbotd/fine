@@ -91,6 +91,9 @@ try {
       throw new Error(`language reference is missing current form: ${form}`);
   if (!reference.includes("takes [") || reference.includes("<code>needs ["))
     throw new Error("language reference does not expose only the current static-input keyword");
+  if (!reference.includes("Top-level declarations may be interleaved")
+      || !reference.includes("definition-only document needs no <code>run</code>"))
+    throw new Error("language reference still advertises phased declarations or a mandatory run");
   const bundleName = reference.match(/\/assets\/index-[^"']+\.js/)?.[0];
   if (!bundleName)
     throw new Error("served playground does not reference its application bundle");

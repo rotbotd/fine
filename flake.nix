@@ -67,7 +67,8 @@
             "$src/fine/fixtures/identity-coeffect.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
             "$src/fine/fixtures/proof-inductive-match.fine" \
-            "$src/fine/fixtures/proof-inductive-holes.fine"; do
+            "$src/fine/fixtures/proof-inductive-holes.fine" \
+            "$src/fine/fixtures/top-level-declarations.fine"; do
             concrete_roundtrip="$(mktemp)"
             $out/bin/fine roundtrip "$source" > "$concrete_roundtrip"
             cmp "$source" "$concrete_roundtrip"
@@ -91,6 +92,29 @@
           ugly_materialized="$(mktemp)"
           $out/bin/fine materialize "$src/fine/fixtures/cst-roundtrip-ugly.fine" > "$ugly_materialized"
           cmp "$src/fine/fixtures/cst-roundtrip-ugly-materialized.fine" "$ugly_materialized"
+
+          definitions_output="$($out/bin/fine run \
+            "$src/fine/fixtures/top-level-declarations.fine")"
+          echo "$definitions_output"
+          grep -F 'verified proof function: even_pred' <<<"$definitions_output"
+          grep -F 'verified proof function: plus_shift' <<<"$definitions_output"
+          grep -F 'verified definitions' <<<"$definitions_output"
+          definitions_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/top-level-declarations.fine" \
+            > "$definitions_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/top-level-declarations.fine" "$definitions_rain"
+          grep -F '"operation":"proof-core.document.close"' "$definitions_rain"
+
+          duplicate_runs="$(mktemp)"
+          printf '%s\n' 'run first {}' 'run second {}' > "$duplicate_runs"
+          duplicate_runs_error="$(mktemp)"
+          if $out/bin/fine run "$duplicate_runs" > "$duplicate_runs_error" 2>&1; then
+            echo 'document unexpectedly accepted two executable run blocks' >&2
+            exit 1
+          fi
+          grep -F 'a document may contain at most one `run` declaration' \
+            "$duplicate_runs_error"
 
           output="$($out/bin/fine run "$src/fine/fixtures/identity-coeffect.fine")"
           echo "$output"
@@ -824,7 +848,8 @@
             ${./fine/fixtures/cst-roundtrip-ugly-materialized.fine} \
             ${./fine/fixtures/identity-checkpoint.fine} \
             ${./fine/fixtures/identity-checkpoint-materialized.fine} \
-            ${./fine/fixtures/identity-checkpoint-complete.fine}
+            ${./fine/fixtures/identity-checkpoint-complete.fine} \
+            ${./fine/fixtures/top-level-declarations.fine}
           node pthread-smoke.mjs ${self.packages.${system}.playground-wasm-pthreads} \
             ${./fine/fixtures/identity-checkpoint.fine}
           node serve-smoke.mjs
