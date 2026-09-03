@@ -4593,3 +4593,122 @@ The browser package built as
 `fine-playground.service` was restarted onto that package; both it and
 `rc-publish-fine.service` were active, and an HTTPS fetch of
 `https://fine.shit.yachts/` returned the Fine playground page.
+
+## 2026-09-03 — resumable bounded identity-proof checkpoints
+
+Fine can now retain useful proof work at a bounded search epoch instead of
+throwing away every incomplete tree. The new command
+`fine checkpoint --proof-budget N file.fine` adds a typed `open` production to
+the identity-proof grammar. That production has source `?`, constructor cost
+zero, one open leaf, and no closed frontier. Proof applications propagate four
+separate facts: constructor cost, root completeness, closed frontier count, and
+open-leaf count.
+
+The ranking is source-owned and exact. A complete root beats every partial root;
+otherwise Fine maximizes the number of closed child obligations, then minimizes
+constructor cost, then retains the first tree in deterministic grammar order.
+This specifically refuses the tempting "most syntax" measure: `symm(?)` cannot
+beat `?`, and `trans(?, ?)` cannot look like progress merely because it has more
+constructors. In checkpoint mode Fine compacts only the preferred tree's
+productions into the recursive Z3 datatype, then constrains the model to the
+preferred completeness, frontier, open-leaf, and cost scores. The lifted source
+must be the exact preferred source tree and must still name a candidate in the
+complete typed reference frontier.
+
+The first implementation experiment compacted all twelve partial candidates for
+the budget-two discriminator and used `z3::optimize` lexicographically over
+completeness, closed frontier, and cost. It returned `unknown` after the five
+second timeout. Replacing Optimize with an ordinary solver while leaving every
+partial production available also timed out. This null was retained rather than
+hidden by more fuel: the recursive datatype admitted a much larger recombination
+space than the finite source frontier. Moving the exact ranking to Fine and
+compacting only the preferred source-owned tree reduced the same model query to
+about 0.012 seconds. Z3 still constructs and lifts the datatype value, but it is
+not asked to rediscover Fine's editing preference.
+
+An incomplete `ProofEvidence` is deliberately unusable. It cannot enter
+`absorb`, cannot be added to the lexical proof environment, and causes the run to
+stop before later statements. Validation reparses the concretely edited source
+with synthesis disabled, checks every fixed application, permits the typed
+residual holes, and verifies that the reparse did not change complete versus
+open status. Ordinary `fine run` continues to reject nested holes. Indexed proof
+constructors and proof matches explicitly reject incomplete child evidence; the
+first slice is identity-only rather than pretending arbitrary partial proof
+syntax is already sound.
+
+`identity-checkpoint.fine` is the discriminator. At budget two its only useful
+partial tree is:
+
+```
+trans[left, middle, right](p, ?)
+```
+
+The left transitivity premise closes from exact local `p`; the right premise
+remains visibly open. A later assertion needing the unfinished equality is not
+checked and does not appear in Rainfall. Running the same budget-two checkpoint
+on that materialized source resumes the nested hole and produces:
+
+```
+trans[left, middle, right](p, symm[right, middle](bool_eta[right]()))
+```
+
+The completed file then runs normally and verifies the assertion. At budget one
+the emitted bytes equal the original source exactly, proving that the bare root
+hole wins over decorative open structure. The normal complete Z3 transitivity
+selector still lifts `(apply-trans local-p local-q)` to
+`trans[left, middle, right](p, q)`.
+
+Rainfall now records `checkpoint_mode` at an identity hole and
+`complete`, `closed_frontier`, and `open_leaves` on every candidate, model solve,
+and selected term. The model grammar retains the preferred source and all four
+scores, while its `reference_candidates` still cites the complete deterministic
+frontier. A partial close has status `checkpointed`; the run terminal records
+`proof_holes_checkpointed` and likewise closes as `checkpointed`. Nested residual
+holes register their actual source node and expected proof-parameter type node,
+so the second checkpoint pass replays without invented ownership. Replay checks
+all these equalities and requires the lifted partial body to be the grammar's
+preferred source.
+
+Validation commands:
+
+```
+cmake --build .build -j2
+.build/fine checkpoint --proof-budget 2 \
+  fine/fixtures/identity-checkpoint.fine \
+  | cmp fine/fixtures/identity-checkpoint-materialized.fine -
+.build/fine checkpoint --proof-budget 2 \
+  fine/fixtures/identity-checkpoint-materialized.fine \
+  | cmp fine/fixtures/identity-checkpoint-complete.fine -
+.build/fine run fine/fixtures/identity-checkpoint-complete.fine
+.build/fine checkpoint --proof-budget 1 \
+  fine/fixtures/identity-checkpoint.fine \
+  | cmp fine/fixtures/identity-checkpoint.fine -
+.build/fine run fine/fixtures/identity-checkpoint-materialized.fine
+.build/fine rain --checkpoint --proof-budget 2 \
+  fine/fixtures/identity-checkpoint.fine > /tmp/identity-checkpoint.rain
+python3 fine/rainfall_replay.py fine/fixtures/identity-checkpoint.fine \
+  /tmp/identity-checkpoint.rain
+.build/fine rain --checkpoint --proof-budget 2 \
+  fine/fixtures/identity-checkpoint-materialized.fine \
+  > /tmp/identity-checkpoint-resumed.rain
+python3 fine/rainfall_replay.py \
+  fine/fixtures/identity-checkpoint-materialized.fine \
+  /tmp/identity-checkpoint-resumed.rain
+.build/fine rain --proof-selector z3 \
+  fine/fixtures/identity-transitivity.fine > /tmp/identity-transitivity.rain
+python3 fine/rainfall_replay.py fine/fixtures/identity-transitivity.fine \
+  /tmp/identity-transitivity.rain
+.build/fine rain fine/fixtures/proof-inductive-holes.fine \
+  > /tmp/proof-inductive-holes.rain
+python3 fine/rainfall_replay.py fine/fixtures/proof-inductive-holes.fine \
+  /tmp/proof-inductive-holes.rain
+nix flake check
+nix build --no-link --print-out-paths .#default
+```
+
+The partial, resumed, ordinary Z3, and indexed Rainfall traces contained 75, 84,
+85, and 35 events respectively and all replayed. The dirty-tree full install
+check produced `/nix/store/419npzkn50bgga7gyzy0gz6masyg5szx-fine-0.1.0`.
+Arbitrary live interruption is intentionally not claimed: the remaining slice is
+a cooperative epoch driver which returns the last closed frontier and commits
+its concrete-range edits as one editor transaction.

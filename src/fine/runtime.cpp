@@ -86,16 +86,18 @@ namespace fine {
             // Rainfall can retain the exact descent edge.
             std::optional<std::string> structural_root;
             std::optional<std::string> structural_parent;
+            bool complete = true;
 
             ProofEvidence(std::string name, SemanticProofType type, std::string formation, syntax::SourceSpan span,
                           std::string left_source, std::string right_source,
                           std::vector<syntax::ValueExpr> index_syntax = {},
                           std::optional<std::string> structural_root = std::nullopt,
-                          std::optional<std::string> structural_parent = std::nullopt)
+                          std::optional<std::string> structural_parent = std::nullopt,
+                          bool complete = true)
                 : name(std::move(name)), type(std::move(type)), formation(std::move(formation)), span(span),
                   left_source(std::move(left_source)), right_source(std::move(right_source)),
                   index_syntax(std::move(index_syntax)), structural_root(std::move(structural_root)),
-                  structural_parent(std::move(structural_parent)) {}
+                  structural_parent(std::move(structural_parent)), complete(complete) {}
         };
 
         using ValueEnvironment = std::map<std::string, ValueTerm>;
@@ -130,6 +132,10 @@ namespace fine {
             std::size_t cost = 1;
             std::optional<IdentityType> type;
             std::vector<ProofCandidate> children;
+            bool open = false;
+            bool complete = true;
+            std::size_t closed_frontier = 1;
+            std::size_t open_leaves = 0;
         };
 
         struct IndexInstantiation {
@@ -370,16 +376,22 @@ namespace fine {
                     rainfall_->validate_terms();
                     rainfall_->record(
                         "transition", "proof-core.run.close", {"run:" + document.run.name}, "fine.two-level-elaborator",
-                        "All value terms checked; proof evidence remained virtual and every coeffect resolved",
-                        {RainfallRecorder::string_field("status", "verified"),
+                        result_.checkpoint_open
+                            ? "A typed partial proof was checked through its fixed subtree; unresolved leaves remain holes"
+                            : "All value terms checked; proof evidence remained virtual and every coeffect resolved",
+                        {RainfallRecorder::string_field("status",
+                                                       result_.checkpoint_open ? "checkpointed" : "verified"),
                          RainfallRecorder::number_field("functions_verified", result_.functions_verified),
                          RainfallRecorder::number_field("proof_functions_verified", result_.proof_functions_verified),
                          RainfallRecorder::number_field("proofs_formed", result_.proofs_formed),
                          RainfallRecorder::number_field("proof_holes_filled", result_.proof_holes_filled),
+                         RainfallRecorder::number_field("proof_holes_checkpointed",
+                                                       result_.proof_holes_checkpointed),
                          RainfallRecorder::number_field("coeffects_resolved", result_.coeffects_resolved),
                          RainfallRecorder::number_field("runtime_proof_values", 0)});
                 }
-                output_ << "verified run: " << document.run.name << '\n' << "runtime-value-kinds: Int, Bool";
+                output_ << (result_.checkpoint_open ? "checkpointed run: " : "verified run: ")
+                        << document.run.name << '\n' << "runtime-value-kinds: Int, Bool";
                 for (auto const &[name, enumeration] : enums_)
                     output_ << ", " << name;
                 output_ << '\n' << "runtime-proof-values: 0 (unrepresentable)\n";
@@ -917,7 +929,12 @@ namespace fine {
                 proof_model::Production production;
                 production.result = proof_model_type(*candidate.type);
                 std::string key;
-                if (candidate.local_proof) {
+                if (candidate.open) {
+                    production.kind = proof_model::ProductionKind::open;
+                    production.source = "?";
+                    key = "open:" + proof_model_type_key(production.result);
+                }
+                else if (candidate.local_proof) {
                     production.kind = proof_model::ProductionKind::local;
                     production.source = candidate.source;
                     key = "local:" + candidate.source + ":" + proof_model_type_key(production.result);
@@ -953,10 +970,26 @@ namespace fine {
                 proof_model::Grammar grammar;
                 grammar.id = "hole-" + std::to_string(proof_model_index_++);
                 grammar.expected = proof_model_type(expected);
-                grammar.max_cost = max_proof_search_cost;
+                grammar.max_cost = options_.proof_search_cost;
+                auto preferred = std::max_element(candidates.begin(), candidates.end(), [](auto const &left,
+                                                                                           auto const &right) {
+                    if (left.complete != right.complete)
+                        return !left.complete && right.complete;
+                    if (left.closed_frontier != right.closed_frontier)
+                        return left.closed_frontier < right.closed_frontier;
+                    return left.cost > right.cost;
+                });
+                grammar.preferred_complete = preferred->complete;
+                grammar.preferred_closed_frontier = preferred->closed_frontier;
+                grammar.preferred_open_leaves = preferred->open_leaves;
+                grammar.preferred_cost = preferred->cost;
+                grammar.preferred_source = preferred->source;
                 std::set<std::string> seen;
-                for (auto const &candidate : candidates)
-                    collect_proof_model_production(candidate, grammar, seen);
+                if (options_.synthesize_partial_proofs)
+                    collect_proof_model_production(*preferred, grammar, seen);
+                else
+                    for (auto const &candidate : candidates)
+                        collect_proof_model_production(candidate, grammar, seen);
                 return grammar;
             }
 
@@ -1031,15 +1064,28 @@ namespace fine {
                 for (auto const &argument : expression.value_arguments)
                     index_sources.push_back(print_value(argument));
                 std::vector<std::string> argument_sources;
+                bool arguments_complete = true;
                 for (std::size_t i = 0; i < function.proof_parameters.size(); ++i) {
-                    if (expression.proof_arguments[i].kind == syntax::ProofExpr::Kind::hole)
+                    if (expression.proof_arguments[i].kind == syntax::ProofExpr::Kind::hole &&
+                        !options_.validate_partial_proofs && !options_.synthesize_partial_proofs)
                         reject(expression.proof_arguments[i].span, "nested proof holes are not admitted in this slice");
                     SemanticProofType parameter_type = elaborate_proof_type(
                         function.proof_parameters[i].type, indices, no_proofs, no_proof_order, no_absorbed);
+                    std::string argument_proof_source;
+                    std::string argument_type_source;
+                    if (rainfall_ && expression.proof_arguments[i].kind == syntax::ProofExpr::Kind::hole) {
+                        argument_proof_source = rainfall_->source_node(expression.proof_arguments[i].node_id,
+                                                                       expression.proof_arguments[i].span,
+                                                                       "proof.expression.hole");
+                        argument_type_source = rainfall_->source_node(function.proof_parameters[i].type.node_id,
+                                                                      function.proof_parameters[i].type.span,
+                                                                      "proof-type.identity");
+                    }
                     ProofEvidence argument = elaborate_any_proof(
                         expression.proof_arguments[i], function.proof_parameters[i].type, std::move(parameter_type),
                         values, proofs, proof_order, absorbed, name + "." + function.proof_parameters[i].name, run,
-                        {}, {});
+                        argument_proof_source, argument_type_source);
+                    arguments_complete = arguments_complete && argument.complete;
                     argument_sources.push_back(print_proof(expression.proof_arguments[i]));
                 }
 
@@ -1079,7 +1125,8 @@ namespace fine {
                         induction_hypothesis_use ? "induction-hypothesis:" + function.name
                                                  : "apply:" + function.name,
                         expression.span,
-                        std::move(left_source), std::move(right_source), std::move(index_syntax)};
+                        std::move(left_source), std::move(right_source), std::move(index_syntax), std::nullopt,
+                        std::nullopt, arguments_complete};
             }
 
             std::vector<ProofCandidate>
@@ -1088,8 +1135,22 @@ namespace fine {
                                        ValueEnvironment const &values, ProofEnvironment const &proofs,
                                        std::vector<std::string> const &proof_order,
                                        std::vector<z3::expr> const &absorbed, std::size_t budget) {
+                bool allow_open = options_.synthesize_partial_proofs;
+                auto open_candidate = [&]() {
+                    ProofCandidate candidate;
+                    candidate.source = "?";
+                    candidate.production = "open";
+                    candidate.cost = 0;
+                    candidate.type = expected;
+                    candidate.open = true;
+                    candidate.complete = false;
+                    candidate.closed_frontier = 0;
+                    candidate.open_leaves = 1;
+                    return candidate;
+                };
                 if (budget == 0)
-                    return {};
+                    return allow_open ? std::vector<ProofCandidate>{open_candidate()}
+                                      : std::vector<ProofCandidate>{};
                 std::vector<ProofCandidate> candidates;
                 for (auto const &candidate_name : proof_order) {
                     auto found = proofs.find(candidate_name);
@@ -1174,13 +1235,26 @@ namespace fine {
                                 source << argument_sources[i];
                             }
                             source << ')';
-                            std::vector<ProofCandidate> children = arguments;
-                            candidates.push_back({source.str(), "proof-application", std::nullopt, function.name,
-                                                  std::move(index_arguments), std::move(argument_sources), cost,
-                                                  expected, std::move(children)});
+                            bool complete = true;
+                            std::size_t closed_frontier = 0;
+                            std::size_t open_leaves = 0;
+                            for (auto const &argument : arguments) {
+                                complete = complete && argument.complete;
+                                open_leaves += argument.open_leaves;
+                                closed_frontier += argument.complete ? 1 : argument.closed_frontier;
+                            }
+                            ProofCandidate candidate{
+                                source.str(), "proof-application", std::nullopt, function.name,
+                                std::move(index_arguments), std::move(argument_sources), cost, expected, arguments};
+                            candidate.complete = complete;
+                            candidate.closed_frontier = complete ? 1 : closed_frontier;
+                            candidate.open_leaves = open_leaves;
+                            candidates.push_back(std::move(candidate));
                         }
                     }
                 }
+                if (allow_open)
+                    candidates.push_back(open_candidate());
                 return candidates;
             }
 
@@ -1222,12 +1296,17 @@ namespace fine {
                         expression, expected_syntax, SemanticProofType(std::move(expected)), values, proofs,
                         proof_order, absorbed, std::move(name), run);
 
+                if (options_.validate_partial_proofs)
+                    return {std::move(name), std::move(expected), "open", expression.span,
+                            print_value(expected_syntax.left), print_value(expected_syntax.right), {}, std::nullopt,
+                            std::nullopt, false};
+
                 if (options_.require_materialized_proofs)
                     reject(expression.span, "proof hole remains after materialization");
 
                 std::vector<ProofCandidate> candidates = enumerate_proof_candidates(
                     expected_syntax, expected, print_value(expected_syntax.left), print_value(expected_syntax.right),
-                    values, proofs, proof_order, absorbed, max_proof_search_cost);
+                    values, proofs, proof_order, absorbed, options_.proof_search_cost);
 
                 std::string proposition;
                 std::string hole = "proof-hole:" + proof_source;
@@ -1243,8 +1322,12 @@ namespace fine {
                          RainfallRecorder::string_field("binding", name),
                          RainfallRecorder::string_field("expected_type", print_identity(expected_syntax)),
                          RainfallRecorder::string_field("proposition", proposition),
-                         RainfallRecorder::raw_field("grammar", "[\"exact-local\",\"refl\",\"proof-application\"]"),
-                         RainfallRecorder::number_field("max_cost", max_proof_search_cost),
+                         RainfallRecorder::raw_field(
+                             "grammar", options_.synthesize_partial_proofs
+                                            ? "[\"exact-local\",\"refl\",\"proof-application\",\"open\"]"
+                                            : "[\"exact-local\",\"refl\",\"proof-application\"]"),
+                         RainfallRecorder::number_field("max_cost", options_.proof_search_cost),
+                         RainfallRecorder::boolean_field("checkpoint_mode", options_.synthesize_partial_proofs),
                          RainfallRecorder::boolean_field("ill_typed_candidates_enumerated", false)});
                     for (auto const &candidate : candidates) {
                         std::vector<RainfallField> data = {
@@ -1254,6 +1337,9 @@ namespace fine {
                             RainfallRecorder::string_field("expected_type", print_identity(expected_syntax)),
                             RainfallRecorder::boolean_field("exact_type", true),
                             RainfallRecorder::boolean_field("runtime_value_created", false),
+                            RainfallRecorder::boolean_field("complete", candidate.complete),
+                            RainfallRecorder::number_field("closed_frontier", candidate.closed_frontier),
+                            RainfallRecorder::number_field("open_leaves", candidate.open_leaves),
                         };
                         if (candidate.local_proof)
                             data.push_back(RainfallRecorder::string_field("proof", *candidate.local_proof));
@@ -1287,8 +1373,15 @@ namespace fine {
                     if (model_selection->status != proof_model::Status::sat)
                         reject(expression.span,
                                "Z3 proof model selector failed for `" + name + "`: " + model_selection->reason);
+                    if (options_.synthesize_partial_proofs &&
+                        model_selection->source != model_grammar->preferred_source)
+                        reject(expression.span,
+                               "Z3 proof model did not reproduce Fine's preferred partial source tree");
                     auto found = std::find_if(candidates.begin(), candidates.end(), [&](ProofCandidate const &item) {
-                        return item.source == model_selection->source && item.cost == model_selection->cost;
+                        return item.source == model_selection->source && item.cost == model_selection->cost &&
+                               item.complete == model_selection->complete &&
+                               item.closed_frontier == model_selection->closed_frontier &&
+                               item.open_leaves == model_selection->open_leaves;
                     });
                     if (found == candidates.end())
                         reject(expression.span,
@@ -1300,7 +1393,10 @@ namespace fine {
                 ProofCandidate const &selected = candidates[selected_index];
                 request_materialization(syntax::ConcreteRange::from_span(expression.span), selected.source,
                                         expression.span);
-                ++result_.proof_holes_filled;
+                if (selected.complete)
+                    ++result_.proof_holes_filled;
+                else
+                    ++result_.proof_holes_checkpointed;
                 if (rainfall_) {
                     if (model_grammar && model_selection) {
                         std::vector<std::string> productions;
@@ -1321,18 +1417,30 @@ namespace fine {
                                 productions.push_back(description.str());
                             }
                             else {
-                                productions.push_back(
-                                    (production.kind == proof_model::ProductionKind::local ? "local:" : "refl:") +
-                                    production.source);
+                                std::string prefix = production.kind == proof_model::ProductionKind::open
+                                                         ? "open:"
+                                                     : production.kind == proof_model::ProductionKind::local
+                                                         ? "local:"
+                                                         : "refl:";
+                                productions.push_back(prefix + production.source);
                             }
                         }
                         std::string grammar_event = rainfall_->record(
                             "object", "proof.model.grammar", {"run:" + run, hole}, "fine.proof-model-selector",
-                            "The exact deterministic Fine frontier is compacted into ground recursive datatype "
-                            "productions without changing its bound or source owners",
+                            options_.synthesize_partial_proofs
+                                ? "Fine ranks the typed partial frontier, then compacts the preferred tree's productions into a ground recursive datatype"
+                                : "The exact deterministic Fine frontier is compacted into ground recursive datatype productions without changing its bound or source owners",
                             {RainfallRecorder::string_field("hole", hole),
                              RainfallRecorder::string_field("grammar", model_grammar->id),
                              RainfallRecorder::number_field("max_cost", model_grammar->max_cost),
+                             RainfallRecorder::boolean_field("preferred_complete",
+                                                            model_grammar->preferred_complete),
+                             RainfallRecorder::number_field("preferred_closed_frontier",
+                                                           model_grammar->preferred_closed_frontier),
+                             RainfallRecorder::number_field("preferred_open_leaves",
+                                                           model_grammar->preferred_open_leaves),
+                             RainfallRecorder::number_field("preferred_cost", model_grammar->preferred_cost),
+                             RainfallRecorder::string_field("preferred_source", model_grammar->preferred_source),
                              RainfallRecorder::raw_field("productions", RainfallRecorder::string_array(productions)),
                              RainfallRecorder::raw_field("reference_candidates",
                                                          RainfallRecorder::string_array(candidate_events))});
@@ -1345,7 +1453,11 @@ namespace fine {
                              RainfallRecorder::string_field("grammar", model_grammar->id),
                              RainfallRecorder::string_field("status", "sat"),
                              RainfallRecorder::string_field("model_value", model_selection->model_value),
-                             RainfallRecorder::number_field("cost", model_selection->cost)});
+                             RainfallRecorder::number_field("cost", model_selection->cost),
+                             RainfallRecorder::boolean_field("complete", model_selection->complete),
+                             RainfallRecorder::number_field("closed_frontier",
+                                                           model_selection->closed_frontier),
+                             RainfallRecorder::number_field("open_leaves", model_selection->open_leaves)});
                         rainfall_->record(
                             "transform", "proof.model.lift", {"run:" + run, hole, solve_event},
                             "fine.proof-model-selector",
@@ -1355,6 +1467,7 @@ namespace fine {
                              RainfallRecorder::string_field("solve_event", solve_event),
                              RainfallRecorder::string_field("body", model_selection->source),
                              RainfallRecorder::string_field("candidate", candidate_events[selected_index]),
+                             RainfallRecorder::boolean_field("complete", model_selection->complete),
                              RainfallRecorder::boolean_field("in_reference_frontier", true),
                              RainfallRecorder::boolean_field("reparse_required", true)});
                     }
@@ -1368,26 +1481,33 @@ namespace fine {
                         {RainfallRecorder::string_field("hole", hole),
                          RainfallRecorder::string_field("candidate", selected_event),
                          RainfallRecorder::string_field("body", selected.source),
-                         RainfallRecorder::string_field("production", selected.production)});
+                         RainfallRecorder::string_field("production", selected.production),
+                         RainfallRecorder::boolean_field("complete", selected.complete)});
                     std::vector<std::string> residual;
                     for (std::size_t i = 0; i < candidate_events.size(); ++i)
                         if (i != selected_index)
                             residual.push_back(candidate_events[i]);
                     rainfall_->record(
                         "transition", "proof.search.close", {"run:" + run, hole}, "fine.typed-proof-search",
-                        "The typed hole has a checked source witness and its unchosen finite frontier remains explicit",
+                        selected.complete
+                            ? "The typed hole has a checked source witness and its unchosen finite frontier remains explicit"
+                            : "The typed hole has a checked partial Fine term; every unresolved leaf remains explicit",
                         {RainfallRecorder::string_field("hole", hole),
                          RainfallRecorder::string_field("selection", selection),
                          RainfallRecorder::string_field("selected_candidate", selected_event),
                          RainfallRecorder::raw_field("residual_candidates", RainfallRecorder::string_array(residual)),
-                         RainfallRecorder::string_field("status", "selected"),
+                         RainfallRecorder::string_field("status",
+                                                       selected.complete ? "selected" : "checkpointed"),
                          RainfallRecorder::boolean_field("materialization_requested", true)});
                 }
-                output_ << "filled proof hole: " << name << " <- " << selected.source << " ("
+                output_ << (selected.complete ? "filled proof hole: " : "checkpointed proof hole: ") << name
+                        << " <- " << selected.source << " ("
                         << (options_.proof_selector == ProofSelector::z3_model ? "Z3 datatype model" : "typed search")
                         << ")\n";
                 std::string formation;
-                if (selected.local_proof)
+                if (selected.open)
+                    formation = "open";
+                else if (selected.local_proof)
                     formation = "exact-local:" + *selected.local_proof;
                 else if (selected.proof_function)
                     formation = "proof-application:" + *selected.proof_function;
@@ -1400,7 +1520,7 @@ namespace fine {
                         std::move(formation),
                         expression.span,
                         print_value(expected_syntax.left),
-                        print_value(expected_syntax.right)};
+                        print_value(expected_syntax.right), {}, std::nullopt, std::nullopt, selected.complete};
             }
 
             std::vector<ProofCandidate>
@@ -1537,6 +1657,9 @@ namespace fine {
                             RainfallRecorder::string_field("expected_type", print_proof_type(expected_syntax)),
                             RainfallRecorder::boolean_field("exact_type", true),
                             RainfallRecorder::boolean_field("runtime_value_created", false),
+                            RainfallRecorder::boolean_field("complete", true),
+                            RainfallRecorder::number_field("closed_frontier", 1),
+                            RainfallRecorder::number_field("open_leaves", 0),
                             RainfallRecorder::number_field("cost", candidate.cost),
                         };
                         if (candidate.local_proof)
@@ -1585,7 +1708,8 @@ namespace fine {
                         {RainfallRecorder::string_field("hole", hole),
                          RainfallRecorder::string_field("candidate", candidate_events.front()),
                          RainfallRecorder::string_field("body", selected.source),
-                         RainfallRecorder::string_field("production", selected.production)});
+                         RainfallRecorder::string_field("production", selected.production),
+                         RainfallRecorder::boolean_field("complete", true)});
                     std::vector<std::string> residual(candidate_events.begin() + 1, candidate_events.end());
                     rainfall_->record(
                         "transition", "proof.search.close", {"run:" + run, hole}, "fine.typed-proof-search",
@@ -1668,6 +1792,9 @@ namespace fine {
                     ProofEvidence argument = elaborate_any_proof(expression.proof_arguments[i], parameter.type,
                                                                  std::move(parameter_type), values, proofs, proof_order,
                                                                  absorbed, name + "." + parameter.name, run, {}, {});
+                    if (!argument.complete)
+                        reject(expression.proof_arguments[i].span,
+                               "partial checkpoints inside indexed proof constructors are not yet supported");
                     proof_sources.push_back(print_proof(expression.proof_arguments[i]));
                     constructor_proofs.emplace(parameter.name, std::move(argument));
                     constructor_proof_order.push_back(parameter.name);
@@ -1866,10 +1993,13 @@ namespace fine {
                     }
                     SemanticProofType branch_expected = elaborate_proof_type(
                         expected_syntax, branch_values, branch_proofs, branch_proof_order, branch_absorbed);
-                    (void)elaborate_any_proof(expression.match_bodies[i], expected_syntax,
-                                              std::move(branch_expected), branch_values, branch_proofs,
-                                              branch_proof_order, branch_absorbed, name + "." + constructor_name,
-                                              run, {}, {});
+                    ProofEvidence branch = elaborate_any_proof(
+                        expression.match_bodies[i], expected_syntax, std::move(branch_expected), branch_values,
+                        branch_proofs, branch_proof_order, branch_absorbed, name + "." + constructor_name, run, {},
+                        {});
+                    if (!branch.complete)
+                        reject(expression.match_bodies[i].span,
+                               "partial checkpoints inside proof matches are not yet supported");
                     if (rainfall_)
                         rainfall_->record(
                             "derive", "proof.inductive.match.branch",
@@ -1937,6 +2067,8 @@ namespace fine {
 
             void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed, std::vector<std::string> within,
                         std::string_view role, std::optional<std::string> source = std::nullopt) {
+                if (!proof.complete)
+                    throw std::logic_error("open proof evidence cannot enter an SMT context");
                 auto identity = std::get_if<IdentityType>(&proof.type);
                 if (!identity)
                     return;
@@ -2369,6 +2501,8 @@ namespace fine {
                             execute_statement(item, run.name, assertion_index, values, proofs, proof_order, absorbed);
                         },
                         statement);
+                    if (result_.checkpoint_open)
+                        break;
                 }
                 for (auto const &[range, text] : materializations_)
                     result_.materializations.push_back({{range.first, range.second}, text});
@@ -2410,6 +2544,14 @@ namespace fine {
                 ProofEvidence evidence =
                     elaborate_any_proof(declaration.value, declaration.type, std::move(expected), values, proofs,
                                         proof_order, absorbed, declaration.name, run, proof_source, type_source);
+                if (!evidence.complete) {
+                    if (!options_.synthesize_partial_proofs && !options_.validate_partial_proofs)
+                        throw std::logic_error("open proof escaped checkpoint mode");
+                    result_.checkpoint_open = true;
+                    output_ << "retained typed proof holes: " << declaration.name << " : "
+                            << print_proof_type(declaration.type) << '\n';
+                    return;
+                }
                 if (rainfall_) {
                     if (auto identity = std::get_if<IdentityType>(&evidence.type)) {
                         std::string proposition =

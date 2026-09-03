@@ -36,7 +36,9 @@ namespace fine {
         std::size_t proof_functions_verified = 0;
         std::size_t proofs_formed = 0;
         std::size_t proof_holes_filled = 0;
+        std::size_t proof_holes_checkpointed = 0;
         std::size_t coeffects_resolved = 0;
+        bool checkpoint_open = false;
     };
 
     enum class ProofSelector { deterministic, z3_model };
@@ -44,6 +46,9 @@ namespace fine {
     struct ExecutionOptions {
         bool require_explicit_coeffects = false;
         bool require_materialized_proofs = false;
+        bool synthesize_partial_proofs = false;
+        bool validate_partial_proofs = false;
+        std::size_t proof_search_cost = 3;
         ProofSelector proof_selector = ProofSelector::deterministic;
     };
 

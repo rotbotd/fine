@@ -25,6 +25,7 @@ namespace fine::proof_model {
 
         std::string constructor_base(Production const &production) {
             switch (production.kind) {
+            case ProductionKind::open: return "open";
             case ProductionKind::local: return "local-" + symbol_part(production.source);
             case ProductionKind::reflexivity: return "refl-" + symbol_part(production.source);
             case ProductionKind::application: return "apply-" + symbol_part(production.function);
@@ -59,6 +60,11 @@ namespace fine::proof_model {
                 throw std::runtime_error("proof model uses a constructor outside the Fine grammar");
 
             Production const &production = grammar.productions[index];
+            if (production.kind == ProductionKind::open) {
+                if (value.num_args() != 0)
+                    throw std::runtime_error("open proof model has unexpected children");
+                return "?";
+            }
             if (production.kind != ProductionKind::application) {
                 if (value.num_args() != 0)
                     throw std::runtime_error("proof leaf model has unexpected children");
@@ -92,7 +98,7 @@ namespace fine::proof_model {
 
     Result select(z3::context &context, Grammar const &grammar) {
         if (grammar.productions.empty() || grammar.max_cost == 0)
-            return {Status::unsat, "empty bounded Fine proof grammar", {}, {}, 0};
+            return {Status::unsat, "empty bounded Fine proof grammar", {}, {}, 0, false, 0, 0};
 
         std::string suffix = symbol_part(grammar.id);
         std::string sort_name = "FineProof-" + suffix;
@@ -124,6 +130,12 @@ namespace fine::proof_model {
         z3::func_decl carrier =
             context.recfun(("fine-proof-carrier-" + suffix).c_str(), datatype.sort, context.int_sort());
         z3::func_decl cost = context.recfun(("fine-proof-cost-" + suffix).c_str(), datatype.sort, context.int_sort());
+        z3::func_decl complete =
+            context.recfun(("fine-proof-complete-" + suffix).c_str(), datatype.sort, context.bool_sort());
+        z3::func_decl frontier =
+            context.recfun(("fine-proof-frontier-" + suffix).c_str(), datatype.sort, context.int_sort());
+        z3::func_decl opens =
+            context.recfun(("fine-proof-opens-" + suffix).c_str(), datatype.sort, context.int_sort());
         z3::func_decl well = context.recfun(("fine-proof-well-" + suffix).c_str(), datatype.sort, context.bool_sort());
         z3::expr node = context.constant(("fine-proof-node-" + suffix).c_str(), datatype.sort);
 
@@ -131,25 +143,41 @@ namespace fine::proof_model {
         std::vector<z3::expr> destination_cases;
         std::vector<z3::expr> carrier_cases;
         std::vector<z3::expr> cost_cases;
+        std::vector<z3::expr> complete_cases;
+        std::vector<z3::expr> frontier_cases;
+        std::vector<z3::expr> open_cases;
         std::vector<z3::expr> well_cases;
         for (std::size_t i = 0; i < grammar.productions.size(); ++i) {
             Production const &production = grammar.productions[i];
             source_cases.push_back(integer(context, production.result.left));
             destination_cases.push_back(integer(context, production.result.right));
             carrier_cases.push_back(integer(context, production.result.carrier));
-            z3::expr production_cost = context.int_val(1);
+            bool is_open = production.kind == ProductionKind::open;
+            z3::expr production_cost = context.int_val(is_open ? 0 : 1);
+            z3::expr production_complete = context.bool_val(!is_open);
+            z3::expr production_frontier = context.int_val(is_open ? 0 : 1);
+            z3::expr production_opens = context.int_val(is_open ? 1 : 0);
             z3::expr production_well = context.bool_val(true);
             z3::func_decl_vector accessors = datatype.constructors[static_cast<unsigned>(i)].accessors();
             for (unsigned child_index = 0; child_index < accessors.size(); ++child_index) {
                 z3::expr child = accessors[child_index](node);
                 Type const &expected = production.arguments[child_index];
                 production_cost = production_cost + cost(child);
+                production_complete = production_complete && complete(child);
+                production_opens = production_opens + opens(child);
+                production_frontier = production_frontier +
+                                      z3::ite(complete(child), context.int_val(1), frontier(child));
                 production_well = production_well && well(child) &&
                                   carrier(child) == integer(context, expected.carrier) &&
                                   source(child) == integer(context, expected.left) &&
                                   destination(child) == integer(context, expected.right);
             }
             cost_cases.push_back(std::move(production_cost));
+            complete_cases.push_back(production_complete);
+            frontier_cases.push_back(
+                production.arguments.empty() ? production_frontier
+                                             : z3::ite(production_complete, context.int_val(1), production_frontier - 1));
+            open_cases.push_back(std::move(production_opens));
             well_cases.push_back(std::move(production_well));
         }
 
@@ -165,6 +193,9 @@ namespace fine::proof_model {
         context.recdef(destination, arguments, cases(destination_cases));
         context.recdef(carrier, arguments, cases(carrier_cases));
         context.recdef(cost, arguments, cases(cost_cases));
+        context.recdef(complete, arguments, cases(complete_cases));
+        context.recdef(frontier, arguments, cases(frontier_cases));
+        context.recdef(opens, arguments, cases(open_cases));
         context.recdef(well, arguments, cases(well_cases));
 
         z3::expr hole = context.constant(("fine-proof-hole-" + suffix).c_str(), datatype.sort);
@@ -184,12 +215,17 @@ namespace fine::proof_model {
         solver.add(source(hole) == integer(context, grammar.expected.left));
         solver.add(destination(hole) == integer(context, grammar.expected.right));
         solver.add(cost(hole) <= context.int_val(static_cast<std::uint64_t>(grammar.max_cost)));
+        solver.add(complete(hole) == context.bool_val(grammar.preferred_complete));
+        solver.add(frontier(hole) ==
+                   context.int_val(static_cast<std::uint64_t>(grammar.preferred_closed_frontier)));
+        solver.add(opens(hole) == context.int_val(static_cast<std::uint64_t>(grammar.preferred_open_leaves)));
+        solver.add(cost(hole) == context.int_val(static_cast<std::uint64_t>(grammar.preferred_cost)));
 
         z3::check_result status = solver.check();
         if (status == z3::unsat)
-            return {Status::unsat, "bounded datatype grammar is unsatisfiable", {}, {}, 0};
+            return {Status::unsat, "bounded datatype grammar is unsatisfiable", {}, {}, 0, false, 0, 0};
         if (status == z3::unknown)
-            return {Status::unknown, solver.reason_unknown(), {}, {}, 0};
+            return {Status::unknown, solver.reason_unknown(), {}, {}, 0, false, 0, 0};
 
         z3::model model = solver.get_model();
         z3::expr value = model.eval(hole, true);
@@ -197,11 +233,21 @@ namespace fine::proof_model {
         std::uint64_t selected_cost = 0;
         if (!cost_value.is_numeral_u64(selected_cost))
             throw std::runtime_error("proof model cost did not evaluate to a numeral");
+        z3::expr complete_value = model.eval(complete(value), true);
+        z3::expr frontier_value = model.eval(frontier(value), true);
+        z3::expr opens_value = model.eval(opens(value), true);
+        std::uint64_t selected_frontier = 0;
+        std::uint64_t selected_opens = 0;
+        if (!frontier_value.is_numeral_u64(selected_frontier) || !opens_value.is_numeral_u64(selected_opens))
+            throw std::runtime_error("partial proof model scores did not evaluate to numerals");
         return {Status::sat,
                 {},
                 value.to_string(),
                 lift(value, grammar, datatype),
-                static_cast<std::size_t>(selected_cost)};
+                static_cast<std::size_t>(selected_cost),
+                complete_value.is_true(),
+                static_cast<std::size_t>(selected_frontier),
+                static_cast<std::size_t>(selected_opens)};
     }
 
 }  // namespace fine::proof_model

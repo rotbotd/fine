@@ -14,7 +14,7 @@ namespace fine::proof_model {
         unsigned right = 0;
     };
 
-    enum class ProductionKind { local, reflexivity, application };
+    enum class ProductionKind { open, local, reflexivity, application };
 
     struct Production {
         ProductionKind kind = ProductionKind::local;
@@ -29,6 +29,11 @@ namespace fine::proof_model {
         std::string id;
         Type expected;
         std::size_t max_cost = 0;
+        bool preferred_complete = true;
+        std::size_t preferred_closed_frontier = 1;
+        std::size_t preferred_open_leaves = 0;
+        std::size_t preferred_cost = 0;
+        std::string preferred_source;
         std::vector<Production> productions;
     };
 
@@ -40,6 +45,9 @@ namespace fine::proof_model {
         std::string model_value;
         std::string source;
         std::size_t cost = 0;
+        bool complete = false;
+        std::size_t closed_frontier = 0;
+        std::size_t open_leaves = 0;
     };
 
     Result select(z3::context &context, Grammar const &grammar);

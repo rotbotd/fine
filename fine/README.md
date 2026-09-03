@@ -156,6 +156,24 @@ The final command reparses and rechecks `explicit.fine` with proof search
 forbidden. The default remains deterministic enumeration so the complete
 frontier stays a stable reference rather than an accidental solver model.
 
+An intentionally bounded checkpoint writes the best partial proof as ordinary
+Fine with typed holes:
+
+```sh
+build/proof-core/fine checkpoint --proof-budget 2 \
+  fine/fixtures/identity-checkpoint.fine > partial.fine
+# partial.fine contains trans[left, middle, right](p, ?)
+
+build/proof-core/fine checkpoint --proof-budget 2 partial.fine > complete.fine
+build/proof-core/fine run complete.fine
+```
+
+The first pass prefers one closed child over decorative applications around
+only open leaves. It reparses the emitted source and type-checks the fixed tree
+without treating `?` as evidence. The second pass resumes at that nested hole.
+Use `fine rain --checkpoint --proof-budget 2 ...` to retain the typed partial
+frontier and lifted model in Rainfall without emitting source.
+
 ## Browser playground
 
 The browser build compiles the ordinary Fine executable and this repository's

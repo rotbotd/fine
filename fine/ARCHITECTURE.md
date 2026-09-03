@@ -201,6 +201,32 @@ constructor tree; Fine lifts it to source and requires the source and cost to
 name one exact reference candidate. The model cannot add a production, change a
 type, or define the residual frontier.
 
+### Resumable partial proof checkpoints
+
+`fine checkpoint --proof-budget n file.fine` makes an unfinished search an
+ordinary Fine term rather than a dump of solver internals. In checkpoint mode,
+the identity-proof grammar adds a typed `open` production whose only lifted
+syntax is `?`. Applications may therefore retain checked children beside open
+children, for example `trans[left, middle, right](p, ?)`. Fine ranks a complete
+root above every partial tree. With no complete root it maximizes closed frontier
+obligations, then minimizes constructor cost, then keeps deterministic grammar
+order. A unary chain around an open leaf cannot beat the unchanged hole merely
+for being deeper.
+
+Fine compacts the productions of that preferred partial tree into the recursive
+Z3 datatype. The model must reproduce its completeness, closed-frontier count,
+open-leaf count, cost, and exact source tree before lifting. The checkpoint then
+replaces the original hole through its concrete range and reparses. Validation
+checks every fixed proof application with synthesis disabled, never absorbs an
+open proof into the SMT context, and stops the run at the incomplete declaration.
+Running `checkpoint` again searches the nested holes in their now-explicit
+context; `identity-checkpoint.fine` closes its second child on the second pass.
+
+This is an epoch boundary, not arbitrary asynchronous interruption yet. A later
+cancellable driver may retain the last completed epoch and invoke this same
+materializer; it must not scrape Z3's private learned clauses and call them proof
+structure.
+
 ## Rainfall boundary
 
 The existing manager-local term registry and `fine.generated-term.v1` renderer
@@ -221,6 +247,9 @@ Model selection adds `proof.model.grammar`, `proof.model.solve`, and
 `proof.model.lift` as separate events. Replay requires the grammar to cite the
 complete reference frontier, the solve to cite that grammar, the lift to cite a
 typed candidate, and the later selection to use exactly that candidate.
+Checkpoint traces additionally retain `complete`, `closed_frontier`, and
+`open_leaves`; terminal status is `checkpointed`, and no later assertion may
+appear in the trace after an open proof.
 
 A proof source node is not falsely attached to a Z3 proof term. Z3 receives the
 proposition which the source proof licenses; Fine retains the proof's own static

@@ -364,6 +364,29 @@
           cmp "$src/fine/fixtures/identity-transitivity-materialized.fine" \
             "$z3_transitivity_materialized"
 
+          checkpoint="$(mktemp)"
+          $out/bin/fine checkpoint --proof-budget 2 \
+            "$src/fine/fixtures/identity-checkpoint.fine" > "$checkpoint"
+          cmp "$src/fine/fixtures/identity-checkpoint-materialized.fine" "$checkpoint"
+
+          checkpoint_complete="$(mktemp)"
+          $out/bin/fine checkpoint --proof-budget 2 "$checkpoint" > "$checkpoint_complete"
+          cmp "$src/fine/fixtures/identity-checkpoint-complete.fine" "$checkpoint_complete"
+          $out/bin/fine run "$checkpoint_complete" | grep -F \
+            'verified assertion: identity_checkpoint.0'
+
+          shallow_checkpoint="$(mktemp)"
+          $out/bin/fine checkpoint --proof-budget 1 \
+            "$src/fine/fixtures/identity-checkpoint.fine" > "$shallow_checkpoint"
+          cmp "$src/fine/fixtures/identity-checkpoint.fine" "$shallow_checkpoint"
+
+          open_checkpoint_run="$(mktemp)"
+          if $out/bin/fine run "$checkpoint" > "$open_checkpoint_run" 2>&1; then
+            echo "ordinary run accepted a checkpoint with a residual proof hole" >&2
+            exit 1
+          fi
+          grep -F 'nested proof holes are not admitted' "$open_checkpoint_run"
+
           congruence_output="$($out/bin/fine run --proof-selector z3 \
             "$src/fine/fixtures/identity-congruence.fine")"
           echo "$congruence_output"
@@ -618,6 +641,48 @@
           assert lifted["data"]["in_reference_frontier"] is True
           assert lifted["data"]["reparse_required"] is True
           assert selected["data"]["candidate"] == lifted["data"]["candidate"]
+          PY
+
+          checkpoint_rain="$(mktemp)"
+          $out/bin/fine rain --checkpoint --proof-budget 2 \
+            "$src/fine/fixtures/identity-checkpoint.fine" > "$checkpoint_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/identity-checkpoint.fine" "$checkpoint_rain"
+          ${pkgs.python3}/bin/python - "$checkpoint_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          candidates = [e for e in events if e["operation"] == "proof.search.candidate"]
+          selected = next(e for e in events if e["operation"] == "proof.search.select")
+          solve = next(e for e in events if e["operation"] == "proof.model.solve")
+          close = next(e for e in events if e["operation"] == "proof.search.close")
+          terminal = events[-1]
+          assert any(e["data"]["production"] == "open" and e["data"]["body"] == "?"
+                     for e in candidates)
+          assert selected["data"]["body"] == "trans[left, middle, right](p, ?)"
+          assert selected["data"]["complete"] is False
+          assert solve["data"]["complete"] is False
+          assert solve["data"]["closed_frontier"] == 1
+          assert solve["data"]["open_leaves"] == 1
+          assert close["data"]["status"] == "checkpointed"
+          assert not any(e["operation"] == "assert.verify" for e in events)
+          assert terminal["operation"] == "proof-core.run.close"
+          assert terminal["data"]["status"] == "checkpointed"
+          assert terminal["data"]["proof_holes_checkpointed"] == 1
+          PY
+
+          resumed_rain="$(mktemp)"
+          $out/bin/fine rain --checkpoint --proof-budget 2 \
+            "$src/fine/fixtures/identity-checkpoint-materialized.fine" > "$resumed_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/identity-checkpoint-materialized.fine" "$resumed_rain"
+          ${pkgs.python3}/bin/python - "$resumed_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          selection = next(e for e in events if e["operation"] == "proof.search.select")
+          assert selection["data"]["body"] == "symm[right, middle](bool_eta[right]())"
+          assert selection["data"]["complete"] is True
+          assert any(e["operation"] == "assert.verify" for e in events)
+          assert events[-1]["data"]["status"] == "verified"
           PY
 
           projection="$(mktemp)"

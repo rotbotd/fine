@@ -70,6 +70,11 @@
                 <td><code>proof q: Id(Int, n, n) = ?;</code></td>
               </tr>
               <tr>
+                <td>partial proof checkpoint</td>
+                <td><code>fine checkpoint --proof-budget n</code> writes the best typed partial term as ordinary Fine. Checked subtrees remain syntax; unresolved leaves remain <code>?</code> and are never absorbed as evidence. Running checkpoint again resumes at those nested holes.</td>
+                <td><code>trans[left, middle, right](p, ?)</code></td>
+              </tr>
+              <tr>
                 <td>indexed proof hole</td>
                 <td>Deterministic search admits exact local family evidence and structurally decreasing IH applications. Wrong indices and the root are absent before enumeration; constructor and Z3-model search are not yet admitted.</td>
                 <td><code>even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;rebuilt_next[previous](?)<br>// ? &larr; rebuild[previous](prior)</code></td>

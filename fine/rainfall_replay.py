@@ -305,10 +305,15 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             identity_hole = type_kind == "proof-type.identity"
             grammar = data.get("grammar")
             expected_type = data.get("expected_type")
+            checkpoint_mode = data.get("checkpoint_mode")
+            identity_grammar = (["exact-local", "refl", "proof-application", "open"]
+                                if checkpoint_mode else
+                                ["exact-local", "refl", "proof-application"])
             type_shape_ok = ((identity_hole and isinstance(expected_type, str) and
                               expected_type.startswith("Id(") and
                               data.get("proposition") in terms and
-                              grammar == ["exact-local", "refl", "proof-application"]) or
+                              grammar == identity_grammar and
+                              isinstance(checkpoint_mode, bool)) or
                              (not identity_hole and isinstance(expected_type, str) and
                               expected_type and not expected_type.startswith("Id(") and
                               data.get("proposition") == "" and
@@ -327,13 +332,20 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             _require(hole in proof_holes and hole not in proof_holes_closed,
                      f"event {sequence}: proof candidate names no open proof hole")
             production = data.get("production")
+            complete = data.get("complete")
+            closed_frontier = data.get("closed_frontier")
+            open_leaves = data.get("open_leaves")
             _require(isinstance(data.get("body"), str) and data["body"] and
                      production in proof_holes[hole]["grammar"] and
                      data.get("expected_type") == proof_holes[hole]["expected_type"] and
                      data.get("exact_type") is True and
                      data.get("runtime_value_created") is False and
                      isinstance(data.get("cost"), int) and
-                     0 < data["cost"] <= proof_holes[hole]["max_cost"],
+                     0 <= data["cost"] <= proof_holes[hole]["max_cost"] and
+                     isinstance(complete, bool) and
+                     isinstance(closed_frontier, int) and closed_frontier >= 0 and
+                     isinstance(open_leaves, int) and open_leaves >= 0 and
+                     complete == (open_leaves == 0),
                      f"event {sequence}: malformed or ill-typed proof candidate")
             if production == "exact-local":
                 _require(data.get("proof") == data["body"],
@@ -342,6 +354,11 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                 _require("proof" not in data and data["body"].startswith("refl(") and
                          data["body"].endswith(")"),
                          f"event {sequence}: reflexivity candidate is not Fine proof syntax")
+            elif production == "open":
+                _require(data["body"] == "?" and data["cost"] == 0 and
+                         complete is False and closed_frontier == 0 and open_leaves == 1 and
+                         proof_holes[hole].get("checkpoint_mode") is True,
+                         f"event {sequence}: open candidate is not one typed residual hole")
             else:
                 indices = data.get("index_arguments")
                 arguments = data.get("proof_arguments")
@@ -382,6 +399,14 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      isinstance(productions, list) and productions and
                      all(isinstance(production, str) and production
                          for production in productions) and
+                     isinstance(data.get("preferred_complete"), bool) and
+                     isinstance(data.get("preferred_closed_frontier"), int) and
+                     data["preferred_closed_frontier"] >= 0 and
+                     isinstance(data.get("preferred_open_leaves"), int) and
+                     data["preferred_open_leaves"] >= 0 and
+                     isinstance(data.get("preferred_cost"), int) and
+                     0 <= data["preferred_cost"] <= data["max_cost"] and
+                     isinstance(data.get("preferred_source"), str) and data["preferred_source"] and
                      references == proof_candidates_by_hole[hole],
                      f"event {sequence}: malformed proof model grammar")
             proof_model_grammars[grammar] = event
@@ -393,11 +418,20 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      grammar_event.get("operation") == "proof.model.grammar" and
                      grammar_event["data"].get("hole") == hole and
                      data.get("grammar") == grammar_event["data"].get("grammar") and
+                     data.get("complete") == grammar_event["data"].get("preferred_complete") and
+                     data.get("closed_frontier") == grammar_event["data"].get("preferred_closed_frontier") and
+                     data.get("open_leaves") == grammar_event["data"].get("preferred_open_leaves") and
+                     data.get("cost") == grammar_event["data"].get("preferred_cost") and
                      data.get("status") == "sat" and
                      isinstance(data.get("model_value"), str) and
                      data["model_value"] and
                      isinstance(data.get("cost"), int) and
-                     0 < data["cost"] <= proof_holes[hole]["max_cost"] and
+                     0 <= data["cost"] <= proof_holes[hole]["max_cost"] and
+                     isinstance(data.get("complete"), bool) and
+                     isinstance(data.get("closed_frontier"), int) and
+                     data["closed_frontier"] >= 0 and
+                     isinstance(data.get("open_leaves"), int) and
+                     data["open_leaves"] >= 0 and
                      hole not in proof_model_solves,
                      f"event {sequence}: malformed proof datatype model result")
             proof_model_solves[hole] = event
@@ -409,6 +443,13 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      solve_event is proof_model_solves[hole] and
                      candidate is not None and candidate.get("hole") == hole and
                      data.get("body") == candidate.get("body") and
+                     data.get("complete") == candidate.get("complete") and
+                     solve_event["data"].get("complete") == candidate.get("complete") and
+                     solve_event["data"].get("closed_frontier") == candidate.get("closed_frontier") and
+                     solve_event["data"].get("open_leaves") == candidate.get("open_leaves") and
+                     (not proof_holes[hole].get("checkpoint_mode") or
+                      data.get("body") ==
+                      proof_model_grammars[solve_event["data"].get("grammar")]["data"].get("preferred_source")) and
                      data.get("in_reference_frontier") is True and
                      data.get("reparse_required") is True,
                      f"event {sequence}: proof model lift escaped its Fine frontier")
@@ -422,7 +463,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      candidate.get("hole") == hole,
                      f"event {sequence}: proof selection names no prior candidate")
             _require(data.get("body") == candidate.get("body") and
-                     data.get("production") == candidate.get("production"),
+                     data.get("production") == candidate.get("production") and
+                     data.get("complete") == candidate.get("complete"),
                      f"event {sequence}: proof selection changes its candidate")
             if hole in proof_model_lifts:
                 _require(data.get("candidate") == proof_model_lifts[hole]["data"].get("candidate"),
@@ -446,7 +488,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                                  if candidate != selected_candidate]
             _require(selected_candidate not in residual and residual == expected_residual,
                      f"event {sequence}: proof search close loses or reorders its finite frontier")
-            _require(data.get("status") == "selected" and
+            expected_status = "selected" if proof_candidates[selected_candidate].get("complete") else "checkpointed"
+            _require(data.get("status") == expected_status and
                      data.get("materialization_requested") is True,
                      f"event {sequence}: proof search did not request source materialization")
             proof_holes_closed.add(hole)

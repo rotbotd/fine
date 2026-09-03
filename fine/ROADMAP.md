@@ -298,6 +298,20 @@ transaction. Cancellation must not mutate the source; resumption must begin from
 the recorded typed frontier rather than an invented replay of Z3 internals; and
 materialization must commit one reparsed, rechecked document revision.
 
+The first checkpoint boundary is closed. `fine checkpoint --proof-budget n`
+adds typed open leaves to the identity grammar, ranks partial trees by completed
+root / closed frontier / constructor cost / grammar order, lifts the selected Z3
+datatype model to ordinary nested `?` syntax, and reparses it. Open evidence is
+never absorbed and later statements are not checked under it. A second command
+resumes the nested hole and can close the same document. `identity-checkpoint`
+forces one child of transitivity to close while the other remains open; at a
+shallower budget the unchanged root hole beats decorative unary structure.
+
+Still open here: cooperative bounded epochs, an interrupt signal which returns
+the last completed epoch, and one atomic editor transaction with undo. Those
+must reuse the checkpoint boundary rather than creating another proof-state
+format.
+
 This is where Rainfall becomes an editing instrument rather than a log viewer.
 The user should see which source hole and production Fine is working on, not a
 story inferred from solver callback order.

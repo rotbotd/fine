@@ -160,6 +160,13 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 
 ## Later, only after identity search earns it
 
+- [x] Materialize a bounded partial identity proof as ordinary Fine with nested
+      typed holes; rank closed frontier obligations ahead of decorative syntax,
+      reparse the fixed subtree without absorbing open evidence, and resume the
+      nested hole on a second checkpoint pass.
+- [ ] Drive checkpointing from cooperative search epochs and editor interruption;
+      commit the concrete-range edit as one undoable document transaction.
+
 - [ ] Add proof-only elimination only when a proof consumer cannot be expressed
       by context absorption and a checked proof function; reject elimination
       from proofs into runtime values.

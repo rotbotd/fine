@@ -23,6 +23,12 @@ token, comment, and whitespace byte in a concrete syntax tree while the
 existing AST remains the semantic view. Source materialization edits named
 concrete ranges and is checked by an exact parse/render roundtrip.
 
+Bounded identity search can now stop at a source-level checkpoint rather than
+discarding unfinished work. `fine checkpoint --proof-budget n` ranks typed
+partial trees, materializes checked subtrees around residual `?` leaves, and
+reparses without allowing an open proof to enter the solver context. Running it
+again resumes those nested holes.
+
 See [`fine/README.md`](fine/README.md) to run it,
 [`fine/ARCHITECTURE.md`](fine/ARCHITECTURE.md) for the current boundary, and
 [`fine/ROADMAP.md`](fine/ROADMAP.md) for the ordered slices. The
