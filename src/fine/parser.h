@@ -115,8 +115,17 @@ namespace fine::syntax {
         std::size_t node_id = 0;
         std::string name;
         ValueExpr value;
+        // Proof constructors keep their static indices in brackets and their
+        // structural children in parentheses. Proof functions instead use
+        // ordinary value arguments in parentheses and named virtual evidence
+        // through `using`, exactly as value-level coeffects do.
+        bool constructor_style = false;
         std::vector<ValueExpr> value_arguments;
         std::vector<ProofExpr> proof_arguments;
+        std::vector<std::string> using_coeffects;
+        std::vector<ProofExpr> using_proofs;
+        std::vector<SourceSpan> using_spans;
+        std::size_t call_argument_end = 0;
         // Proof-family patterns preserve static value binders and proof-field
         // binders separately. The scrutinee is intentionally a local proof
         // name in this first eliminator slice.
@@ -151,8 +160,9 @@ namespace fine::syntax {
         ValueExpr body;
     };
 
-    // Value parameters are static indices for the proof signature. Calls keep
-    // them visibly separate from proof evidence as `name[indices](proofs)`.
+    // Value parameters are static indices for the proof signature. A call uses
+    // ordinary value arguments and obtains virtual proof parameters through
+    // the same named `using`/lexical-search coeffect boundary as a value call.
     struct ProofFunctionDecl {
         SourceSpan span;
         std::size_t node_id = 0;

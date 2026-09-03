@@ -86,25 +86,26 @@ namespace fine::proof_model {
             }
             if (value.num_args() != production.arguments.size())
                 throw std::runtime_error("proof application model has the wrong child arity");
+            if (production.coeffects.size() != production.arguments.size())
+                throw std::runtime_error("proof application model lost its named coeffects");
 
             std::ostringstream source;
-            source << production.function;
-            if (!production.index_arguments.empty()) {
-                source << '[';
-                for (std::size_t i = 0; i < production.index_arguments.size(); ++i) {
-                    if (i)
-                        source << ", ";
-                    source << production.index_arguments[i];
-                }
-                source << ']';
+            source << production.function << '(';
+            for (std::size_t i = 0; i < production.index_arguments.size(); ++i) {
+                if (i)
+                    source << ", ";
+                source << production.index_arguments[i];
             }
-            source << '(';
+            source << ')';
+            if (!production.coeffects.empty())
+                source << " using [";
             for (unsigned i = 0; i < value.num_args(); ++i) {
                 if (i)
                     source << ", ";
-                source << lift(value.arg(i), grammar, names);
+                source << production.coeffects.at(i) << " = " << lift(value.arg(i), grammar, names);
             }
-            source << ')';
+            if (!production.coeffects.empty())
+                source << ']';
             return source.str();
         }
 

@@ -7,6 +7,6 @@ proof function truth_congruence(left: Bool, right: Bool)
 
 run identity_congruence {
   let x: Bool = true;
-  proof p: Id(Bool, x == false, (x == true) == false) = neg_characterization[x]();
-  proof lifted: Id(Bool, (x == false) == true, ((x == true) == false) == true) = truth_congruence[x == false, (x == true) == false](p);
+  proof p: Id(Bool, x == false, (x == true) == false) = neg_characterization(x);
+  proof lifted: Id(Bool, (x == false) == true, ((x == true) == false) == true) = truth_congruence(x == false, (x == true) == false) using [same = p];
 }

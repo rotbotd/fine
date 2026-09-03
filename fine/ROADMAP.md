@@ -131,7 +131,7 @@ Exit conditions:
 This slice is closed. Proof functions use explicit static indices and
 virtual `takes` parameters; their result proposition is checked under absorbed
 inputs before the declaration enters search. `identity-symmetry.fine` can close
-its reversed identity only with `symm[x, x == true](p)`, retains one nested
+its reversed identity only with `symm(x, x == true) using [given = p]`, retains one nested
 application as residual frontier, materializes exactly, and reruns without
 search. `reject-cyclic-proof-search.fine` establishes that a recursive grammar
 with no base inhabitant stops at cost three. `identity-transitivity.fine` then
@@ -234,7 +234,8 @@ so one child cannot stand in for joint support.
 Typed holes inside recursive arms are now closed for the exact first grammar.
 They enumerate matching locals and structurally admitted IH applications only;
 wrong-index locals and nondecreasing roots are absent before enumeration.
-`proof-inductive-holes.fine` uniquely selects `rebuild[previous](prior)`, retains
+`proof-inductive-holes.fine` uniquely selects
+`rebuild(previous) using [evidence = prior]`, retains
 the typed frontier in Rainfall, materializes, and reruns without search. A second
 hole selects exact local indexed evidence. Constructor synthesis and the Z3
 datatype-model selector remain separate slices.

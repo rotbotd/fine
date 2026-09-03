@@ -12,7 +12,7 @@ proof function loop(value: Nat)
   takes [evidence: Even(value)]
   inducts(evidence)
   -> Even(value) {
-  loop[value](evidence)
+  loop(value) using [evidence = evidence]
 }
 
 run reject_nondecreasing_proof_recursion {

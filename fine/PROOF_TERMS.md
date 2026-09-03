@@ -86,8 +86,12 @@ introduces symbolic indices, absorbs the parameter propositions, and refutes the
 negated result before admitting the declaration. There is no runtime function
 and value expressions reject calls to it.
 
-Explicit proof application keeps indices and evidence visibly separate as
-`symm[left, right](given)`. A hole searches backward from its exact expected
+Proof functions use ordinary value arguments and the same coeffect boundary as
+runtime functions: `symm(left, right)` searches exact caller-local evidence,
+while `symm(left, right) using [given = p]` supplies it explicitly. Proof
+constructors retain bracketed indices and parenthesized structural children
+because those children are the proof tree rather than contextual demands. A
+hole searches backward from its exact expected
 identity type. It binds index parameters from a matching result, recursively
 fills only the instantiated proof parameters, and admits application trees only
 within cost three. The frontier order remains exact local evidence, applicable
@@ -98,7 +102,7 @@ and residual alternatives.
 `identity-symmetry.fine` first constructs the non-definitional but valid Boolean
 identity `x = (x == true)` using a checked zero-premise proof function. Reversing
 it cannot use the local proof or `refl`; search selects
-`symm[x, x == true](p)`. The materialized application reparses and reruns with
+`symm(x, x == true) using [given = p]`. The materialized application reparses and reruns with
 search forbidden. An input-preserving cyclic proof function with no base proof
 exhausts the cost bound.
 
@@ -108,7 +112,7 @@ indices `(left, middle, right)` but the requested result mentions only `left` an
 against exact local evidence,
 uses those constraints to recover `middle`, and only then recursively enumerates
 both instantiated child types. The sole cost-three result is
-`trans[left, middle, right](p, q)`. Rainfall preserves the three ordered indices
+`trans(left, middle, right) using [first = p, second = q]`. Rainfall preserves the three ordered indices
 and the two child sources as separate arrays; the unrelated reflexive proof
 `wrong` never enters the tree. `reject-transitivity-gap.fine` removes `q`; the
 remaining reconstructible child costs two, making the application cost four,
@@ -131,13 +135,14 @@ exact child types and total cost bound as the enumerator.
 For `identity-transitivity.fine`, the compact grammar is precisely:
 
 ```text
-apply:trans[left, middle, right]/2
+apply:trans(left, middle, right)/2
 local:p
 local:q
 ```
 
 Z3 assigns the hole `(apply-trans local-p local-q)`. `ProofLift` maps constructor
-identities—not printed guesses—to `trans[left, middle, right](p, q)`. Fine then
+identities—not printed guesses—to
+`trans(left, middle, right) using [first = p, second = q]`. Fine then
 requires that source and cost to match an exact deterministic candidate before
 requesting materialization. `fine materialize --proof-selector z3` replaces the
 hole, reparses the complete document, and reruns with search forbidden.
@@ -205,16 +210,19 @@ proof function rebuild(value: Nat)
   match evidence {
     even_zero() => rebuilt_zero(),
     even_next[previous](prior) =>
-      rebuilt_next[previous](rebuild[previous](prior)),
+      rebuilt_next[previous](rebuild(previous)),
   }
 }
 ```
 
 The recursive spelling does not denote a runtime call. During the match, Fine's
 constructor table establishes that `prior` is a structurally smaller piece of
-`evidence`; `rebuild[previous](prior)` is therefore an application of the checked
-induction hypothesis. Matching `prior` again propagates the same root to its own
-recursive proof fields. The argument must be an exact named descendant. Neither
+`evidence`; the omitted coeffect in `rebuild(previous)` resolves to `prior`, so
+the call is an application of the checked induction hypothesis. Matching `prior`
+again propagates the same root to its own
+recursive proof fields. Materialization writes
+`rebuild(previous) using [evidence = prior]`. The selected evidence must be an
+exact named descendant. Neither
 an arbitrary proof expression nor the original `evidence` can pass the descent
 check.
 
@@ -240,7 +248,7 @@ plus its proof arguments under the same total bound of three.
 `proof-inductive-holes.fine` places the hole at `Rebuilt(previous)` in the
 recursive `Even` arm. `wrong: Rebuilt(succ(previous))` is absent by exact index
 identity, while `prior: Even(previous)` permits the sole IH candidate
-`rebuild[previous](prior)`. A second run-level hole selects exact local
+`rebuild(previous) using [evidence = prior]`. A second run-level hole selects exact local
 `zero_even`. Rainfall records each grammar, candidate, selection, and complete
 residual frontier. Materialization produces the explicit calls and reruns with
 proof search forbidden.

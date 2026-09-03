@@ -77,7 +77,7 @@ for (let sequence = first; sequence <= latest; ++sequence) {
   published.push(JSON.parse(new TextDecoder().decode(payload)));
 }
 if (published.length < 2 || published.at(-1).budget !== 2
-    || published.at(-1).body !== "trans[left, middle, right](p, ?)")
+    || published.at(-1).body !== "trans(left, middle, right) using [first = p, second = ?]")
   throw new Error(`pthread live mailbox omitted its ordered partial views: ${JSON.stringify(published)}`);
 const materialized = fine.FS.readFile("/live-output.fine", { encoding: "utf8" });
 if (published.at(-1).source !== materialized)

@@ -5273,3 +5273,94 @@ nix build --no-link --print-out-paths \
 # /nix/store/gvpdsqwizryd8p9yrj64r4girqldfr54-fine-playground-wasm-pthreads-0.1.0
 # /nix/store/j95kaa8z0sc4a5wzx83i9g6kknaylf0q-fine-playground-0.1.0
 ```
+
+## 2026-09-03 — one coeffect boundary for value and proof calls
+
+h rejected the old proof-call spelling `plus_shift[pa, pb, pc](rest)`: the
+square brackets exposed ordinary static value inputs as a second calling
+convention, while the positional proof argument bypassed the `takes` coeffect
+mechanism already used by value functions. The corrected proof call is
+`plus_shift(pa, pb, pc)`. Its value arguments instantiate the proof function's
+result and evidence demands; omitted evidence is selected by the same ordered,
+exact caller-local proof search as a value call. The explicit/materialized form
+is `plus_shift(pa, pb, pc) using [evidence = rest]`.
+
+The parser now distinguishes proof functions from proof constructors by source
+shape. A proof-function application uses ordinary parenthesized value arguments
+and an optional named `using` list whose right-hand sides are proof expressions.
+Indexed proof constructors retain `[indices](structural children)`: those
+children are the proof tree and are not contextual demands. A zero-field,
+zero-index constructor remains `constructor()`. A constructor with indices or
+proof children must use the constructor spelling, so old proof-function syntax
+is rejected after name resolution rather than silently reinterpreted.
+
+`elaborate_proof_application` instantiates each declared `takes` type, accepts a
+named explicit argument or searches `proof_order` for exact same-type evidence,
+rejects duplicate/unknown coeffect names, and emits the same demand/resolve/use
+Rainfall sequence with `runtime_argument_created: false`. Structural induction
+runs after resolution: the evidence chosen for the designated `inducts`
+coeffect must still be an exact named recursive field carrying the active root.
+This prevents the prettier syntax from weakening the descent check.
+
+Proof synthesis and the Z3 datatype selector now lift to the same source form.
+A generated identity tree is, for example,
+`trans(left, middle, right) using [first = p, second = q]`; an indexed IH is
+`rebuild(previous) using [evidence = prior]`. Ground model productions retain
+ordered coeffect names as well as function/index/child identities before
+lifting. The replay validator checks that every child source survives in the
+named `using` tree. Checkpoint materialization retains open children, e.g.
+`trans(left, middle, right) using [first = p, second = ?]`.
+
+The definition-only `top-level-declarations.fine` now contains h's requested
+implicit recursive call. Its output proves that `rest` is found lexically, and
+`top-level-declarations-materialized.fine` proves that the exact insertion
+reparses with implicit resolution disabled. This test exposed a separate bug
+from the previous optional-run slice: the engine copied pending concrete edits
+into `ExecutionResult` only inside `execute_run`, so edits requested while
+checking a definition-only proof body disappeared. Materialization collection
+now happens after optional run execution at the document boundary.
+
+Failed discriminators retained during the slice:
+
+- the first package build stopped on the deliberately unmigrated old
+  `plus_shift[...]` spelling;
+- the next stopped because Rainfall replay still required application sources to
+  end in `)`, erasing the new named evidence suffix;
+- the next reached definition-only materialization and exposed the missing
+  document-level edit collection;
+- the next differed only because the expected materialized fixture had omitted
+  the original phase-boundary comment;
+- the final pre-close failure was a stale exact expected string for the
+  congruence search result.
+
+Local discriminating commands after those fixes:
+
+```text
+cmake --build build/proof-core --target fine-bin -j2
+build/proof-core/fine materialize fine/fixtures/top-level-declarations.fine \
+  | cmp fine/fixtures/top-level-declarations-materialized.fine -
+build/proof-core/fine materialize fine/fixtures/identity-symmetry.fine \
+  | cmp fine/fixtures/identity-symmetry-materialized.fine -
+build/proof-core/fine materialize fine/fixtures/identity-transitivity.fine \
+  | cmp fine/fixtures/identity-transitivity-materialized.fine -
+build/proof-core/fine checkpoint --proof-budget 2 \
+  fine/fixtures/identity-checkpoint.fine
+build/proof-core/fine materialize fine/fixtures/proof-inductive-holes.fine \
+  | cmp fine/fixtures/proof-inductive-holes-materialized.fine -
+# local-key-tests-pass
+```
+
+Dirty-tree native install checks passed before this record was appended:
+
+```text
+nix build --no-link --print-out-paths .#default
+# /nix/store/w69fpa11inhw5pj0spad09pd1sqfylcg-fine-0.1.0
+nix build --no-link --print-out-paths .#playground .#playground-wasm-pthreads
+# /nix/store/bdn9lgsx7y5ksdl2lpfvjbzmxp2rw613-fine-playground-0.1.0
+# /nix/store/zfrcijwl5pgrwz0xvyhkckpb4panwjdc-fine-playground-wasm-pthreads-0.1.0
+```
+
+The browser reference now names the proof-call/coeffect split directly and all
+served examples, smoke expectations, current architecture documents, fixtures,
+and materialized snapshots use the accepted syntax. `using` was already a
+lexical keyword, so the highlighter needed no new token category.

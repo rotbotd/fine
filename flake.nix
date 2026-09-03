@@ -98,7 +98,13 @@
           echo "$definitions_output"
           grep -F 'verified proof function: even_pred' <<<"$definitions_output"
           grep -F 'verified proof function: plus_shift' <<<"$definitions_output"
+          grep -F 'resolved coeffect: plus_shift.evidence <- rest (lexical search)' <<<"$definitions_output"
           grep -F 'verified definitions' <<<"$definitions_output"
+          definitions_materialized="$(mktemp)"
+          $out/bin/fine materialize "$src/fine/fixtures/top-level-declarations.fine" \
+            > "$definitions_materialized"
+          cmp "$src/fine/fixtures/top-level-declarations-materialized.fine" \
+            "$definitions_materialized"
           definitions_rain="$(mktemp)"
           $out/bin/fine rain "$src/fine/fixtures/top-level-declarations.fine" \
             > "$definitions_rain"
@@ -204,7 +210,7 @@
 
           inductive_hole_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-holes.fine")"
           echo "$inductive_hole_output"
-          grep -F "filled proof hole: rebuild.result.even_next.prior <- rebuild[previous](prior) (typed search)" \
+          grep -F "filled proof hole: rebuild.result.even_next.prior <- rebuild(previous) using [evidence = prior] (typed search)" \
             <<<"$inductive_hole_output"
           grep -F "filled proof hole: copied <- zero_even (typed search)" <<<"$inductive_hole_output"
 
@@ -221,7 +227,7 @@
           candidates = [event["data"] for event in events
                         if event["operation"] == "proof.search.candidate"]
           assert [(item["production"], item["body"]) for item in candidates] == [
-              ("induction-hypothesis", "rebuild[previous](prior)"),
+              ("induction-hypothesis", "rebuild(previous) using [evidence = prior]"),
               ("exact-local", "zero_even"),
           ], candidates
           assert candidates[0]["recursive_evidence"] == "prior", candidates
@@ -351,7 +357,7 @@
           echo "$symmetry_output"
           grep -F "verified proof function: bool_eta" <<<"$symmetry_output"
           grep -F "verified proof function: symm" <<<"$symmetry_output"
-          grep -F "filled proof hole: reversed <- symm[x, x == true](p) (typed search)" \
+          grep -F "filled proof hole: reversed <- symm(x, x == true) using [given = p] (typed search)" \
             <<<"$symmetry_output"
 
           symmetry_materialized="$(mktemp)"
@@ -370,7 +376,7 @@
           transitivity_output="$($out/bin/fine run "$src/fine/fixtures/identity-transitivity.fine")"
           echo "$transitivity_output"
           grep -F "verified proof function: trans" <<<"$transitivity_output"
-          grep -F "filled proof hole: composed <- trans[left, middle, right](p, q) (typed search)" \
+          grep -F "filled proof hole: composed <- trans(left, middle, right) using [first = p, second = q] (typed search)" \
             <<<"$transitivity_output"
 
           transitivity_materialized="$(mktemp)"
@@ -389,7 +395,7 @@
           z3_transitivity_output="$($out/bin/fine run --proof-selector z3 \
             "$src/fine/fixtures/identity-transitivity.fine")"
           echo "$z3_transitivity_output"
-          grep -F "filled proof hole: composed <- trans[left, middle, right](p, q) (Z3 datatype model)" \
+          grep -F "filled proof hole: composed <- trans(left, middle, right) using [first = p, second = q] (Z3 datatype model)" \
             <<<"$z3_transitivity_output"
 
           z3_transitivity_materialized="$(mktemp)"
@@ -453,7 +459,7 @@
           congruence_output="$($out/bin/fine run --proof-selector z3 \
             "$src/fine/fixtures/identity-congruence.fine")"
           echo "$congruence_output"
-          grep -F 'filled proof hole: lifted <- truth_congruence[x == false, (x == true) == false](p) (Z3 datatype model)' \
+          grep -F 'filled proof hole: lifted <- truth_congruence(x == false, (x == true) == false) using [same = p] (Z3 datatype model)' \
             <<<"$congruence_output"
 
           congruence_materialized="$(mktemp)"
@@ -638,16 +644,16 @@
           applied = [e for e in events if e["operation"] == "proof.function.apply"]
           candidates = [e for e in events if e["operation"] == "proof.search.candidate"]
           assert [e["data"]["function"] for e in verified] == ["bool_eta", "symm"]
-          assert applied[0]["data"]["body"] == "bool_eta[x]()"
+          assert applied[0]["data"]["body"] == "bool_eta(x)"
           assert [e["data"]["body"] for e in candidates] == [
-              "symm[x, x == true](p)",
-              "symm[x, x == true](bool_eta[x]())",
+              "symm(x, x == true) using [given = p]",
+              "symm(x, x == true) using [given = bool_eta(x)]",
           ]
           assert all(e["data"]["production"] == "proof-application"
                      for e in candidates)
           assert [e["data"]["cost"] for e in candidates] == [2, 2]
           selection = next(e for e in events if e["operation"] == "proof.search.select")
-          assert selection["data"]["body"] == "symm[x, x == true](p)"
+          assert selection["data"]["body"] == "symm(x, x == true) using [given = p]"
           closed = events[-1]
           assert closed["operation"] == "proof-core.run.close"
           assert closed["data"]["proof_functions_verified"] == 2
@@ -665,7 +671,7 @@
           candidates = [e for e in events if e["operation"] == "proof.search.candidate"]
           assert len(candidates) == 1
           candidate = candidates[0]["data"]
-          assert candidate["body"] == "trans[left, middle, right](p, q)"
+          assert candidate["body"] == "trans(left, middle, right) using [first = p, second = q]"
           assert candidate["function"] == "trans"
           assert candidate["index_arguments"] == ["left", "middle", "right"]
           assert candidate["proof_arguments"] == ["p", "q"]
@@ -693,14 +699,14 @@
           selected = next(e for e in events if e["operation"] == "proof.search.select")
           assert grammar["data"]["max_cost"] == 3
           assert grammar["data"]["productions"] == [
-              "apply:trans[left, middle, right]/2", "local:p", "local:q"
+              "apply:trans(left, middle, right)/2", "local:p", "local:q"
           ]
           assert len(grammar["data"]["reference_candidates"]) == 1
           assert solve["data"]["grammar_event"] == grammar["event_id"]
           assert solve["data"]["model_value"] == "(apply-trans local-p local-q)"
           assert solve["data"]["cost"] == 3
           assert lifted["data"]["solve_event"] == solve["event_id"]
-          assert lifted["data"]["body"] == "trans[left, middle, right](p, q)"
+          assert lifted["data"]["body"] == "trans(left, middle, right) using [first = p, second = q]"
           assert lifted["data"]["in_reference_frontier"] is True
           assert lifted["data"]["reparse_required"] is True
           assert selected["data"]["candidate"] == lifted["data"]["candidate"]
@@ -718,7 +724,7 @@
           terminal = events[-1]
           assert any(e["data"]["production"] == "open" and e["data"]["body"] == "?"
                      for e in candidates)
-          assert selected["data"]["body"] == "trans[left, middle, right](p, ?)"
+          assert selected["data"]["body"] == "trans(left, middle, right) using [first = p, second = ?]"
           assert selected["data"]["complete"] is False
           assert solve["data"]["complete"] is False
           assert solve["data"]["closed_frontier"] == 1
@@ -739,7 +745,7 @@
           import json, pathlib, sys
           events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
           selection = next(e for e in events if e["operation"] == "proof.search.select")
-          assert selection["data"]["body"] == "symm[right, middle](bool_eta[right]())"
+          assert selection["data"]["body"] == "symm(right, middle) using [given = bool_eta(right)]"
           assert selection["data"]["complete"] is True
           assert any(e["operation"] == "assert.verify" for e in events)
           assert events[-1]["data"]["status"] == "verified"

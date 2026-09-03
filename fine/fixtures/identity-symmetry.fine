@@ -7,6 +7,6 @@ proof function symm(left: Bool, right: Bool)
 
 run identity_symmetry {
   let x: Bool = true;
-  proof p: Id(Bool, x, x == true) = bool_eta[x]();
+  proof p: Id(Bool, x, x == true) = bool_eta(x);
   proof reversed: Id(Bool, x == true, x) = ?;
 }

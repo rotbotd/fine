@@ -260,7 +260,7 @@ namespace fine {
             case syntax::ProofExpr::Kind::application: {
                 std::ostringstream result;
                 result << expression.name;
-                if (!expression.value_arguments.empty()) {
+                if (expression.constructor_style) {
                     result << '[';
                     for (std::size_t i = 0; i < expression.value_arguments.size(); ++i) {
                         if (i)
@@ -270,12 +270,30 @@ namespace fine {
                     result << ']';
                 }
                 result << '(';
-                for (std::size_t i = 0; i < expression.proof_arguments.size(); ++i) {
-                    if (i)
-                        result << ", ";
-                    result << print_proof(expression.proof_arguments[i]);
+                if (expression.constructor_style) {
+                    for (std::size_t i = 0; i < expression.proof_arguments.size(); ++i) {
+                        if (i)
+                            result << ", ";
+                        result << print_proof(expression.proof_arguments[i]);
+                    }
+                }
+                else {
+                    for (std::size_t i = 0; i < expression.value_arguments.size(); ++i) {
+                        if (i)
+                            result << ", ";
+                        result << print_value(expression.value_arguments[i]);
+                    }
                 }
                 result << ')';
+                if (!expression.using_coeffects.empty()) {
+                    result << " using [";
+                    for (std::size_t i = 0; i < expression.using_coeffects.size(); ++i) {
+                        if (i)
+                            result << ", ";
+                        result << expression.using_coeffects[i] << " = " << print_proof(expression.using_proofs[i]);
+                    }
+                    result << ']';
+                }
                 return result.str();
             }
             case syntax::ProofExpr::Kind::match: {
@@ -376,6 +394,8 @@ namespace fine {
                     declare_function(function);
                 if (document.run)
                     execute_run(*document.run);
+                for (auto const &[range, text] : materializations_)
+                    result_.materializations.push_back({{range.first, range.second}, text});
                 if (rainfall_) {
                     rainfall_->validate_terms();
                     std::vector<std::string> dependencies;
@@ -963,6 +983,11 @@ namespace fine {
                     production.kind = proof_model::ProductionKind::application;
                     production.function = *candidate.proof_function;
                     production.index_arguments = candidate.index_arguments;
+                    auto function = proof_functions_.find(production.function);
+                    if (function == proof_functions_.end())
+                        throw std::logic_error("proof candidate names an unknown proof function");
+                    for (auto const &parameter : function->second->proof_parameters)
+                        production.coeffects.push_back(parameter.name);
                     key = "apply:" + production.function;
                     for (auto const &index : production.index_arguments)
                         key += ":index:" + index;
@@ -1022,39 +1047,12 @@ namespace fine {
                     reject(expression.span, "unknown proof function `" + expression.name + "`");
                 }
                 syntax::ProofFunctionDecl const &function = *found->second;
+                if (expression.constructor_style)
+                    reject(expression.span, "proof function `" + expression.name +
+                                                "` uses ordinary value arguments and named `using` coeffects");
                 if (expression.value_arguments.size() != function.parameters.size())
                     reject(expression.span, "proof function `" + expression.name + "` expects " +
-                                                std::to_string(function.parameters.size()) + " index arguments");
-                if (expression.proof_arguments.size() != function.proof_parameters.size())
-                    reject(expression.span, "proof function `" + expression.name + "` expects " +
-                                                std::to_string(function.proof_parameters.size()) + " proof arguments");
-
-                bool induction_hypothesis_use = active_inductive_function_ == &function;
-                std::string recursive_evidence;
-                std::string recursive_parent;
-                if (induction_hypothesis_use) {
-                    auto parameter = std::find_if(
-                        function.proof_parameters.begin(), function.proof_parameters.end(),
-                        [&](syntax::CoeffectParameter const &candidate) {
-                            return candidate.name == *function.induction_parameter;
-                        });
-                    if (parameter == function.proof_parameters.end())
-                        throw std::logic_error("active induction parameter disappeared");
-                    std::size_t position = static_cast<std::size_t>(parameter - function.proof_parameters.begin());
-                    auto const &argument = expression.proof_arguments[position];
-                    if (argument.kind != syntax::ProofExpr::Kind::name)
-                        reject(argument.span, "recursive proof call `" + function.name +
-                                                  "` must use a named recursive constructor field for `" +
-                                                  *function.induction_parameter + "`");
-                    auto evidence = proofs.find(argument.name);
-                    if (evidence == proofs.end() || !evidence->second.structural_root ||
-                        *evidence->second.structural_root != *function.induction_parameter)
-                        reject(argument.span, "recursive proof call `" + function.name + "` does not descend through "
-                                              "a proof field of induction parameter `" +
-                                                  *function.induction_parameter + "`");
-                    recursive_evidence = argument.name;
-                    recursive_parent = evidence->second.structural_parent.value_or("");
-                }
+                                                std::to_string(function.parameters.size()) + " value arguments");
 
                 ValueEnvironment indices;
                 for (std::size_t i = 0; i < function.parameters.size(); ++i) {
@@ -1079,29 +1077,147 @@ namespace fine {
                 for (auto const &argument : expression.value_arguments)
                     index_sources.push_back(print_value(argument));
                 std::vector<std::string> argument_sources;
+                std::vector<std::optional<std::string>> named_arguments;
+                std::vector<syntax::SourceSpan> argument_spans;
                 bool arguments_complete = true;
+                auto record_coeffect = [&](syntax::CoeffectParameter const &coeffect,
+                                           std::string const &proof_source, bool explicit_choice) {
+                    ++result_.coeffects_resolved;
+                    output_ << "resolved coeffect: " << expression.name << '.' << coeffect.name << " <- "
+                            << proof_source << (explicit_choice ? " (explicit)" : " (lexical search)") << '\n';
+                    if (!rainfall_)
+                        return;
+                    rainfall_->record(
+                        "derive", "coeffect.demand.instantiate", {"proof-call:" + expression.name},
+                        "fine.proof-elaborator",
+                        "Value arguments instantiate the proof function's virtual evidence demand",
+                        {RainfallRecorder::string_field("function", expression.name),
+                         RainfallRecorder::string_field("coeffect", coeffect.name),
+                         RainfallRecorder::string_field("proof_type", print_proof_type(coeffect.type)),
+                         RainfallRecorder::boolean_field("proof_function", true)});
+                    rainfall_->record(
+                        "derive", "coeffect.resolve", {"proof-call:" + expression.name},
+                        "fine.lexical-proof-search",
+                        "Named evidence or exact caller-local evidence satisfies the proof function coeffect",
+                        {RainfallRecorder::string_field("function", expression.name),
+                         RainfallRecorder::string_field("coeffect", coeffect.name),
+                         RainfallRecorder::string_field("proof", proof_source),
+                         RainfallRecorder::string_field("mode", explicit_choice ? "explicit" : "exact-local"),
+                         RainfallRecorder::boolean_field("proof_function", true)});
+                    rainfall_->record(
+                        "derive", "coeffect.use", {"proof-call:" + expression.name}, "fine.proof-context",
+                        "Resolved proof evidence is supplied virtually to the proof function",
+                        {RainfallRecorder::string_field("function", expression.name),
+                         RainfallRecorder::string_field("coeffect", coeffect.name),
+                         RainfallRecorder::string_field("proof", proof_source),
+                         RainfallRecorder::boolean_field("runtime_argument_created", false),
+                         RainfallRecorder::boolean_field("proof_function", true)});
+                };
+                std::map<std::string, std::size_t> explicit_arguments;
+                for (std::size_t i = 0; i < expression.using_coeffects.size(); ++i) {
+                    if (!explicit_arguments.emplace(expression.using_coeffects[i], i).second)
+                        reject(expression.using_spans[i],
+                               "duplicate explicit coeffect `" + expression.using_coeffects[i] + "`");
+                }
+                std::vector<std::pair<std::string, std::string>> chosen_locals;
                 for (std::size_t i = 0; i < function.proof_parameters.size(); ++i) {
-                    if (expression.proof_arguments[i].kind == syntax::ProofExpr::Kind::hole &&
-                        !options_.validate_partial_proofs && !options_.synthesize_partial_proofs)
-                        reject(expression.proof_arguments[i].span, "nested proof holes are not admitted in this slice");
                     SemanticProofType parameter_type = elaborate_proof_type(
                         function.proof_parameters[i].type, indices, no_proofs, no_proof_order, no_absorbed);
-                    std::string argument_proof_source;
-                    std::string argument_type_source;
-                    if (rainfall_ && expression.proof_arguments[i].kind == syntax::ProofExpr::Kind::hole) {
-                        argument_proof_source = rainfall_->source_node(expression.proof_arguments[i].node_id,
-                                                                       expression.proof_arguments[i].span,
-                                                                       "proof.expression.hole");
-                        argument_type_source = rainfall_->source_node(function.proof_parameters[i].type.node_id,
-                                                                      function.proof_parameters[i].type.span,
-                                                                      "proof-type.identity");
+                    auto explicit_found = explicit_arguments.find(function.proof_parameters[i].name);
+                    if (explicit_found != explicit_arguments.end()) {
+                        auto const &argument_expression = expression.using_proofs[explicit_found->second];
+                        if (argument_expression.kind == syntax::ProofExpr::Kind::hole &&
+                            !options_.validate_partial_proofs && !options_.synthesize_partial_proofs)
+                            reject(argument_expression.span, "nested proof holes are not admitted in this slice");
+                        std::string argument_proof_source;
+                        std::string argument_type_source;
+                        if (rainfall_ && argument_expression.kind == syntax::ProofExpr::Kind::hole) {
+                            argument_proof_source = rainfall_->source_node(argument_expression.node_id,
+                                                                           argument_expression.span,
+                                                                           "proof.expression.hole");
+                            argument_type_source = rainfall_->source_node(function.proof_parameters[i].type.node_id,
+                                                                          function.proof_parameters[i].type.span,
+                                                                          "proof-type.identity");
+                        }
+                        ProofEvidence argument = elaborate_any_proof(
+                            argument_expression, function.proof_parameters[i].type, std::move(parameter_type), values,
+                            proofs, proof_order, absorbed, name + "." + function.proof_parameters[i].name, run,
+                            argument_proof_source, argument_type_source);
+                        arguments_complete = arguments_complete && argument.complete;
+                        argument_sources.push_back(print_proof(argument_expression));
+                        named_arguments.push_back(argument_expression.kind == syntax::ProofExpr::Kind::name
+                                                      ? std::optional<std::string>(argument_expression.name)
+                                                      : std::nullopt);
+                        argument_spans.push_back(argument_expression.span);
+                        record_coeffect(function.proof_parameters[i], argument_sources.back(), true);
+                        explicit_arguments.erase(explicit_found);
+                        continue;
                     }
-                    ProofEvidence argument = elaborate_any_proof(
-                        expression.proof_arguments[i], function.proof_parameters[i].type, std::move(parameter_type),
-                        values, proofs, proof_order, absorbed, name + "." + function.proof_parameters[i].name, run,
-                        argument_proof_source, argument_type_source);
+                    if (options_.require_explicit_coeffects)
+                        reject(expression.span, "implicit coeffect `" + expression.name + "." +
+                                                    function.proof_parameters[i].name +
+                                                    "` remains after materialization");
+                    std::string proof_name;
+                    for (auto const &candidate : proof_order) {
+                        auto candidate_found = proofs.find(candidate);
+                        if (candidate_found != proofs.end() &&
+                            same_type(context_, candidate_found->second.type, parameter_type)) {
+                            proof_name = candidate;
+                            break;
+                        }
+                    }
+                    if (proof_name.empty())
+                        reject(expression.span, "missing caller proof for coeffect `" + expression.name + "." +
+                                                    function.proof_parameters[i].name + " : " +
+                                                    print_proof_type(function.proof_parameters[i].type) + "`");
+                    auto const &argument = proofs.at(proof_name);
                     arguments_complete = arguments_complete && argument.complete;
-                    argument_sources.push_back(print_proof(expression.proof_arguments[i]));
+                    argument_sources.push_back(proof_name);
+                    named_arguments.push_back(proof_name);
+                    argument_spans.push_back(argument.span);
+                    chosen_locals.emplace_back(function.proof_parameters[i].name, proof_name);
+                    record_coeffect(function.proof_parameters[i], proof_name, false);
+                }
+                if (!explicit_arguments.empty())
+                    reject(expression.span,
+                           "proof call supplies unknown coeffect `" + explicit_arguments.begin()->first + "`");
+                if (expression.using_coeffects.empty() && !chosen_locals.empty()) {
+                    std::ostringstream insertion;
+                    insertion << " using [";
+                    for (std::size_t i = 0; i < chosen_locals.size(); ++i) {
+                        if (i)
+                            insertion << ", ";
+                        insertion << chosen_locals[i].first << " = " << chosen_locals[i].second;
+                    }
+                    insertion << ']';
+                    request_materialization(syntax::ConcreteRange::empty_at(expression.call_argument_end),
+                                            insertion.str(), expression.span);
+                }
+
+                bool induction_hypothesis_use = active_inductive_function_ == &function;
+                std::string recursive_evidence;
+                std::string recursive_parent;
+                if (induction_hypothesis_use) {
+                    auto parameter = std::find_if(
+                        function.proof_parameters.begin(), function.proof_parameters.end(),
+                        [&](syntax::CoeffectParameter const &candidate) {
+                            return candidate.name == *function.induction_parameter;
+                        });
+                    if (parameter == function.proof_parameters.end())
+                        throw std::logic_error("active induction parameter disappeared");
+                    std::size_t position = static_cast<std::size_t>(parameter - function.proof_parameters.begin());
+                    if (!named_arguments[position])
+                        reject(argument_spans[position], "recursive proof call `" + function.name +
+                                                             "` must use a named recursive constructor field for `" +
+                                                             *function.induction_parameter + "`");
+                    auto evidence = proofs.find(*named_arguments[position]);
+                    if (evidence == proofs.end() || !evidence->second.structural_root ||
+                        *evidence->second.structural_root != *function.induction_parameter)
+                        reject(argument_spans[position], "recursive proof call `" + function.name +
+                                                             "` does not descend through a proof field of induction "
+                                                             "parameter `" + *function.induction_parameter + "`");
+                    recursive_evidence = *named_arguments[position];
+                    recursive_parent = evidence->second.structural_parent.value_or("");
                 }
 
                 if (rainfall_ && induction_hypothesis_use)
@@ -1230,26 +1346,25 @@ namespace fine {
                             if (cost > budget)
                                 continue;
                             std::ostringstream source;
-                            source << function.name;
+                            source << function.name << '(';
                             std::vector<std::string> index_arguments;
-                            if (!function.parameters.empty()) {
-                                source << '[';
-                                for (std::size_t i = 0; i < function.parameters.size(); ++i) {
+                            for (std::size_t i = 0; i < function.parameters.size(); ++i) {
+                                if (i)
+                                    source << ", ";
+                                std::string const &argument = instantiation.sources.at(function.parameters[i].name);
+                                source << argument;
+                                index_arguments.push_back(argument);
+                            }
+                            source << ')';
+                            if (!argument_sources.empty()) {
+                                source << " using [";
+                                for (std::size_t i = 0; i < argument_sources.size(); ++i) {
                                     if (i)
                                         source << ", ";
-                                    std::string const &argument = instantiation.sources.at(function.parameters[i].name);
-                                    source << argument;
-                                    index_arguments.push_back(argument);
+                                    source << function.proof_parameters[i].name << " = " << argument_sources[i];
                                 }
                                 source << ']';
                             }
-                            source << '(';
-                            for (std::size_t i = 0; i < argument_sources.size(); ++i) {
-                                if (i)
-                                    source << ", ";
-                                source << argument_sources[i];
-                            }
-                            source << ')';
                             bool complete = true;
                             std::size_t closed_frontier = 0;
                             std::size_t open_leaves = 0;
@@ -1516,17 +1631,13 @@ namespace fine {
                         for (auto const &production : model_grammar->productions) {
                             if (production.kind == proof_model::ProductionKind::application) {
                                 std::ostringstream description;
-                                description << "apply:" << production.function;
-                                if (!production.index_arguments.empty()) {
-                                    description << '[';
-                                    for (std::size_t i = 0; i < production.index_arguments.size(); ++i) {
-                                        if (i)
-                                            description << ", ";
-                                        description << production.index_arguments[i];
-                                    }
-                                    description << ']';
+                                description << "apply:" << production.function << '(';
+                                for (std::size_t i = 0; i < production.index_arguments.size(); ++i) {
+                                    if (i)
+                                        description << ", ";
+                                    description << production.index_arguments[i];
                                 }
-                                description << '/' << production.arguments.size();
+                                description << ")/" << production.arguments.size();
                                 productions.push_back(description.str());
                             }
                             else {
@@ -1698,26 +1809,25 @@ namespace fine {
                     if (cost > max_proof_search_cost)
                         continue;
                     std::ostringstream source;
-                    source << function.name;
+                    source << function.name << '(';
                     std::vector<std::string> index_arguments;
-                    if (!function.parameters.empty()) {
-                        source << '[';
-                        for (std::size_t i = 0; i < function.parameters.size(); ++i) {
+                    for (std::size_t i = 0; i < function.parameters.size(); ++i) {
+                        if (i)
+                            source << ", ";
+                        std::string const &argument = instantiation->sources.at(function.parameters[i].name);
+                        source << argument;
+                        index_arguments.push_back(argument);
+                    }
+                    source << ')';
+                    if (!arguments.empty()) {
+                        source << " using [";
+                        for (std::size_t i = 0; i < arguments.size(); ++i) {
                             if (i)
                                 source << ", ";
-                            std::string const &argument = instantiation->sources.at(function.parameters[i].name);
-                            source << argument;
-                            index_arguments.push_back(argument);
+                            source << function.proof_parameters[i].name << " = " << arguments[i];
                         }
                         source << ']';
                     }
-                    source << '(';
-                    for (std::size_t i = 0; i < arguments.size(); ++i) {
-                        if (i)
-                            source << ", ";
-                        source << arguments[i];
-                    }
-                    source << ')';
                     candidates.push_back({source.str(), "induction-hypothesis", std::nullopt, function.name,
                                           std::move(index_arguments), arguments, cost, std::nullopt, {}});
                 }
@@ -1875,6 +1985,13 @@ namespace fine {
                     reject(expression.span, "unknown proof constructor `" + expression.name + "`");
                 }
                 auto const &constructor = *found->second;
+                if (!expression.constructor_style &&
+                    (!constructor.parameters.empty() || !constructor.proof_parameters.empty()))
+                    reject(expression.span, "proof constructor `" + expression.name +
+                                                "` keeps static indices in `[]` and structural children in `()`");
+                if (!expression.using_coeffects.empty())
+                    reject(expression.span, "proof constructor `" + expression.name +
+                                                "` has structural children, not contextual coeffects");
                 if (expression.value_arguments.size() != constructor.parameters.size())
                     reject(expression.span, "proof constructor `" + expression.name + "` expects " +
                                                 std::to_string(constructor.parameters.size()) + " index arguments");
@@ -2617,8 +2734,6 @@ namespace fine {
                     if (result_.checkpoint_open)
                         break;
                 }
-                for (auto const &[range, text] : materializations_)
-                    result_.materializations.push_back({{range.first, range.second}, text});
             }
 
             void execute_statement(syntax::LetDecl const &declaration, std::string const &run, std::size_t &,

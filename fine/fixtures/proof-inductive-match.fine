@@ -56,5 +56,5 @@ proof function contradictory_indices(value: Nat)
 
 run proof_inductive_match {
   proof zero_even: Even(zero) = even_zero();
-  proof zero_shape: EvenShape(zero) = expose_even[zero](zero_even);
+  proof zero_shape: EvenShape(zero) = expose_even(zero) using [evidence = zero_even];
 }

@@ -210,8 +210,9 @@ type, or define the residual frontier.
 `fine checkpoint --proof-budget n file.fine` makes an unfinished search an
 ordinary Fine term rather than a dump of solver internals. In checkpoint mode,
 the identity-proof grammar adds a typed `open` production whose only lifted
-syntax is `?`. Applications may therefore retain checked children beside open
-children, for example `trans[left, middle, right](p, ?)`. Fine ranks a complete
+syntax is `?`. Applications may therefore retain checked and open children as
+separate named coeffects, for example
+`trans(left, middle, right) using [first = p, second = ?]`. Fine ranks a complete
 root above every partial tree. With no complete root it maximizes closed frontier
 obligations, then minimizes constructor cost, then keeps deterministic grammar
 order. A unary chain around an open leaf cannot beat the unchanged hole merely

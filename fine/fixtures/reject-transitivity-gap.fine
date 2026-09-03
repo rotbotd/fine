@@ -13,8 +13,8 @@ run reject_transitivity_gap {
   let right: Bool = true;
   let middle: Bool = right == true;
   let left: Bool = middle == true;
-  proof base_left: Id(Bool, middle, left) = bool_eta[middle]();
-  proof p: Id(Bool, left, middle) = symm[middle, left](base_left);
-  proof base_right: Id(Bool, right, middle) = bool_eta[right]();
+  proof base_left: Id(Bool, middle, left) = bool_eta(middle);
+  proof p: Id(Bool, left, middle) = symm(middle, left) using [given = base_left];
+  proof base_right: Id(Bool, right, middle) = bool_eta(right);
   proof impossible: Id(Bool, left, right) = ?;
 }

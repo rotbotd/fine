@@ -2,7 +2,7 @@ proof inductive Absurd() {
 }
 
 proof function anything(n: Int) -> Absurd() {
-  anything[n]()
+  anything(n)
 }
 
 run reject_recursion_without_inducts {

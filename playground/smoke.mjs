@@ -51,7 +51,7 @@ for (const operation of ["proof.model.grammar", "proof.model.solve", "proof.mode
 const selections = selectedProofHoles(stdout);
 if (selections.length !== 1
     || selections[0].binding !== "composed"
-    || selections[0].body !== "trans[left, middle, right](p, q)")
+    || selections[0].body !== "trans(left, middle, right) using [first = p, second = q]")
   throw new Error(`unexpected selected proof holes: ${JSON.stringify(selections)}`);
 
 if (materializePath && expectedMaterializedPath) {

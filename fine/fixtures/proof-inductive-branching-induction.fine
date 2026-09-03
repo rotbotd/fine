@@ -24,7 +24,7 @@ proof function rebuild(tree: Tree)
   match evidence {
     grows_leaf() => rebuilt_leaf(),
     grows_node[left, right](left_grows, right_grows) =>
-      rebuilt_node[left, right](rebuild[left](left_grows), rebuild[right](right_grows)),
+      rebuilt_node[left, right](rebuild(left) using [evidence = left_grows], rebuild(right) using [evidence = right_grows]),
   }
 }
 
@@ -32,5 +32,5 @@ run proof_inductive_branching_induction {
   proof left: Grows(leaf) = grows_leaf();
   proof right: Grows(leaf) = grows_leaf();
   proof root: Grows(node(leaf, leaf)) = grows_node[leaf, leaf](left, right);
-  proof result: Rebuilt(node(leaf, leaf)) = rebuild[node(leaf, leaf)](root);
+  proof result: Rebuilt(node(leaf, leaf)) = rebuild(node(leaf, leaf)) using [evidence = root];
 }

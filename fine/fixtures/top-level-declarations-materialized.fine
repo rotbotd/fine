@@ -33,6 +33,6 @@ proof function plus_shift(a: Nat, b: Nat, c: Nat)
   match evidence {
     plus_zero[base]() => plus_zero[succ(base)](),
     plus_succ[pa, pb, pc](rest) =>
-      plus_succ[pa, succ(pb), succ(pc)](plus_shift(pa, pb, pc)),
+      plus_succ[pa, succ(pb), succ(pc)](plus_shift(pa, pb, pc) using [evidence = rest]),
   }
 }

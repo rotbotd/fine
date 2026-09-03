@@ -13,9 +13,9 @@ run identity_checkpoint {
   let right: Bool = true;
   let middle: Bool = right == true;
   let left: Bool = middle == true;
-  proof base_left: Id(Bool, middle, left) = bool_eta[middle]();
-  proof p: Id(Bool, left, middle) = symm[middle, left](base_left);
-  proof partial: Id(Bool, left, right) = trans[left, middle, right](p, symm[right, middle](bool_eta[right]()));
+  proof base_left: Id(Bool, middle, left) = bool_eta(middle);
+  proof p: Id(Bool, left, middle) = symm(middle, left) using [given = base_left];
+  proof partial: Id(Bool, left, right) = trans(left, middle, right) using [first = p, second = symm(right, middle) using [given = bool_eta(right)]];
   // An open checkpoint must never absorb left == right to verify this.
   assert left == right;
 }

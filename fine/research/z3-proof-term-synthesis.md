@@ -147,7 +147,8 @@ deterministic frontier.
 
 On `identity-transitivity.fine`, Z3 returns
 `(apply-trans local-p local-q)` and Fine lifts it to
-`trans[left, middle, right](p, q)`. `fine materialize --proof-selector z3`
+`trans(left, middle, right) using [first = p, second = q]`.
+`fine materialize --proof-selector z3`
 reparses and rechecks that complete source with search forbidden. Rainfall
 records the three boundary objects separately. This is a semantic integration
 result, not yet a performance result: complete deterministic enumeration still

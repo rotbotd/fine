@@ -74,7 +74,7 @@ proof function rebuild(value: Nat)
   match evidence {
     even_zero() => rebuilt_zero(),
     even_next[previous](prior) =>
-      rebuilt_next[previous](rebuild[previous](prior)),
+      rebuilt_next[previous](rebuild(previous)),
   }
 }
 ```
@@ -130,7 +130,7 @@ argument is an exact recursive field:
 
 ```fine
 even_next[previous](prior, wrong) => rebuilt_next[previous](?)
-// materializes the hole as rebuild[previous](prior)
+// materializes the hole as rebuild(previous) using [evidence = prior]
 ```
 
 The mismatched `wrong: Rebuilt(succ(previous))` and the nondecreasing root are
@@ -162,7 +162,7 @@ Fine with typed holes:
 ```sh
 build/proof-core/fine checkpoint --proof-budget 2 \
   fine/fixtures/identity-checkpoint.fine > partial.fine
-# partial.fine contains trans[left, middle, right](p, ?)
+# partial.fine contains trans(left, middle, right) using [first = p, second = ?]
 
 build/proof-core/fine checkpoint --proof-budget 2 partial.fine > complete.fine
 build/proof-core/fine run complete.fine

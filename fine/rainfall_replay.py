@@ -372,7 +372,10 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                          all(isinstance(argument, str) and argument
                              for argument in arguments) and
                          data["body"].startswith(function) and
-                         data["body"].endswith(")"),
+                         ((not arguments and data["body"].endswith(")")) or
+                          (arguments and " using [" in data["body"] and
+                           data["body"].endswith("]") and
+                           all(argument in data["body"] for argument in arguments))),
                          f"event {sequence}: proof application candidate loses its source tree")
                 if production == "induction-hypothesis":
                     induction_parameter = data.get("induction_parameter")

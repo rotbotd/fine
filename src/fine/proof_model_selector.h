@@ -22,6 +22,7 @@ namespace fine::proof_model {
         std::string source;
         std::string function;
         std::vector<std::string> index_arguments;
+        std::vector<std::string> coeffects;
         Type result;
         std::vector<Type> arguments;
     };

@@ -137,7 +137,8 @@ runtime recursion remain separate work.
       selector rather than changing the candidate language silently.
 
 Exit test: `proof-inductive-holes.fine` selects
-`rebuild[previous](prior)` inside the recursive arm and `zero_even` at run level.
+`rebuild(previous) using [evidence = prior]` inside the recursive arm and
+`zero_even` at run level.
 `reject-empty-inductive-hole.fine` removes `inducts`, leaving a wrong-index local
 but no admissible candidate. Constructor synthesis is not part of this slice.
 

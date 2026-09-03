@@ -19,11 +19,11 @@ proof function rebuild(value: Nat)
   -> Rebuilt(value) {
   match evidence {
     even_zero() => rebuilt_zero(),
-    even_next[previous](prior) => rebuilt_next[previous](rebuild[previous](prior)),
+    even_next[previous](prior) => rebuilt_next[previous](rebuild(previous) using [evidence = prior]),
   }
 }
 
 run proof_inductive_induction {
   proof zero_even: Even(zero) = even_zero();
-  proof rebuilt: Rebuilt(zero) = rebuild[zero](zero_even);
+  proof rebuilt: Rebuilt(zero) = rebuild(zero) using [evidence = zero_even];
 }

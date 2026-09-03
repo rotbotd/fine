@@ -28,5 +28,5 @@ proof function rebuild(value: Nat)
 run proof_inductive_holes {
   proof zero_even: Even(zero) = even_zero();
   proof copied: Even(zero) = ?;
-  proof rebuilt: Rebuilt(zero) = rebuild[zero](zero_even);
+  proof rebuilt: Rebuilt(zero) = rebuild(zero) using [evidence = zero_even];
 }

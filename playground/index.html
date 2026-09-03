@@ -72,17 +72,22 @@
               <tr>
                 <td>partial proof checkpoint</td>
                 <td><code>fine checkpoint --proof-budget n</code> writes the best typed partial term as ordinary Fine. In an isolated browser, <code>search checkpoints</code> deepens one identity hole inside Wasm while a Fine pthread lifts selected models into a shared ring; the page reparses and rechecks each source before showing it. Stop kills the search, then installs only that last validated source. Other clients retain disposable source epochs.</td>
-                <td><code>trans[left, middle, right](p, ?)</code></td>
+                <td><code>trans(left, middle, right) using [first = p, second = ?]</code></td>
               </tr>
               <tr>
                 <td>indexed proof hole</td>
                 <td>Deterministic search admits exact local family evidence and structurally decreasing IH applications. Wrong indices and the root are absent before enumeration; constructor and Z3-model search are not yet admitted.</td>
-                <td><code>even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;rebuilt_next[previous](?)<br>// ? &larr; rebuild[previous](prior)</code></td>
+                <td><code>even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;rebuilt_next[previous](?)<br>// ? &larr; rebuild(previous) using [evidence = prior]</code></td>
               </tr>
               <tr>
                 <td>proof function</td>
                 <td>Its result follows from its value indices and taken evidence; it cannot be called as runtime code.</td>
                 <td><code>proof function symm(left: Bool, right: Bool)<br>takes [p: Id(Bool, left, right)]<br>-&gt; Id(Bool, right, left);</code></td>
+              </tr>
+              <tr>
+                <td>proof function call</td>
+                <td>Value indices use ordinary parentheses. Omitted evidence is found by exact lexical coeffect search; <code>using</code> names the same demand explicitly. Unlike constructor children, this evidence is contextual.</td>
+                <td><code>symm(left, right)<br>symm(left, right) using [p = given]</code></td>
               </tr>
               <tr>
                 <td>indexed proof family</td>
@@ -102,7 +107,7 @@
               <tr>
                 <td>structural proof induction</td>
                 <td><code>inducts(evidence)</code> exposes the function to its own proof body only as an induction hypothesis. Each self-call must consume its exact recursive field; constructors with two fields retain two distinct IH edges. No runtime call is created.</td>
-                <td><code>proof function rebuild(value: Nat)<br>&nbsp;&nbsp;takes [evidence: Even(value)]<br>&nbsp;&nbsp;inducts(evidence)<br>&nbsp;&nbsp;-&gt; Rebuilt(value) {<br>&nbsp;&nbsp;match evidence {<br>&nbsp;&nbsp;&nbsp;&nbsp;even_zero() =&gt; rebuilt_zero(),<br>&nbsp;&nbsp;&nbsp;&nbsp;even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rebuilt_next[previous](rebuild[previous](prior)),<br>&nbsp;&nbsp;}<br>}</code></td>
+                <td><code>proof function rebuild(value: Nat)<br>&nbsp;&nbsp;takes [evidence: Even(value)]<br>&nbsp;&nbsp;inducts(evidence)<br>&nbsp;&nbsp;-&gt; Rebuilt(value) {<br>&nbsp;&nbsp;match evidence {<br>&nbsp;&nbsp;&nbsp;&nbsp;even_zero() =&gt; rebuilt_zero(),<br>&nbsp;&nbsp;&nbsp;&nbsp;even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rebuilt_next[previous](rebuild(previous)),<br>&nbsp;&nbsp;}<br>}</code></td>
               </tr>
               <tr>
                 <td>empty proof match</td>

@@ -558,6 +558,7 @@ namespace fine::syntax {
                     }
                     result.kind = ProofExpr::Kind::application;
                     if (at("[")) {
+                        result.constructor_style = true;
                         take();
                         if (!at("]")) {
                             while (true) {
@@ -568,18 +569,51 @@ namespace fine::syntax {
                             }
                         }
                         expect("]");
+                        expect("(");
+                        if (!at(")")) {
+                            while (true) {
+                                result.proof_arguments.push_back(proof_expression());
+                                if (!at(","))
+                                    break;
+                                take();
+                            }
+                        }
+                        Token end = expect(")");
+                        result.call_argument_end = end.span.end.offset;
+                        result.span.end = end.span.end;
+                        return result;
                     }
                     expect("(");
                     if (!at(")")) {
                         while (true) {
-                            result.proof_arguments.push_back(proof_expression());
+                            result.value_arguments.push_back(value_expression());
                             if (!at(","))
                                 break;
                             take();
                         }
                     }
                     Token end = expect(")");
+                    result.call_argument_end = end.span.end.offset;
                     result.span.end = end.span.end;
+                    if (at("using")) {
+                        take();
+                        expect("[");
+                        if (!at("]")) {
+                            while (true) {
+                                Token coeffect = identifier("coeffect name");
+                                expect("=");
+                                ProofExpr proof = proof_expression();
+                                result.using_coeffects.push_back(coeffect.text);
+                                result.using_spans.push_back({coeffect.span.begin, proof.span.end});
+                                result.using_proofs.push_back(std::move(proof));
+                                if (!at(","))
+                                    break;
+                                take();
+                            }
+                        }
+                        Token using_end = expect("]");
+                        result.span.end = using_end.span.end;
+                    }
                     return result;
                 }
                 result.kind = ProofExpr::Kind::reflexivity;
