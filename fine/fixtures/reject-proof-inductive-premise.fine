@@ -10,5 +10,5 @@ proof inductive Even(value: Nat) {
 
 run reject_proof_inductive_premise {
   proof zero_even: Even(zero) = even_zero();
-  proof bad: Even(succ(succ(succ(succ(zero))))) = even_next[succ(succ(zero))](zero_even);
+  proof bad: Even(succ(succ(succ(succ(zero))))) = even_next(succ(succ(zero))) using [prior = zero_even];
 }

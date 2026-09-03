@@ -72,10 +72,11 @@ recursive field.
 
 - [x] Add `proof inductive Family(indices)`, distinct from runtime `enum` and
       from the former Bool-valued predicate declarations.
-- [x] Give each static constructor explicit value indices, virtual proof fields,
-      and an exact indexed result type.
-- [x] Form nested constructor evidence while checking every recursive premise
-      and result index by same-manager AST identity.
+- [x] Give each static constructor actual value/proof parameters, optional
+      proof-irrelevant `takes` demands, and an exact indexed result type.
+- [x] Form nested constructor evidence while checking every explicit proof
+      parameter, contextual proof demand, and result index by same-manager AST
+      identity.
 - [x] Retain family declaration, constructor application, and evidence formation
       separately in Rainfall; create neither a Z3 runtime datatype nor a runtime
       proof value.
@@ -83,8 +84,9 @@ recursive field.
       constructor as a runtime function.
 
 Exit test: `proof-inductive-even.fine` forms `Even(zero)` and then
-`Even(succ(succ(zero)))` with `even_next[zero](zero_even)`. The family index is
-an ordinary runtime `Nat`; the inhabitants and constructor remain static.
+`Even(succ(succ(zero)))` with `even_next(zero)`, resolving its `prior` coeffect
+from exact local evidence. The family index is an ordinary runtime `Nat`; the
+inhabitants and constructor remain static.
 This closes introduction only. Proof matching, induction hypotheses, and holes
 must be added as separate slices rather than inferred from these declarations.
 
@@ -93,7 +95,8 @@ must be added as separate slices rather than inferred from these declarations.
 - [x] Allow checked proof-function bodies without creating runtime functions.
 - [x] Match only on indexed proof evidence and return only proof evidence.
 - [x] Unify constructor results before checking arms, refine symbolic indices,
-      and bind static values separately from virtual proof fields.
+      bind actual parameters positionally, and reintroduce each constructor
+      coeffect under its declared name.
 - [x] Compute exhaustiveness after refinement; reject both missing reachable
       arms and supplied unreachable arms.
 - [x] Admit zero-constructor families and zero-arm elimination, including an
@@ -115,8 +118,8 @@ separate non-exhaustiveness from an explicitly written impossible arm.
       exact descendant, never the root evidence or an arbitrary proof expression.
 - [x] Retain the function/root/parent/field edge in Rainfall without creating a
       runtime recursive call.
-- [x] Force two recursive constructor fields to produce two distinct IH-use
-      edges and require both results in the target constructor.
+- [x] Force two recursive constructor coeffects to produce two distinct IH-use
+      edges and require both explicit results in the target constructor.
 
 Exit test: `proof-inductive-induction.fine` recursively rebuilds an `Even`
 derivation. `reject-nondecreasing-proof-recursion.fine` passes the root evidence

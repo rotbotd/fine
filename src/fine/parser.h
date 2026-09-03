@@ -109,17 +109,18 @@ namespace fine::syntax {
 
     struct ProofExpr {
         enum class Kind { name, reflexivity, application, match, hole };
+        enum class ArgumentKind { value, proof };
 
         Kind kind = Kind::name;
         SourceSpan span;
         std::size_t node_id = 0;
         std::string name;
         ValueExpr value;
-        // Proof constructors keep their static indices in brackets and their
-        // structural children in parentheses. Proof functions instead use
-        // ordinary value arguments in parentheses and named virtual evidence
-        // through `using`, exactly as value-level coeffects do.
-        bool constructor_style = false;
+        // Calls have one ordinary positional list. The parser retains whether
+        // each surface argument had definitely value syntax or proof-capable
+        // syntax; declaration-directed elaboration resolves ambiguous names
+        // and calls without merging the value and proof semantic ASTs.
+        std::vector<ArgumentKind> argument_kinds;
         std::vector<ValueExpr> value_arguments;
         std::vector<ProofExpr> proof_arguments;
         std::vector<std::string> using_coeffects;
@@ -131,8 +132,7 @@ namespace fine::syntax {
         // name in this first eliminator slice.
         std::string matched_proof;
         std::vector<std::string> match_constructors;
-        std::vector<std::vector<std::string>> match_value_binders;
-        std::vector<std::vector<std::string>> match_proof_binders;
+        std::vector<std::vector<std::string>> match_binders;
         std::vector<SourceSpan> match_arm_spans;
         std::vector<ProofExpr> match_bodies;
     };
@@ -179,7 +179,12 @@ namespace fine::syntax {
         SourceSpan span;
         std::size_t node_id = 0;
         std::string name;
+        // Actual constructor parameters share one positional list at the
+        // surface, but remain separated by level in the semantic syntax.
         std::vector<ValueParameter> parameters;
+        std::vector<CoeffectParameter> explicit_proof_parameters;
+        // `takes` parameters are contextual demands, never positional proof
+        // children. A match reintroduces them under these declaration names.
         std::vector<CoeffectParameter> proof_parameters;
         ProofType result_type;
     };

@@ -21,7 +21,7 @@ proof function rebuild(value: Nat)
   -> Rebuilt(value) {
   match evidence {
     even_zero() => rebuilt_zero(),
-    even_next[previous](prior, wrong) => rebuilt_next[previous](?),
+    even_next(previous) => rebuilt_next(previous) using [prior = ?],
   }
 }
 

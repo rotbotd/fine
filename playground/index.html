@@ -77,7 +77,7 @@
               <tr>
                 <td>indexed proof hole</td>
                 <td>Deterministic search admits exact local family evidence and structurally decreasing IH applications. Wrong indices and the root are absent before enumeration; constructor and Z3-model search are not yet admitted.</td>
-                <td><code>even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;rebuilt_next[previous](?)<br>// ? &larr; rebuild(previous) using [evidence = prior]</code></td>
+                <td><code>even_next(previous) =&gt;<br>&nbsp;&nbsp;rebuilt_next(previous) using [prior = ?]<br>// ? &larr; rebuild(previous) using [evidence = prior]</code></td>
               </tr>
               <tr>
                 <td>proof function</td>
@@ -96,18 +96,18 @@
               </tr>
               <tr>
                 <td>indexed constructor evidence</td>
-                <td>Square brackets instantiate static value parameters; parentheses supply exact virtual proof fields.</td>
-                <td><code>proof two: Even(succ(succ(zero)))<br>&nbsp;&nbsp;= even_next[zero](zero_even);</code></td>
+                <td>Actual value and proof parameters use one positional list. A <code>takes</code> proof is a proof-irrelevant coeffect: omit it for exact local search or choose it with <code>using</code>.</td>
+                <td><code>proof two: Even(succ(succ(zero)))<br>&nbsp;&nbsp;= even_next(zero);<br>proof chosen: Even(succ(succ(zero)))<br>&nbsp;&nbsp;= even_next(zero) using [prior = zero_even];</code></td>
               </tr>
               <tr>
                 <td>indexed proof match</td>
-                <td>Constructor results refine symbolic indices before arm checking. Brackets bind static values, parentheses bind proof fields, and only reachable constructors are required.</td>
-                <td><code>match evidence {<br>&nbsp;&nbsp;even_zero() =&gt; shape_zero[value](refl(value)),<br>&nbsp;&nbsp;even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;shape_next[value, previous](refl(value), prior),<br>}</code></td>
+                <td>Constructor results refine symbolic indices before arm checking. Patterns bind actual parameters; each constructor coeffect reappears under its declared name, and only reachable constructors are required.</td>
+                <td><code>match evidence {<br>&nbsp;&nbsp;even_zero() =&gt; shape_zero(value) using [shape = refl(value)],<br>&nbsp;&nbsp;even_next(previous) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;shape_next(value, previous)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;using [shape = refl(value), recursive = prior],<br>}</code></td>
               </tr>
               <tr>
                 <td>structural proof induction</td>
                 <td><code>inducts(evidence)</code> exposes the function to its own proof body only as an induction hypothesis. Each self-call must consume its exact recursive field; constructors with two fields retain two distinct IH edges. No runtime call is created.</td>
-                <td><code>proof function rebuild(value: Nat)<br>&nbsp;&nbsp;takes [evidence: Even(value)]<br>&nbsp;&nbsp;inducts(evidence)<br>&nbsp;&nbsp;-&gt; Rebuilt(value) {<br>&nbsp;&nbsp;match evidence {<br>&nbsp;&nbsp;&nbsp;&nbsp;even_zero() =&gt; rebuilt_zero(),<br>&nbsp;&nbsp;&nbsp;&nbsp;even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rebuilt_next[previous](rebuild(previous)),<br>&nbsp;&nbsp;}<br>}</code></td>
+                <td><code>proof function rebuild(value: Nat)<br>&nbsp;&nbsp;takes [evidence: Even(value)]<br>&nbsp;&nbsp;inducts(evidence)<br>&nbsp;&nbsp;-&gt; Rebuilt(value) {<br>&nbsp;&nbsp;match evidence {<br>&nbsp;&nbsp;&nbsp;&nbsp;even_zero() =&gt; rebuilt_zero(),<br>&nbsp;&nbsp;&nbsp;&nbsp;even_next(previous) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rebuilt_next(previous, rebuild(previous)),<br>&nbsp;&nbsp;}<br>}</code></td>
               </tr>
               <tr>
                 <td>empty proof match</td>

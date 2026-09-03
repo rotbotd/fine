@@ -54,15 +54,20 @@ proof inductive Even(value: Nat) {
 }
 
 proof zero_even: Even(zero) = even_zero();
-proof two_even: Even(succ(succ(zero))) = even_next[zero](zero_even);
+proof two_even: Even(succ(succ(zero))) = even_next(zero);
+proof two_even_explicit: Even(succ(succ(zero)))
+  = even_next(zero) using [prior = zero_even];
 ```
 
-The bracketed arguments are static value indices and the parenthesized arguments
-are virtual proof fields. Proof functions may match indexed evidence in checked
-proof bodies. Each arm refines the scrutinee index to its constructor result and
-binds those two classes of fields separately. Exhaustiveness ignores impossible
-constructors, so a zero-constructor family and an impossible concrete index both
-admit `match evidence {}`. The match cannot return runtime data.
+Constructor actual parameters share one ordinary positional list. A proof-typed
+actual parameter is explicit and observable to proof construction; a `takes`
+parameter is instead a proof-irrelevant coeffect. Fine searches exact local
+evidence for an omitted constructor coeffect, while `using` chooses it explicitly.
+When matching, actual parameters receive positional binders and each constructor
+coeffect reappears as a branch-local handle under its declared name. Each arm
+refines the scrutinee index to its constructor result. Exhaustiveness ignores
+impossible constructors, so a zero-constructor family and an impossible concrete
+index both admit `match evidence {}`. The match cannot return runtime data.
 
 Structural proof recursion is explicit and proof-only:
 
@@ -73,8 +78,8 @@ proof function rebuild(value: Nat)
   -> Rebuilt(value) {
   match evidence {
     even_zero() => rebuilt_zero(),
-    even_next[previous](prior) =>
-      rebuilt_next[previous](rebuild(previous)),
+    even_next(previous) =>
+      rebuilt_next(previous, rebuild(previous)),
   }
 }
 ```
@@ -129,7 +134,7 @@ select exact local family evidence. Inside a function annotated with
 argument is an exact recursive field:
 
 ```fine
-even_next[previous](prior, wrong) => rebuilt_next[previous](?)
+even_next(previous) => rebuilt_next(previous) using [prior = ?]
 // materializes the hole as rebuild(previous) using [evidence = prior]
 ```
 

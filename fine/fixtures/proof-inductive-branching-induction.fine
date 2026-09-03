@@ -12,8 +12,8 @@ proof inductive Grows(tree: Tree) {
 
 proof inductive Rebuilt(tree: Tree) {
   rebuilt_leaf() -> Rebuilt(leaf);
-  rebuilt_node(left: Tree, right: Tree)
-    takes [left_rebuilt: Rebuilt(left), right_rebuilt: Rebuilt(right)]
+  rebuilt_node(left: Tree, right: Tree,
+    left_rebuilt: Rebuilt(left), right_rebuilt: Rebuilt(right))
     -> Rebuilt(node(left, right));
 }
 
@@ -23,14 +23,14 @@ proof function rebuild(tree: Tree)
   -> Rebuilt(tree) {
   match evidence {
     grows_leaf() => rebuilt_leaf(),
-    grows_node[left, right](left_grows, right_grows) =>
-      rebuilt_node[left, right](rebuild(left) using [evidence = left_grows], rebuild(right) using [evidence = right_grows]),
+    grows_node(left, right) =>
+      rebuilt_node(left, right, rebuild(left) using [evidence = left_grows], rebuild(right) using [evidence = right_grows]),
   }
 }
 
 run proof_inductive_branching_induction {
   proof left: Grows(leaf) = grows_leaf();
   proof right: Grows(leaf) = grows_leaf();
-  proof root: Grows(node(leaf, leaf)) = grows_node[leaf, leaf](left, right);
+  proof root: Grows(node(leaf, leaf)) = grows_node(leaf, leaf);
   proof result: Rebuilt(node(leaf, leaf)) = rebuild(node(leaf, leaf)) using [evidence = root];
 }

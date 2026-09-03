@@ -8,7 +8,11 @@ proof inductive Even(value: Nat) {
   even_next(previous: Nat) takes [prior: Even(previous)] -> Even(succ(succ(previous)));
 }
 
-run proof_inductive {
+proof inductive Boxed(value: Nat) {
+  boxed(value: Nat, evidence: Even(value)) -> Boxed(value);
+}
+
+run reject_explicit_proof_constructor_parameter {
   proof zero_even: Even(zero) = even_zero();
-  proof two_even: Even(succ(succ(zero))) = even_next(zero);
+  proof bad: Boxed(succ(succ(zero))) = boxed(succ(succ(zero)), zero_even);
 }

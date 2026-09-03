@@ -318,7 +318,9 @@ namespace fine::syntax {
                     ProofConstructorDecl item;
                     item.node_id = next_node_id_++;
                     item.name = constructor.text;
-                    item.parameters = value_parameters();
+                    auto [value_parameters, proof_parameters] = proof_constructor_parameters();
+                    item.parameters = std::move(value_parameters);
+                    item.explicit_proof_parameters = std::move(proof_parameters);
                     if (at("takes"))
                         item.proof_parameters = coeffect_parameters();
                     expect("->");
@@ -330,6 +332,37 @@ namespace fine::syntax {
                 Token end = take();
                 result.span = {begin.span.begin, end.span.end};
                 return result;
+            }
+
+            std::pair<std::vector<ValueParameter>, std::vector<CoeffectParameter>> proof_constructor_parameters() {
+                std::vector<ValueParameter> values;
+                std::vector<CoeffectParameter> proofs;
+                bool saw_proof = false;
+                expect("(");
+                if (!at(")")) {
+                    while (true) {
+                        Token name = identifier("proof constructor parameter name");
+                        expect(":");
+                        bool proof_typed = at("Id") || peek(1).text == "(";
+                        if (proof_typed) {
+                            ProofType type = proof_type();
+                            proofs.push_back({{name.span.begin, type.span.end}, name.text, std::move(type)});
+                            saw_proof = true;
+                        }
+                        else {
+                            if (saw_proof)
+                                fail(name, "value parameters must precede explicit proof parameters in a proof "
+                                           "constructor");
+                            ValueType type = value_type();
+                            values.push_back({{name.span.begin, type.span.end}, name.text, std::move(type)});
+                        }
+                        if (!at(","))
+                            break;
+                        take();
+                    }
+                }
+                expect(")");
+                return {std::move(values), std::move(proofs)};
             }
 
             CoeffectParameter coeffect_parameter() {
@@ -498,24 +531,11 @@ namespace fine::syntax {
                     while (!at("}")) {
                         Token constructor = identifier("proof match constructor");
                         SourcePosition arm_begin = constructor.span.begin;
-                        std::vector<std::string> value_binders;
-                        std::vector<std::string> proof_binders;
-                        if (at("[")) {
-                            take();
-                            if (!at("]")) {
-                                while (true) {
-                                    value_binders.push_back(identifier("proof match value binder").text);
-                                    if (!at(","))
-                                        break;
-                                    take();
-                                }
-                            }
-                            expect("]");
-                        }
+                        std::vector<std::string> binders;
                         expect("(");
                         if (!at(")")) {
                             while (true) {
-                                proof_binders.push_back(identifier("proof match evidence binder").text);
+                                binders.push_back(identifier("proof match binder").text);
                                 if (!at(","))
                                     break;
                                 take();
@@ -525,8 +545,7 @@ namespace fine::syntax {
                         expect("=>");
                         ProofExpr body = proof_expression();
                         result.match_constructors.push_back(constructor.text);
-                        result.match_value_binders.push_back(std::move(value_binders));
-                        result.match_proof_binders.push_back(std::move(proof_binders));
+                        result.match_binders.push_back(std::move(binders));
                         result.match_arm_spans.push_back({arm_begin, body.span.end});
                         result.match_bodies.push_back(std::move(body));
                         if (at(","))
@@ -557,36 +576,27 @@ namespace fine::syntax {
                         return result;
                     }
                     result.kind = ProofExpr::Kind::application;
-                    if (at("[")) {
-                        result.constructor_style = true;
-                        take();
-                        if (!at("]")) {
-                            while (true) {
-                                result.value_arguments.push_back(value_expression());
-                                if (!at(","))
-                                    break;
-                                take();
-                            }
-                        }
-                        expect("]");
-                        expect("(");
-                        if (!at(")")) {
-                            while (true) {
-                                result.proof_arguments.push_back(proof_expression());
-                                if (!at(","))
-                                    break;
-                                take();
-                            }
-                        }
-                        Token end = expect(")");
-                        result.call_argument_end = end.span.end.offset;
-                        result.span.end = end.span.end;
-                        return result;
-                    }
                     expect("(");
                     if (!at(")")) {
                         while (true) {
+                            std::size_t saved_cursor = cursor_;
+                            std::size_t saved_node_id = next_node_id_;
+                            bool accepted_proof = false;
+                            try {
+                                ProofExpr argument = proof_expression();
+                                if (at(",") || at(")")) {
+                                    result.argument_kinds.push_back(ProofExpr::ArgumentKind::proof);
+                                    result.proof_arguments.push_back(std::move(argument));
+                                    accepted_proof = true;
+                                }
+                            } catch (ParseError const &) {
+                            }
+                            if (!accepted_proof) {
+                                cursor_ = saved_cursor;
+                                next_node_id_ = saved_node_id;
+                                result.argument_kinds.push_back(ProofExpr::ArgumentKind::value);
                             result.value_arguments.push_back(value_expression());
+                            }
                             if (!at(","))
                                 break;
                             take();
@@ -801,9 +811,8 @@ namespace fine::syntax {
             declarations.push_back({ConcreteNodeKind::proof_function_declaration, declaration.span});
         if (tree.ast.run)
             declarations.push_back({ConcreteNodeKind::run_declaration, tree.ast.run->span});
-        std::sort(declarations.begin(), declarations.end(), [](auto const &left, auto const &right) {
-            return left.span.begin.offset < right.span.begin.offset;
-        });
+        std::sort(declarations.begin(), declarations.end(),
+                  [](auto const &left, auto const &right) { return left.span.begin.offset < right.span.begin.offset; });
         for (auto const &declaration : declarations) {
             ConcreteNode node;
             node.kind = declaration.kind;

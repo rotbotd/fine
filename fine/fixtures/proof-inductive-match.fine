@@ -28,8 +28,8 @@ proof function expose_even(value: Nat)
   takes [evidence: Even(value)]
   -> EvenShape(value) {
   match evidence {
-    even_zero() => shape_zero[value](refl(value)),
-    even_next[previous](prior) => shape_next[value, previous](refl(value), prior),
+    even_zero() => shape_zero(value) using [shape = refl(value)],
+    even_next(previous) => shape_next(value, previous) using [shape = refl(value), recursive = prior],
   }
 }
 

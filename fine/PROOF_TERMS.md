@@ -89,9 +89,9 @@ and value expressions reject calls to it.
 Proof functions use ordinary value arguments and the same coeffect boundary as
 runtime functions: `symm(left, right)` searches exact caller-local evidence,
 while `symm(left, right) using [given = p]` supplies it explicitly. Proof
-constructors retain bracketed indices and parenthesized structural children
-because those children are the proof tree rather than contextual demands. A
-hole searches backward from its exact expected
+constructors use the same surface distinction: actual value or proof parameters
+are positional, while `takes` introduces an omitted or explicitly named
+coeffect. A hole searches backward from its exact expected
 identity type. It binds index parameters from a matching result, recursively
 fills only the instantiated proof parameters, and admits application trees only
 within cost three. The frontier order remains exact local evidence, applicable
@@ -163,9 +163,18 @@ terms, but its inhabitants remain `ProofEvidence` and cannot enter execution.
 The first family is `Even(value: Nat)`. `even_zero()` has exact result
 `Even(zero)`. `even_next(previous: Nat)` requires virtual evidence
 `Even(previous)` and has exact result `Even(succ(succ(previous)))`. Applying it
-as `even_next[zero](zero_even)` checks the static argument, recursive proof field,
-and result index by manager-local AST identity. A semantic equality at a
-different term identity is not silently accepted.
+as `even_next(zero)` searches exact local evidence for its `prior` coeffect;
+`even_next(zero) using [prior = zero_even]` makes the same choice explicitly.
+The value argument, recursive proof demand, and result index are checked by
+manager-local AST identity. A semantic equality at a different term identity is
+not silently accepted.
+
+This distinction is structural. Constructor parameters written in the ordinary
+parameter list are positional, including proof-typed parameters when a
+constructor must retain that particular proof. Parameters written in `takes`
+are proof-irrelevant demands: their satisfying proof is not a child of the
+constructed term. A match binds positional parameters from its pattern and
+places every taken proof in the arm scope under the coeffect's declared name.
 
 This is not a hidden Bool predicate or a Z3 runtime proof datatype.
 
@@ -173,14 +182,16 @@ This is not a hidden Bool predicate or a Z3 runtime proof datatype.
 
 A proof function may have a checked proof body. `match evidence` accepts only
 indexed-family evidence and produces another proof; it cannot produce runtime
-data. Patterns keep static value binders in brackets and virtual proof fields in
-parentheses, matching constructor application syntax:
+data. Patterns bind actual constructor parameters in one ordinary positional
+list. Taken coeffects need no pattern slot and reappear under their declaration
+names:
 
 ```fine
 match evidence {
-  even_zero() => shape_zero[value](refl(value)),
-  even_next[previous](prior) =>
-    shape_next[value, previous](refl(value), prior),
+  even_zero() => shape_zero(value) using [shape = refl(value)],
+  even_next(previous) =>
+    shape_next(value, previous)
+      using [shape = refl(value), recursive = prior],
 }
 ```
 
@@ -209,8 +220,8 @@ proof function rebuild(value: Nat)
   -> Rebuilt(value) {
   match evidence {
     even_zero() => rebuilt_zero(),
-    even_next[previous](prior) =>
-      rebuilt_next[previous](rebuild(previous)),
+    even_next(previous) =>
+      rebuilt_next(previous, rebuild(previous)),
   }
 }
 ```

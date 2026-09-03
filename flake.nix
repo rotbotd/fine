@@ -157,8 +157,15 @@
           echo "$inductive_output"
           grep -F "declared proof inductive: Even (2 constructors, static)" <<<"$inductive_output"
           grep -F "formed proof: zero_even : Even(zero) (virtual)" <<<"$inductive_output"
+          grep -F "resolved coeffect: even_next.prior <- zero_even (lexical search)" <<<"$inductive_output"
           grep -F "formed proof: two_even : Even(succ(succ(zero))) (virtual)" <<<"$inductive_output"
           grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$inductive_output"
+
+          inductive_materialized="$(mktemp)"
+          $out/bin/fine materialize "$src/fine/fixtures/proof-inductive-even.fine" \
+            > "$inductive_materialized"
+          grep -F 'even_next(zero) using [prior = zero_even]' "$inductive_materialized"
+          $out/bin/fine run "$inductive_materialized"
 
           proof_match_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-match.fine")"
           echo "$proof_match_output"
@@ -184,6 +191,28 @@
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/proof-inductive-induction.fine" "$induction_rain"
           grep -F '"operation":"proof.induction.hypothesis.use"' "$induction_rain"
+          ${pkgs.python3}/bin/python - "$induction_rain" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              events = [json.loads(line) for line in stream]
+          branches = [event["data"] for event in events
+                      if event["operation"] == "proof.inductive.match.branch"]
+          recursive = next(branch for branch in branches
+                           if branch["constructor"] == "even_next")
+          assert recursive["value_binders"] == ["previous"], recursive
+          assert recursive["proof_binders"] == [], recursive
+          assert recursive["coeffect_binders"] == ["prior"], recursive
+          rebuilt = next(event["data"] for event in events
+                         if event["operation"] == "proof.inductive.constructor.apply"
+                         and event["data"]["constructor"] == "rebuilt_next")
+          assert rebuilt["value_arguments"] == ["previous"], rebuilt
+          assert rebuilt["proof_arguments"] == [
+              "rebuild(previous) using [evidence = prior]"
+          ], rebuilt
+          assert rebuilt["coeffects"] == [], rebuilt
+          PY
 
           branching_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-branching-induction.fine")"
           echo "$branching_output"
@@ -316,6 +345,16 @@
             exit 1
           fi
           grep -F 'proof `zero_even` has the wrong inductive type' "$bad_inductive_premise"
+
+          bad_explicit_constructor_proof="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-explicit-proof-constructor-parameter.fine" \
+              >"$bad_explicit_constructor_proof" 2>&1; then
+            echo "wrong explicit proof-constructor parameter unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'proof `zero_even` has the wrong inductive type' \
+            "$bad_explicit_constructor_proof"
 
           leaked_constructor="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-proof-constructor-as-value.fine" \
@@ -593,7 +632,18 @@
           }
           applications = [e for e in events if e["operation"] == "proof.inductive.constructor.apply"]
           assert [e["data"]["constructor"] for e in applications] == ["even_zero", "even_next"]
-          assert applications[1]["data"]["proof_arguments"] == ["zero_even"]
+          assert applications[1]["data"]["value_arguments"] == ["zero"]
+          assert applications[1]["data"]["proof_arguments"] == []
+          assert applications[1]["data"]["coeffects"] == ["zero_even"]
+          constructor_resolution = next(
+              e for e in events
+              if e["operation"] == "coeffect.resolve"
+              and e["data"].get("proof_constructor") is True
+          )
+          assert constructor_resolution["data"]["constructor"] == "even_next"
+          assert constructor_resolution["data"]["coeffect"] == "prior"
+          assert constructor_resolution["data"]["proof"] == "zero_even"
+          assert constructor_resolution["data"]["proof_identity_observable"] is False
           assert all(e["data"]["runtime_value_created"] is False for e in applications)
           forms = [e for e in events if e["operation"] == "proof.inductive.form"]
           assert [e["data"]["proof_type"] for e in forms] == [

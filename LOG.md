@@ -5364,3 +5364,99 @@ The browser reference now names the proof-call/coeffect split directly and all
 served examples, smoke expectations, current architecture documents, fixtures,
 and materialized snapshots use the accepted syntax. `using` was already a
 lexical keyword, so the highlighter needed no new token category.
+
+## 2026-09-03 — proof constructors share the coeffect boundary
+
+h caught a false distinction left by the preceding proof-call slice. I had kept
+indexed proof constructors as `[values](proofs)` on the claim that every proof
+premise was an observable structural child. That contradicted the declaration
+itself: a constructor parameter in `takes` is a proof-irrelevant contextual
+demand for exactly the same reason that a proof-function parameter in `takes`
+is one. The corrected surface has three exact forms:
+
+```fine
+even_next(previous, prior)                         // explicit proof parameter
+plus_succ(pa, pb, pc)                              // exact local search for rest
+plus_succ(pa, pb, pc) using [rest = available]    // explicit coeffect choice
+```
+
+A `proof inductive` constructor now separates actual parameters from coeffects
+at declaration time. Actual value parameters and actual proof-typed parameters
+share one ordinary positional list, with values required before proofs. A
+parameter written after `takes` is never positional. Constructor application
+instantiates the actual values, checks every explicit proof argument, then uses
+the same named-explicit-or-ordered-exact-local resolution rule as value and proof
+function calls. Materialization writes an omitted constructor choice as
+`using [name = local]` and reruns with implicit resolution forbidden.
+
+Proof matching follows the same boundary rather than inventing a second one.
+A pattern has one positional list for actual parameters. Every taken constructor
+coeffect is inserted into the branch proof environment under its declaration
+name without a pattern slot. This is a real local handle: identity evidence is
+absorbed into the branch SMT context, and same-family evidence receives the exact
+structural root/parent metadata needed by `inducts`. The selected proof at the
+constructor call is still unobservable; Rainfall distinguishes actual proof
+binders from coeffect binders, and the constructed evidence does not retain a
+positional child for a taken proof.
+
+The parser keeps `ValueExpr` and `ProofExpr` disjoint while accepting the shared
+surface list. It records the syntactic kind of each argument, then the
+declaration-directed elaborator reinterprets ambiguous proof-capable names and
+calls as value syntax only at a value position. This permits both
+`rebuilt_next(previous, rebuild(previous))` and ordinary nested value expressions
+without adding a proof-valued runtime variant. A value parameter after an
+explicit proof parameter is rejected so the surface split remains deterministic.
+
+Rainfall now emits demand-instantiation, exact resolution, and virtual use for a
+constructor coeffect. Each event records `proof_constructor: true` and
+`proof_identity_observable: false`; constructor application separately records
+actual value arguments, actual proof arguments, and coeffect sources. Match
+branches separately retain `value_binders`, `proof_binders`, and
+`coeffect_binders`. The `proof-inductive-induction` trace discriminates the two
+paths: `even_next(previous)` gives the arm an automatic coeffect local `prior`,
+while `rebuilt_next(previous, rebuild(...))` retains the rebuilt proof as an
+explicit positional child.
+
+Fixtures, materialized snapshots, architecture/proof/roadmap documents, README,
+TODO, and the served language reference were migrated away from the bracket
+calling convention. `reject-explicit-proof-constructor-parameter.fine` adds the
+negative boundary: an explicit proof child at the wrong indexed type is rejected,
+separately from the existing wrong-constructor-coeffect control. `enum` remains
+unchanged and still cannot declare `takes`.
+
+Local discriminators after implementation:
+
+```text
+cmake --build build/proof-core --target fine-bin -j2
+build/proof-core/fine run fine/fixtures/proof-inductive-even.fine
+# resolved coeffect: even_next.prior <- zero_even (lexical search)
+build/proof-core/fine materialize fine/fixtures/proof-inductive-even.fine
+# writes even_next(zero) using [prior = zero_even], then reparses explicitly
+build/proof-core/fine run fine/fixtures/proof-inductive-induction.fine
+# recursive arm uses the automatically introduced `prior`
+build/proof-core/fine run fine/fixtures/proof-inductive-branching-induction.fine
+# two constructor coeffects become two distinct branch/IH handles
+build/proof-core/fine materialize fine/fixtures/proof-inductive-holes.fine \
+  | cmp fine/fixtures/proof-inductive-holes-materialized.fine -
+build/proof-core/fine materialize fine/fixtures/top-level-declarations.fine \
+  | cmp fine/fixtures/top-level-declarations-materialized.fine -
+build/proof-core/fine rain fine/fixtures/proof-inductive-even.fine >/tmp/even-rain
+python fine/rainfall_validate.py fine/fixtures/proof-inductive-even.fine /tmp/even-rain
+# valid rainfall: events=16, source_nodes=4, terms=0,
+# source_term_edges=0, proof_holes=0
+build/proof-core/fine run \
+  fine/fixtures/reject-explicit-proof-constructor-parameter.fine
+# rejected: proof `zero_even` has the wrong inductive type
+nix flake check --print-build-logs
+# all checks passed
+```
+
+Dirty-tree package validation before this log entry was appended:
+
+```text
+nix build --no-link --print-out-paths .#default
+# /nix/store/2lcymgsdnndyv6acsrmlas74hcfgasfv-fine-0.1.0
+nix build --no-link --print-out-paths .#playground-wasm-pthreads .#playground
+# /nix/store/z3fnwghxgi2pygw4j8fgskravhy243jg-fine-playground-wasm-pthreads-0.1.0
+# /nix/store/164p524r0pdiaf3s87lfk3h1wqh3jm3z-fine-playground-0.1.0
+```

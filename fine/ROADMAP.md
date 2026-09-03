@@ -183,8 +183,9 @@ Exit conditions:
 
 Only after identity proof search and elimination work should Fine introduce an
 indexed inductive proof type such as `Step(term, next)`. Its constructors create
-derivation evidence. Constructor premises are proof fields, not Bool premises
-that the compiler later decorates with imaginary evidence.
+derivation evidence. Constructor proof premises are either explicit actual
+parameters or proof-irrelevant `takes` demands, not Bool premises that the
+compiler later decorates with imaginary evidence.
 
 The ordinary runtime-data prerequisite arrived independently before this slice.
 `enum` now declares a closed Z3 datatype with typed payloads and recursive self
@@ -202,17 +203,21 @@ and does not introduce a runtime proof datatype.
 Constructor introduction is now executable. `proof-inductive-even.fine`
 declares `Even(value: Nat)` with a base constructor and a recursive constructor
 whose virtual premise is `Even(previous)`. The constructor application
-`even_next[zero](zero_even)` forms evidence only when its proof field and exact
-result index agree. Rainfall retains declaration, constructor application, and
-formation separately while reporting that no runtime datatype or proof value was
-created. Controls reject a wrong index, a wrong recursive premise, and a proof
-constructor called from runtime value code.
+`even_next(zero)` forms evidence only when exact caller-local evidence satisfies
+its `prior` coeffect and the result index agrees; `using [prior = zero_even]`
+makes that choice explicit. Actual proof-typed constructor parameters remain
+ordinary positional children when proof identity matters. Rainfall retains
+declaration, constructor application, coeffect resolution, and formation
+separately while reporting that no runtime datatype or proof value was created.
+Controls reject a wrong index, a wrong recursive premise, and a proof constructor
+called from runtime value code.
 
 Proof-producing match is now executable. A body-bearing proof function may
 scrutinize indexed evidence; constructor-result unification refines symbolic
-indices before each arm is checked and binds static constructor parameters and
-virtual proof fields separately. `proof-inductive-match.fine` forces both
-refinements with `refl`, consumes the recursive `prior`, eliminates a
+indices before each arm is checked, binds actual constructor parameters
+positionally, and introduces taken evidence under its declaration name.
+`proof-inductive-match.fine` forces both refinements with `refl`, consumes the
+recursive `prior`, eliminates a
 zero-constructor family, and omits both impossible constructors of
 `Even(succ(zero))`. Exhaustiveness ranges over reachable constructors.
 
@@ -226,7 +231,7 @@ without an `inducts` clause. Rainfall retains the root, immediate parent,
 recursive field, and function separately.
 
 The branching control is also closed. `proof-inductive-branching-induction.fine`
-matches a binary-tree derivation whose node owns two same-family proof fields;
+matches a binary-tree derivation whose node has two same-family proof coeffects;
 the target constructor requires both recursive results. Rainfall retains two
 distinct IH edges, `left_grows` and `right_grows`, under the same exact parent,
 so one child cannot stand in for joint support.
@@ -244,8 +249,8 @@ Fine may lower the proposition to a Z3 relation for checking and search, but the
 source constructor table owns branch identity, field scope, recursive-premise
 links, and induction-hypothesis links. Solver lemmas remain summaries. If Z3
 projects two recursive premises into a unary invariant, Rainfall must show the
-projection without losing the two source proof fields or claiming the projection
-is their derivation.
+projection without losing the two source coeffect handles or claiming the
+projection is their derivation.
 
 Proof matching is initially proof-producing only. Runtime matches over ordinary
 value ADTs are a separate value-language feature; the two constructs must not

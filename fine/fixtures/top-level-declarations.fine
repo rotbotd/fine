@@ -14,7 +14,7 @@ proof function even_pred(value: Nat)
   takes [evidence: Even(succ(succ(value)))]
   -> Even(value) {
   match evidence {
-    even_next[previous](prior) => prior,
+    even_next(previous) => prior,
   }
 }
 
@@ -31,8 +31,8 @@ proof function plus_shift(a: Nat, b: Nat, c: Nat)
   inducts(evidence)
   -> Plus(a, succ(b), succ(c)) {
   match evidence {
-    plus_zero[base]() => plus_zero[succ(base)](),
-    plus_succ[pa, pb, pc](rest) =>
-      plus_succ[pa, succ(pb), succ(pc)](plus_shift(pa, pb, pc)),
+    plus_zero(base) => plus_zero(succ(base)),
+    plus_succ(pa, pb, pc) =>
+      plus_succ(pa, succ(pb), succ(pc)) using [rest = plus_shift(pa, pb, pc)],
   }
 }

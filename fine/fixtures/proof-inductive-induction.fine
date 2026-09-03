@@ -10,7 +10,7 @@ proof inductive Even(value: Nat) {
 
 proof inductive Rebuilt(value: Nat) {
   rebuilt_zero() -> Rebuilt(zero);
-  rebuilt_next(previous: Nat) takes [prior: Rebuilt(previous)] -> Rebuilt(succ(succ(previous)));
+  rebuilt_next(previous: Nat, prior: Rebuilt(previous)) -> Rebuilt(succ(succ(previous)));
 }
 
 proof function rebuild(value: Nat)
@@ -19,7 +19,7 @@ proof function rebuild(value: Nat)
   -> Rebuilt(value) {
   match evidence {
     even_zero() => rebuilt_zero(),
-    even_next[previous](prior) => rebuilt_next[previous](rebuild(previous) using [evidence = prior]),
+    even_next(previous) => rebuilt_next(previous, rebuild(previous) using [evidence = prior]),
   }
 }
 

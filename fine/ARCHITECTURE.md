@@ -89,12 +89,19 @@ proof inductive Even(value: Nat) {
 }
 ```
 
-`even_next[zero](zero_even)` checks its explicit static index, its virtual proof
-field, and the exact result index. Fine creates no corresponding runtime Z3
-datatype and does not expose `Even(value)` as a runtime Bool. A proof constructor
-therefore cannot occur in a value expression. This is the ATS split at the
-current boundary: values carry the runtime data; indices and evidence constrain
-it statically.
+`even_next(zero)` checks its explicit value parameter, searches exact local
+evidence for the `prior` coeffect, and checks the exact result index.
+`even_next(zero) using [prior = zero_even]` chooses the same demand explicitly.
+Fine creates no corresponding runtime Z3 datatype and does not expose
+`Even(value)` as a runtime Bool. A proof constructor therefore cannot occur in a
+value expression. This is the ATS split at the current boundary: values carry
+the runtime data; indices and evidence constrain it statically.
+
+Constructor actual parameters use one ordinary positional list. A proof-typed
+actual parameter is an explicit child. A parameter in `takes` is instead a
+proof-irrelevant coeffect: callers omit it for exact lexical search or choose it
+with `using`. A proof match binds only the actual parameters positionally; each
+coeffect becomes a branch-local handle under its declared name.
 
 Proof functions with bodies eliminate indexed evidence by proof-level matching:
 
@@ -103,9 +110,10 @@ proof function expose_even(value: Nat)
   takes [evidence: Even(value)]
   -> EvenShape(value) {
   match evidence {
-    even_zero() => shape_zero[value](refl(value)),
-    even_next[previous](prior) =>
-      shape_next[value, previous](refl(value), prior),
+    even_zero() => shape_zero(value) using [shape = refl(value)],
+    even_next(previous) =>
+      shape_next(value, previous)
+        using [shape = refl(value), recursive = prior],
   }
 }
 ```

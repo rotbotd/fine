@@ -259,30 +259,16 @@ namespace fine {
             case syntax::ProofExpr::Kind::reflexivity: return "refl(" + print_value(expression.value) + ")";
             case syntax::ProofExpr::Kind::application: {
                 std::ostringstream result;
-                result << expression.name;
-                if (expression.constructor_style) {
-                    result << '[';
-                    for (std::size_t i = 0; i < expression.value_arguments.size(); ++i) {
+                result << expression.name << '(';
+                std::size_t value_index = 0;
+                std::size_t proof_index = 0;
+                for (std::size_t i = 0; i < expression.argument_kinds.size(); ++i) {
                         if (i)
                             result << ", ";
-                        result << print_value(expression.value_arguments[i]);
-                    }
-                    result << ']';
-                }
-                result << '(';
-                if (expression.constructor_style) {
-                    for (std::size_t i = 0; i < expression.proof_arguments.size(); ++i) {
-                        if (i)
-                            result << ", ";
-                        result << print_proof(expression.proof_arguments[i]);
-                    }
-                }
-                else {
-                    for (std::size_t i = 0; i < expression.value_arguments.size(); ++i) {
-                        if (i)
-                            result << ", ";
-                        result << print_value(expression.value_arguments[i]);
-                    }
+                    if (expression.argument_kinds[i] == syntax::ProofExpr::ArgumentKind::value)
+                        result << print_value(expression.value_arguments[value_index++]);
+                    else
+                        result << print_proof(expression.proof_arguments[proof_index++]);
                 }
                 result << ')';
                 if (!expression.using_coeffects.empty()) {
@@ -302,21 +288,11 @@ namespace fine {
                 for (std::size_t i = 0; i < expression.match_constructors.size(); ++i) {
                     if (i)
                         result << ", ";
-                    result << expression.match_constructors[i];
-                    if (!expression.match_value_binders[i].empty()) {
-                        result << '[';
-                        for (std::size_t j = 0; j < expression.match_value_binders[i].size(); ++j) {
-                            if (j)
-                                result << ", ";
-                            result << expression.match_value_binders[i][j];
-                        }
-                        result << ']';
-                    }
-                    result << '(';
-                    for (std::size_t j = 0; j < expression.match_proof_binders[i].size(); ++j) {
+                    result << expression.match_constructors[i] << '(';
+                    for (std::size_t j = 0; j < expression.match_binders[i].size(); ++j) {
                         if (j)
                             result << ", ";
-                        result << expression.match_proof_binders[i][j];
+                        result << expression.match_binders[i][j];
                     }
                     result << ") => " << print_proof(expression.match_bodies[i]);
                 }
@@ -452,6 +428,76 @@ namespace fine {
 
             [[noreturn]] static void reject(syntax::SourceSpan span, std::string message) {
                 throw SemanticError(span, std::move(message));
+            }
+
+            syntax::ValueExpr proof_syntax_as_value(syntax::ProofExpr const &expression) {
+                syntax::ValueExpr result;
+                result.span = expression.span;
+                result.node_id = expression.node_id;
+                if (expression.kind == syntax::ProofExpr::Kind::name) {
+                    if (expression.name == "true" || expression.name == "false") {
+                        result.kind = syntax::ValueExpr::Kind::boolean;
+                        result.boolean_value = expression.name == "true";
+                    }
+                    else {
+                        result.kind = syntax::ValueExpr::Kind::name;
+                        result.name = expression.name;
+                    }
+                    return result;
+                }
+                if (expression.kind != syntax::ProofExpr::Kind::application || !expression.using_coeffects.empty())
+                    reject(expression.span,
+                           "expected a value argument, found proof syntax `" + print_proof(expression) + "`");
+                result.kind = syntax::ValueExpr::Kind::call;
+                result.name = expression.name;
+                result.call_argument_end = expression.call_argument_end;
+                std::size_t value_index = 0;
+                std::size_t proof_index = 0;
+                for (auto kind : expression.argument_kinds) {
+                    if (kind == syntax::ProofExpr::ArgumentKind::value)
+                        result.elements.push_back(expression.value_arguments[value_index++]);
+                    else
+                        result.elements.push_back(proof_syntax_as_value(expression.proof_arguments[proof_index++]));
+                }
+                return result;
+            }
+
+            syntax::ValueExpr positional_value_argument(syntax::ProofExpr const &expression, std::size_t position) {
+                std::size_t value_index = 0;
+                std::size_t proof_index = 0;
+                for (std::size_t i = 0; i < expression.argument_kinds.size(); ++i) {
+                    if (expression.argument_kinds[i] == syntax::ProofExpr::ArgumentKind::value) {
+                        if (i == position)
+                            return expression.value_arguments[value_index];
+                        ++value_index;
+                    }
+                    else {
+                        if (i == position)
+                            return proof_syntax_as_value(expression.proof_arguments[proof_index]);
+                        ++proof_index;
+                    }
+                }
+                throw std::logic_error("proof call positional value argument is out of range");
+            }
+
+            syntax::ProofExpr const &positional_proof_argument(syntax::ProofExpr const &expression,
+                                                               std::size_t position) {
+                std::size_t value_index = 0;
+                std::size_t proof_index = 0;
+                for (std::size_t i = 0; i < expression.argument_kinds.size(); ++i) {
+                    if (expression.argument_kinds[i] == syntax::ProofExpr::ArgumentKind::proof) {
+                        if (i == position)
+                            return expression.proof_arguments[proof_index];
+                        ++proof_index;
+                    }
+                    else {
+                        if (i == position)
+                            reject(expression.value_arguments[value_index].span,
+                                   "expected a proof argument in `" + print_proof(expression) + "`");
+                        ++value_index;
+                    }
+                }
+                throw std::logic_error("proof call positional proof argument is out of range");
             }
 
             void request_materialization(syntax::ConcreteRange range, std::string text, syntax::SourceSpan span) {
@@ -1047,22 +1093,21 @@ namespace fine {
                     reject(expression.span, "unknown proof function `" + expression.name + "`");
                 }
                 syntax::ProofFunctionDecl const &function = *found->second;
-                if (expression.constructor_style)
-                    reject(expression.span, "proof function `" + expression.name +
-                                                "` uses ordinary value arguments and named `using` coeffects");
-                if (expression.value_arguments.size() != function.parameters.size())
+                if (expression.argument_kinds.size() != function.parameters.size())
                     reject(expression.span, "proof function `" + expression.name + "` expects " +
                                                 std::to_string(function.parameters.size()) + " value arguments");
 
                 ValueEnvironment indices;
+                std::vector<syntax::ValueExpr> index_arguments;
                 for (std::size_t i = 0; i < function.parameters.size(); ++i) {
-                    ValueTerm argument =
-                        elaborate_value(expression.value_arguments[i], values, proofs, proof_order, absorbed);
+                    syntax::ValueExpr argument_syntax = positional_value_argument(expression, i);
+                    ValueTerm argument = elaborate_value(argument_syntax, values, proofs, proof_order, absorbed);
                     ValueKind expected_kind = kind_of(function.parameters[i].type);
                     if (argument.kind != expected_kind)
-                        reject(expression.value_arguments[i].span,
+                        reject(argument_syntax.span,
                                "index argument `" + function.parameters[i].name + "` has the wrong value type");
                     indices.emplace(function.parameters[i].name, std::move(argument));
+                    index_arguments.push_back(std::move(argument_syntax));
                 }
                 ProofEnvironment no_proofs;
                 std::vector<std::string> no_proof_order;
@@ -1121,8 +1166,8 @@ namespace fine {
                 }
                 std::vector<std::pair<std::string, std::string>> chosen_locals;
                 for (std::size_t i = 0; i < function.proof_parameters.size(); ++i) {
-                    SemanticProofType parameter_type = elaborate_proof_type(
-                        function.proof_parameters[i].type, indices, no_proofs, no_proof_order, no_absorbed);
+                    SemanticProofType parameter_type = elaborate_proof_type(function.proof_parameters[i].type, indices,
+                                                                            no_proofs, no_proof_order, no_absorbed);
                     auto explicit_found = explicit_arguments.find(function.proof_parameters[i].name);
                     if (explicit_found != explicit_arguments.end()) {
                         auto const &argument_expression = expression.using_proofs[explicit_found->second];
@@ -1979,55 +2024,151 @@ namespace fine {
                 auto found = proof_constructors_.find(expression.name);
                 if (found == proof_constructors_.end()) {
                     if (proof_functions_.contains(expression.name))
-                        return elaborate_proof_application(
-                            expression, expected_syntax, SemanticProofType(std::move(expected)), values, proofs,
+                        return elaborate_proof_application(expression, expected_syntax,
+                                                           SemanticProofType(std::move(expected)), values, proofs,
                             proof_order, absorbed, std::move(name), run);
                     reject(expression.span, "unknown proof constructor `" + expression.name + "`");
                 }
                 auto const &constructor = *found->second;
-                if (!expression.constructor_style &&
-                    (!constructor.parameters.empty() || !constructor.proof_parameters.empty()))
-                    reject(expression.span, "proof constructor `" + expression.name +
-                                                "` keeps static indices in `[]` and structural children in `()`");
-                if (!expression.using_coeffects.empty())
-                    reject(expression.span, "proof constructor `" + expression.name +
-                                                "` has structural children, not contextual coeffects");
-                if (expression.value_arguments.size() != constructor.parameters.size())
+                std::size_t positional_count =
+                    constructor.parameters.size() + constructor.explicit_proof_parameters.size();
+                if (expression.argument_kinds.size() != positional_count)
                     reject(expression.span, "proof constructor `" + expression.name + "` expects " +
-                                                std::to_string(constructor.parameters.size()) + " index arguments");
-                if (expression.proof_arguments.size() != constructor.proof_parameters.size())
-                    reject(expression.span, "proof constructor `" + expression.name + "` expects " +
-                                                std::to_string(constructor.proof_parameters.size()) +
-                                                " proof arguments");
+                                                std::to_string(positional_count) + " positional arguments");
 
                 ValueEnvironment indices;
+                std::vector<std::string> value_sources;
                 for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
-                    ValueTerm argument =
-                        elaborate_value(expression.value_arguments[i], values, proofs, proof_order, absorbed);
+                    syntax::ValueExpr argument_syntax = positional_value_argument(expression, i);
+                    ValueTerm argument = elaborate_value(argument_syntax, values, proofs, proof_order, absorbed);
                     require_known_type(constructor.parameters[i].type);
                     if (argument.kind != kind_of(constructor.parameters[i].type))
-                        reject(expression.value_arguments[i].span,
-                               "index argument `" + constructor.parameters[i].name + "` has the wrong value type");
+                        reject(argument_syntax.span,
+                               "value argument `" + constructor.parameters[i].name + "` has the wrong value type");
                     indices.emplace(constructor.parameters[i].name, std::move(argument));
+                    value_sources.push_back(print_value(argument_syntax));
                 }
 
                 ProofEnvironment constructor_proofs;
                 std::vector<std::string> constructor_proof_order;
                 std::vector<z3::expr> no_absorbed;
                 std::vector<std::string> proof_sources;
-                for (std::size_t i = 0; i < constructor.proof_parameters.size(); ++i) {
-                    auto const &parameter = constructor.proof_parameters[i];
+                for (std::size_t i = 0; i < constructor.explicit_proof_parameters.size(); ++i) {
+                    auto const &parameter = constructor.explicit_proof_parameters[i];
+                    auto const &argument_expression =
+                        positional_proof_argument(expression, constructor.parameters.size() + i);
                     SemanticProofType parameter_type = elaborate_proof_type(parameter.type, indices, constructor_proofs,
                                                                             constructor_proof_order, no_absorbed);
-                    ProofEvidence argument = elaborate_any_proof(expression.proof_arguments[i], parameter.type,
-                                                                 std::move(parameter_type), values, proofs, proof_order,
-                                                                 absorbed, name + "." + parameter.name, run, {}, {});
+                    ProofEvidence argument =
+                        elaborate_any_proof(argument_expression, parameter.type, std::move(parameter_type), values,
+                                            proofs, proof_order, absorbed, name + "." + parameter.name, run, {}, {});
                     if (!argument.complete)
-                        reject(expression.proof_arguments[i].span,
+                        reject(argument_expression.span,
                                "partial checkpoints inside indexed proof constructors are not yet supported");
-                    proof_sources.push_back(print_proof(expression.proof_arguments[i]));
+                    proof_sources.push_back(print_proof(argument_expression));
                     constructor_proofs.emplace(parameter.name, std::move(argument));
                     constructor_proof_order.push_back(parameter.name);
+                }
+
+                std::map<std::string, std::size_t> explicit_coeffects;
+                for (std::size_t i = 0; i < expression.using_coeffects.size(); ++i) {
+                    if (!explicit_coeffects.emplace(expression.using_coeffects[i], i).second)
+                        reject(expression.using_spans[i],
+                               "duplicate explicit coeffect `" + expression.using_coeffects[i] + "`");
+                }
+                std::vector<std::pair<std::string, std::string>> chosen_locals;
+                std::vector<std::string> coeffect_sources;
+                for (auto const &parameter : constructor.proof_parameters) {
+                    SemanticProofType parameter_type = elaborate_proof_type(parameter.type, indices, constructor_proofs,
+                                                                            constructor_proof_order, no_absorbed);
+                    std::string source;
+                    ProofEvidence supplied(parameter.name, parameter_type, "constructor-coeffect", parameter.span, "",
+                                           "");
+                    bool explicit_choice = false;
+                    auto explicit_found = explicit_coeffects.find(parameter.name);
+                    if (explicit_found != explicit_coeffects.end()) {
+                        auto const &argument_expression = expression.using_proofs[explicit_found->second];
+                        supplied = elaborate_any_proof(argument_expression, parameter.type, std::move(parameter_type),
+                                                       values, proofs, proof_order, absorbed,
+                                                       name + "." + parameter.name, run, {}, {});
+                        source = print_proof(argument_expression);
+                        explicit_choice = true;
+                        explicit_coeffects.erase(explicit_found);
+                    }
+                    else {
+                        if (options_.require_explicit_coeffects)
+                            reject(expression.span, "implicit coeffect `" + expression.name + "." + parameter.name +
+                                                        "` remains after materialization");
+                        for (auto const &candidate : proof_order) {
+                            auto candidate_found = proofs.find(candidate);
+                            if (candidate_found != proofs.end() &&
+                                same_type(context_, candidate_found->second.type, parameter_type)) {
+                                source = candidate;
+                                supplied = candidate_found->second;
+                                supplied.name = parameter.name;
+                                break;
+                            }
+                        }
+                        if (source.empty())
+                            reject(expression.span, "missing caller proof for coeffect `" + expression.name + "." +
+                                                        parameter.name + " : " + print_proof_type(parameter.type) +
+                                                        "`");
+                        chosen_locals.emplace_back(parameter.name, source);
+                    }
+                    if (!supplied.complete)
+                        reject(expression.span,
+                               "open proof cannot satisfy constructor coeffect `" + parameter.name + "`");
+                    coeffect_sources.push_back(source);
+                    constructor_proofs.insert_or_assign(parameter.name, std::move(supplied));
+                    constructor_proof_order.push_back(parameter.name);
+                    ++result_.coeffects_resolved;
+                    output_ << "resolved coeffect: " << expression.name << '.' << parameter.name << " <- " << source
+                            << (explicit_choice ? " (explicit)" : " (lexical search)") << '\n';
+                    if (rainfall_) {
+                        rainfall_->record(
+                            "derive", "coeffect.demand.instantiate", {"proof-constructor:" + expression.name},
+                            "fine.proof-elaborator",
+                            "Value and explicit proof arguments instantiate a proof constructor's virtual demand",
+                            {RainfallRecorder::string_field("constructor", expression.name),
+                             RainfallRecorder::string_field("coeffect", parameter.name),
+                             RainfallRecorder::string_field("proof_type", print_proof_type(parameter.type)),
+                             RainfallRecorder::boolean_field("proof_constructor", true),
+                             RainfallRecorder::boolean_field("proof_identity_observable", false)});
+                        rainfall_->record(
+                            "derive", "coeffect.resolve", {"proof-constructor:" + expression.name},
+                            "fine.lexical-proof-search",
+                            "A proof constructor demand is satisfied without making the selected proof observable",
+                            {RainfallRecorder::string_field("constructor", expression.name),
+                             RainfallRecorder::string_field("coeffect", parameter.name),
+                             RainfallRecorder::string_field("proof", source),
+                             RainfallRecorder::string_field("mode", explicit_choice ? "explicit" : "exact-local"),
+                             RainfallRecorder::boolean_field("proof_constructor", true),
+                             RainfallRecorder::boolean_field("proof_identity_observable", false)});
+                        rainfall_->record(
+                            "derive", "coeffect.use", {"proof-constructor:" + expression.name}, "fine.proof-context",
+                            "Resolved evidence satisfies the constructor demand without becoming a proof child",
+                            {RainfallRecorder::string_field("constructor", expression.name),
+                             RainfallRecorder::string_field("coeffect", parameter.name),
+                             RainfallRecorder::string_field("proof", source),
+                             RainfallRecorder::boolean_field("runtime_argument_created", false),
+                             RainfallRecorder::boolean_field("proof_constructor", true),
+                             RainfallRecorder::boolean_field("proof_identity_observable", false)});
+                    }
+                }
+                if (!explicit_coeffects.empty())
+                    reject(expression.span, "proof constructor call supplies unknown coeffect `" +
+                                                explicit_coeffects.begin()->first + "`");
+                if (expression.using_coeffects.empty() && !chosen_locals.empty()) {
+                    std::ostringstream insertion;
+                    insertion << " using [";
+                    for (std::size_t i = 0; i < chosen_locals.size(); ++i) {
+                        if (i)
+                            insertion << ", ";
+                        insertion << chosen_locals[i].first << " = " << chosen_locals[i].second;
+                    }
+                    insertion << ']';
+                    request_materialization(syntax::ConcreteRange::empty_at(expression.call_argument_end),
+                                            insertion.str(), expression.span);
                 }
                 SemanticProofType result_type = elaborate_proof_type(
                     constructor.result_type, indices, constructor_proofs, constructor_proof_order, no_absorbed);
@@ -2043,17 +2184,22 @@ namespace fine {
                         {RainfallRecorder::string_field("family", expected.family),
                          RainfallRecorder::string_field("constructor", constructor.name),
                          RainfallRecorder::string_field("body", print_proof(expression)),
+                         RainfallRecorder::raw_field("value_arguments", RainfallRecorder::string_array(value_sources)),
                          RainfallRecorder::raw_field("proof_arguments", RainfallRecorder::string_array(proof_sources)),
+                         RainfallRecorder::raw_field("coeffects", RainfallRecorder::string_array(coeffect_sources)),
                          RainfallRecorder::boolean_field("runtime_value_created", false)});
-                return {
-                    std::move(name), std::move(expected), "constructor:" + constructor.name, expression.span, "", "",
+                return {std::move(name),
+                        std::move(expected),
+                        "constructor:" + constructor.name,
+                        expression.span,
+                        "",
+                        "",
                     expected_syntax.arguments};
             }
 
             ProofEvidence elaborate_proof_match(syntax::ProofExpr const &expression,
-                                                syntax::ProofType const &expected_syntax,
-                                                SemanticProofType expected, ValueEnvironment const &values,
-                                                ProofEnvironment const &proofs,
+                                                syntax::ProofType const &expected_syntax, SemanticProofType expected,
+                                                ValueEnvironment const &values, ProofEnvironment const &proofs,
                                                 std::vector<std::string> const &proof_order,
                                                 std::vector<z3::expr> const &absorbed, std::string name,
                                                 std::string const &run) {
@@ -2155,26 +2301,23 @@ namespace fine {
                 for (std::size_t i = 0; i < expression.match_constructors.size(); ++i) {
                     std::string const &constructor_name = expression.match_constructors[i];
                     auto global = proof_constructors_.find(constructor_name);
-                    if (global == proof_constructors_.end() ||
-                        global->second->result_type.name != family.name)
-                        reject(expression.match_arm_spans[i], "proof constructor `" + constructor_name +
-                                                                "` does not belong to `" + family.name + "`");
+                    if (global == proof_constructors_.end() || global->second->result_type.name != family.name)
+                        reject(expression.match_arm_spans[i],
+                               "proof constructor `" + constructor_name + "` does not belong to `" + family.name + "`");
                     if (!seen.insert(constructor_name).second)
-                        reject(expression.match_arm_spans[i], "duplicate proof match arm for `" +
-                                                                constructor_name + "`");
+                        reject(expression.match_arm_spans[i],
+                               "duplicate proof match arm for `" + constructor_name + "`");
                     auto arm_found = reachable.find(constructor_name);
                     if (arm_found == reachable.end())
-                        reject(expression.match_arm_spans[i], "unreachable proof match arm `" + constructor_name +
-                                                                "` must be omitted");
+                        reject(expression.match_arm_spans[i],
+                               "unreachable proof match arm `" + constructor_name + "` must be omitted");
                     auto const &constructor = *arm_found->second.constructor;
-                    if (expression.match_value_binders[i].size() != constructor.parameters.size())
+                    std::size_t positional_binders =
+                        constructor.parameters.size() + constructor.explicit_proof_parameters.size();
+                    if (expression.match_binders[i].size() != positional_binders)
                         reject(expression.match_arm_spans[i], "proof match arm `" + constructor_name + "` expects " +
-                                                                std::to_string(constructor.parameters.size()) +
-                                                                " value binders");
-                    if (expression.match_proof_binders[i].size() != constructor.proof_parameters.size())
-                        reject(expression.match_arm_spans[i], "proof match arm `" + constructor_name + "` expects " +
-                                                                std::to_string(constructor.proof_parameters.size()) +
-                                                                " evidence binders");
+                                                                  std::to_string(positional_binders) +
+                                                                  " positional binders");
 
                     ValueEnvironment branch_values = arm_found->second.refined_values;
                     ProofEnvironment branch_proofs = proofs;
@@ -2182,7 +2325,7 @@ namespace fine {
                     std::vector<z3::expr> branch_absorbed = absorbed;
                     std::set<std::string> arm_names;
                     for (std::size_t j = 0; j < constructor.parameters.size(); ++j) {
-                        std::string const &binder = expression.match_value_binders[i][j];
+                        std::string const &binder = expression.match_binders[i][j];
                         if (!arm_names.insert(binder).second || branch_values.contains(binder) ||
                             branch_proofs.contains(binder))
                             reject(expression.match_arm_spans[i], "duplicate proof match binder `" + binder + "`");
@@ -2192,17 +2335,15 @@ namespace fine {
 
                     ProofEnvironment constructor_proofs;
                     std::vector<std::string> constructor_proof_order;
-                    for (std::size_t j = 0; j < constructor.proof_parameters.size(); ++j) {
-                        auto const &parameter = constructor.proof_parameters[j];
-                        SemanticProofType field_type = elaborate_proof_type(
-                            parameter.type, arm_found->second.constructor_values, constructor_proofs,
-                            constructor_proof_order, branch_absorbed);
-                        std::string const &binder = expression.match_proof_binders[i][j];
+                    auto bind_branch_proof = [&](syntax::CoeffectParameter const &parameter, std::string const &binder,
+                                                 std::string formation, std::string_view role) {
+                        SemanticProofType field_type =
+                            elaborate_proof_type(parameter.type, arm_found->second.constructor_values,
+                                                 constructor_proofs, constructor_proof_order, branch_absorbed);
                         if (!arm_names.insert(binder).second || branch_values.contains(binder) ||
                             branch_proofs.contains(binder))
                             reject(expression.match_arm_spans[i], "duplicate proof match binder `" + binder + "`");
-                        ProofEvidence field(binder, std::move(field_type),
-                                            "proof-match-field:" + expression.matched_proof,
+                        ProofEvidence field(binder, std::move(field_type), std::move(formation),
                                             expression.match_arm_spans[i], "", "", parameter.type.arguments);
                         auto field_inductive = std::get_if<InductiveType>(&field.type);
                         if (active_inductive_function_ && active_inductive_function_->induction_parameter &&
@@ -2218,35 +2359,53 @@ namespace fine {
                         auto [inserted, ok] = branch_proofs.emplace(binder, std::move(field));
                         branch_proof_order.push_back(binder);
                         absorb(inserted->second, branch_absorbed,
-                               {"proof-function:" + run, "proof-match:" + expression.matched_proof},
-                               "proof-match-field");
+                               {"proof-function:" + run, "proof-match:" + expression.matched_proof}, role);
+                        constructor_proofs.emplace(parameter.name, inserted->second);
+                        constructor_proof_order.push_back(parameter.name);
+                    };
+                    for (std::size_t j = 0; j < constructor.explicit_proof_parameters.size(); ++j) {
+                        auto const &parameter = constructor.explicit_proof_parameters[j];
+                        std::string const &binder = expression.match_binders[i][constructor.parameters.size() + j];
+                        bind_branch_proof(parameter, binder, "proof-match-explicit-field:" + expression.matched_proof,
+                                          "proof-match-explicit-field");
+                    }
+                    for (auto const &parameter : constructor.proof_parameters) {
+                        bind_branch_proof(parameter, parameter.name, "proof-match-coeffect:" + expression.matched_proof,
+                                          "proof-match-coeffect");
                     }
                     SemanticProofType branch_expected = elaborate_proof_type(
                         expected_syntax, branch_values, branch_proofs, branch_proof_order, branch_absorbed);
                     ProofEvidence branch = elaborate_any_proof(
                         expression.match_bodies[i], expected_syntax, std::move(branch_expected), branch_values,
-                        branch_proofs, branch_proof_order, branch_absorbed, name + "." + constructor_name, run, {},
-                        {});
+                        branch_proofs, branch_proof_order, branch_absorbed, name + "." + constructor_name, run, {}, {});
                     if (!branch.complete)
                         reject(expression.match_bodies[i].span,
                                "partial checkpoints inside proof matches are not yet supported");
-                    if (rainfall_)
+                    if (rainfall_) {
+                        std::vector<std::string> value_binders(expression.match_binders[i].begin(),
+                                                               expression.match_binders[i].begin() +
+                                                                   constructor.parameters.size());
+                        std::vector<std::string> proof_binders(expression.match_binders[i].begin() +
+                                                                   constructor.parameters.size(),
+                                                               expression.match_binders[i].end());
+                        std::vector<std::string> coeffect_binders;
+                        for (auto const &parameter : constructor.proof_parameters)
+                            coeffect_binders.push_back(parameter.name);
                         rainfall_->record(
-                            "derive", "proof.inductive.match.branch",
-                            {"proof-function:" + run, match_scope},
+                            "derive", "proof.inductive.match.branch", {"proof-function:" + run, match_scope},
                             "fine.proof-elaborator",
                             "One reachable constructor owns its index refinements and bound static/proof fields",
                             {RainfallRecorder::string_field("constructor", constructor_name),
                              RainfallRecorder::raw_field(
-                                 "refined_indices",
-                                 RainfallRecorder::string_array(arm_found->second.refined_indices)),
-                             RainfallRecorder::raw_field(
-                                 "value_binders",
-                                 RainfallRecorder::string_array(expression.match_value_binders[i])),
-                             RainfallRecorder::raw_field(
-                                 "proof_binders",
-                                 RainfallRecorder::string_array(expression.match_proof_binders[i])),
+                                 "refined_indices", RainfallRecorder::string_array(arm_found->second.refined_indices)),
+                             RainfallRecorder::raw_field("value_binders",
+                                                         RainfallRecorder::string_array(value_binders)),
+                             RainfallRecorder::raw_field("proof_binders",
+                                                         RainfallRecorder::string_array(proof_binders)),
+                             RainfallRecorder::raw_field("coeffect_binders",
+                                                         RainfallRecorder::string_array(coeffect_binders)),
                              RainfallRecorder::boolean_field("runtime_value_created", false)});
+                }
                 }
                 for (auto const &[constructor_name, arm] : reachable)
                     if (!seen.contains(constructor_name))
@@ -2350,13 +2509,23 @@ namespace fine {
                         std::string symbol = "fine.proof-constructor." + constructor.name + "." + parameter.name;
                         values.emplace(parameter.name, ValueTerm(kind, context_.constant(symbol.c_str(), sort(kind))));
                     }
+                    for (auto const &parameter : constructor.explicit_proof_parameters) {
+                        if (!names.insert(parameter.name).second)
+                            reject(parameter.span, "duplicate constructor parameter `" + parameter.name + "`");
+                        SemanticProofType type =
+                            elaborate_proof_type(parameter.type, values, proofs, proof_order, absorbed);
+                        proofs.emplace(parameter.name,
+                                       ProofEvidence(parameter.name, std::move(type),
+                                                     "proof-constructor-explicit-parameter", parameter.span, "", ""));
+                        proof_order.push_back(parameter.name);
+                    }
                     for (auto const &parameter : constructor.proof_parameters) {
                         if (!names.insert(parameter.name).second)
                             reject(parameter.span, "duplicate constructor parameter `" + parameter.name + "`");
                         SemanticProofType type =
                             elaborate_proof_type(parameter.type, values, proofs, proof_order, absorbed);
                         proofs.emplace(parameter.name,
-                                       ProofEvidence(parameter.name, std::move(type), "proof-constructor-parameter",
+                                       ProofEvidence(parameter.name, std::move(type), "proof-constructor-coeffect",
                                                      parameter.span, "", ""));
                         proof_order.push_back(parameter.name);
                     }
