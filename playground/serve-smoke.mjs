@@ -63,7 +63,7 @@ try {
   if (explicit.headers["content-encoding"] !== "zstd" || !explicit.body.equals(expectedCompressed))
     throw new Error("explicit zstd Wasm response is not the precompressed module");
   const reference = page.body.toString("utf8");
-  for (const form of ["runtime enum", "runtime match", "indexed proof family", "indexed constructor evidence", "indexed proof match", "empty proof match"])
+  for (const form of ["runtime enum", "runtime match", "indexed proof family", "indexed constructor evidence", "indexed proof match", "structural proof induction", "empty proof match"])
     if (!reference.includes(form))
       throw new Error(`language reference is missing current form: ${form}`);
   if (!reference.includes("takes [") || reference.includes("<code>needs ["))

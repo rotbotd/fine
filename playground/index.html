@@ -90,6 +90,11 @@
                 <td><code>match evidence {<br>&nbsp;&nbsp;even_zero() =&gt; shape_zero[value](refl(value)),<br>&nbsp;&nbsp;even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;shape_next[value, previous](refl(value), prior),<br>}</code></td>
               </tr>
               <tr>
+                <td>structural proof induction</td>
+                <td><code>inducts(evidence)</code> exposes the function to its own proof body only as an induction hypothesis. A self-call must consume an exact recursive field descended from that evidence; it creates no runtime call.</td>
+                <td><code>proof function rebuild(value: Nat)<br>&nbsp;&nbsp;takes [evidence: Even(value)]<br>&nbsp;&nbsp;inducts(evidence)<br>&nbsp;&nbsp;-&gt; Rebuilt(value) {<br>&nbsp;&nbsp;match evidence {<br>&nbsp;&nbsp;&nbsp;&nbsp;even_zero() =&gt; rebuilt_zero(),<br>&nbsp;&nbsp;&nbsp;&nbsp;even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rebuilt_next[previous](rebuild[previous](prior)),<br>&nbsp;&nbsp;}<br>}</code></td>
+              </tr>
+              <tr>
                 <td>empty proof match</td>
                 <td>Evidence with no reachable constructor eliminates into any proof type with zero arms.</td>
                 <td><code>match impossible { }</code></td>

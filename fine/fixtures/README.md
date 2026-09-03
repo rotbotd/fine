@@ -16,6 +16,14 @@
   file eliminates the empty family `Never()` and accepts zero arms for the
   impossible index `Even(succ(zero))`. A two-index control also prevents one
   symbolic index from being refined to two different constructor results.
+- `proof-inductive-induction.fine` uses `inducts(evidence)` to rebuild an
+  `Even` derivation. Its recursive spelling is accepted only on the exact
+  same-family `prior` field and is recorded as an induction-hypothesis edge, not
+  a runtime call.
+- `reject-nondecreasing-proof-recursion.fine` calls the annotated function on
+  its root evidence rather than a recursive constructor field.
+- `reject-recursion-without-inducts.fine` shows that an ordinary body-bearing
+  proof function is not visible recursively.
 - `reject-nonexhaustive-proof-match.fine` omits one constructor that remains
   reachable for a symbolic index.
 - `reject-unreachable-proof-match-arm.fine` writes a constructor arm after index

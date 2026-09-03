@@ -64,6 +64,27 @@ binds those two classes of fields separately. Exhaustiveness ignores impossible
 constructors, so a zero-constructor family and an impossible concrete index both
 admit `match evidence {}`. The match cannot return runtime data.
 
+Structural proof recursion is explicit and proof-only:
+
+```fine
+proof function rebuild(value: Nat)
+  takes [evidence: Even(value)]
+  inducts(evidence)
+  -> Rebuilt(value) {
+  match evidence {
+    even_zero() => rebuilt_zero(),
+    even_next[previous](prior) =>
+      rebuilt_next[previous](rebuild[previous](prior)),
+  }
+}
+```
+
+`inducts(evidence)` makes the function visible only as an induction hypothesis
+inside its own body. A recursive source application must receive an exact
+same-family proof field obtained by matching `evidence` (or one of its recursive
+fields). Passing `evidence` again is rejected. No runtime recursive function is
+created.
+
 Build and run:
 
 ```sh

@@ -106,6 +106,34 @@
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/proof-inductive-match.fine" "$proof_match_rain"
 
+          induction_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-induction.fine")"
+          echo "$induction_output"
+          grep -F "verified proof function: rebuild" <<<"$induction_output"
+          grep -F "formed proof: rebuilt : Rebuilt(zero) (virtual)" <<<"$induction_output"
+
+          induction_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-inductive-induction.fine" > "$induction_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-inductive-induction.fine" "$induction_rain"
+          grep -F '"operation":"proof.induction.hypothesis.use"' "$induction_rain"
+
+          nondecreasing_recursion="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-nondecreasing-proof-recursion.fine" \
+              >"$nondecreasing_recursion" 2>&1; then
+            echo "nondecreasing proof recursion unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'does not descend through a proof field of induction parameter `evidence`' \
+            "$nondecreasing_recursion"
+
+          unannotated_recursion="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-recursion-without-inducts.fine" \
+              >"$unannotated_recursion" 2>&1; then
+            echo "unannotated proof recursion unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'unknown proof constructor `anything`' "$unannotated_recursion"
+
           nonexhaustive_proof_match="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-nonexhaustive-proof-match.fine" \
               >"$nonexhaustive_proof_match" 2>&1; then

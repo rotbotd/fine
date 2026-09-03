@@ -8,6 +8,8 @@ value representation has no proof case.
 The executable core also declares recursive runtime enums and eliminates them
 with exhaustive typed matches. Separate `proof inductive` declarations form
 static indexed constructor evidence without creating runtime proof datatypes. It
+checks structural induction over that evidence with explicit `inducts(...)`
+clauses and exact recursive constructor fields. It
 forms identity proofs, absorbs their propositions into Z3 contexts, declares
 caller-local proof coeffects, and fills typed identity holes from a finite grammar
 of exact local evidence and reflexivity. Materialization

@@ -90,6 +90,23 @@ identity type in each `Even(value)` arm, uses `previous` and `prior`, eliminates
 `Never()`, and accepts no arms for `Even(succ(zero))`. The two rejecting fixtures
 separate non-exhaustiveness from an explicitly written impossible arm.
 
+## Closed: first structural proof induction
+
+- [x] Add `inducts(evidence)` only to body-bearing proof functions and require
+      the named parameter to carry indexed-family evidence.
+- [x] Expose a proof function to its own body only as an induction hypothesis.
+- [x] Mark same-family fields from a match with their structural root and exact
+      parent; propagate that ancestry through nested proof matches.
+- [x] Accept a self-application only when the designated proof argument names an
+      exact descendant, never the root evidence or an arbitrary proof expression.
+- [x] Retain the function/root/parent/field edge in Rainfall without creating a
+      runtime recursive call.
+
+Exit test: `proof-inductive-induction.fine` recursively rebuilds an `Even`
+derivation. `reject-nondecreasing-proof-recursion.fine` passes the root evidence
+again and fails the descent check; `reject-recursion-without-inducts.fine` cannot
+name itself at all. Numeric measures and runtime recursion remain separate work.
+
 ## Closed: typed identity holes
 
 - [x] Add `?` with an expected identity proof type.

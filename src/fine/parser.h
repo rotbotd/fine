@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -137,6 +138,7 @@ namespace fine::syntax {
         std::string name;
         std::vector<ValueParameter> parameters;
         std::vector<CoeffectParameter> proof_parameters;
+        std::optional<std::string> induction_parameter;
         ProofType result_type;
         bool has_body = false;
         ProofExpr body;

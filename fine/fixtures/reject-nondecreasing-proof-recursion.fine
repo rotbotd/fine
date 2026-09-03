@@ -1,0 +1,19 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat) takes [prior: Even(previous)] -> Even(succ(succ(previous)));
+}
+
+proof function loop(value: Nat)
+  takes [evidence: Even(value)]
+  inducts(evidence)
+  -> Even(value) {
+  loop[value](evidence)
+}
+
+run reject_nondecreasing_proof_recursion {
+}

@@ -81,13 +81,21 @@ namespace fine {
             std::string left_source;
             std::string right_source;
             std::vector<syntax::ValueExpr> index_syntax;
+            // Present only for evidence bound from a recursive constructor field
+            // below the named induction parameter. The parent remains distinct so
+            // Rainfall can retain the exact descent edge.
+            std::optional<std::string> structural_root;
+            std::optional<std::string> structural_parent;
 
             ProofEvidence(std::string name, SemanticProofType type, std::string formation, syntax::SourceSpan span,
                           std::string left_source, std::string right_source,
-                          std::vector<syntax::ValueExpr> index_syntax = {})
+                          std::vector<syntax::ValueExpr> index_syntax = {},
+                          std::optional<std::string> structural_root = std::nullopt,
+                          std::optional<std::string> structural_parent = std::nullopt)
                 : name(std::move(name)), type(std::move(type)), formation(std::move(formation)), span(span),
                   left_source(std::move(left_source)), right_source(std::move(right_source)),
-                  index_syntax(std::move(index_syntax)) {}
+                  index_syntax(std::move(index_syntax)), structural_root(std::move(structural_root)),
+                  structural_parent(std::move(structural_parent)) {}
         };
 
         using ValueEnvironment = std::map<std::string, ValueTerm>;
@@ -390,6 +398,7 @@ namespace fine {
             std::map<std::string, syntax::FunctionDecl const *> functions_;
             std::map<std::string, syntax::ProofFunctionDecl const *> proof_functions_;
             std::vector<std::string> proof_function_order_;
+            syntax::ProofFunctionDecl const *active_inductive_function_ = nullptr;
             ExecutionResult result_;
             std::map<std::pair<std::size_t, std::size_t>, std::string> materializations_;
             std::size_t proof_model_index_ = 0;
@@ -942,6 +951,33 @@ namespace fine {
                     reject(expression.span, "proof function `" + expression.name + "` expects " +
                                                 std::to_string(function.proof_parameters.size()) + " proof arguments");
 
+                bool induction_hypothesis_use = active_inductive_function_ == &function;
+                std::string recursive_evidence;
+                std::string recursive_parent;
+                if (induction_hypothesis_use) {
+                    auto parameter = std::find_if(
+                        function.proof_parameters.begin(), function.proof_parameters.end(),
+                        [&](syntax::CoeffectParameter const &candidate) {
+                            return candidate.name == *function.induction_parameter;
+                        });
+                    if (parameter == function.proof_parameters.end())
+                        throw std::logic_error("active induction parameter disappeared");
+                    std::size_t position = static_cast<std::size_t>(parameter - function.proof_parameters.begin());
+                    auto const &argument = expression.proof_arguments[position];
+                    if (argument.kind != syntax::ProofExpr::Kind::name)
+                        reject(argument.span, "recursive proof call `" + function.name +
+                                                  "` must use a named recursive constructor field for `" +
+                                                  *function.induction_parameter + "`");
+                    auto evidence = proofs.find(argument.name);
+                    if (evidence == proofs.end() || !evidence->second.structural_root ||
+                        *evidence->second.structural_root != *function.induction_parameter)
+                        reject(argument.span, "recursive proof call `" + function.name + "` does not descend through "
+                                              "a proof field of induction parameter `" +
+                                                  *function.induction_parameter + "`");
+                    recursive_evidence = argument.name;
+                    recursive_parent = evidence->second.structural_parent.value_or("");
+                }
+
                 ValueEnvironment indices;
                 for (std::size_t i = 0; i < function.parameters.size(); ++i) {
                     ValueTerm argument =
@@ -977,7 +1013,19 @@ namespace fine {
                     argument_sources.push_back(print_proof(expression.proof_arguments[i]));
                 }
 
-                if (rainfall_)
+                if (rainfall_ && induction_hypothesis_use)
+                    rainfall_->record(
+                        "derive", "proof.induction.hypothesis.use", {"proof-function:" + run},
+                        "fine.proof-elaborator",
+                        "A recursive source application uses the induction hypothesis attached to an exact smaller "
+                        "constructor field; no runtime call exists",
+                        {RainfallRecorder::string_field("function", function.name),
+                         RainfallRecorder::string_field("induction_parameter", *function.induction_parameter),
+                         RainfallRecorder::string_field("parent_evidence", recursive_parent),
+                         RainfallRecorder::string_field("recursive_evidence", recursive_evidence),
+                         RainfallRecorder::string_field("body", print_proof(expression)),
+                         RainfallRecorder::boolean_field("runtime_call_created", false)});
+                else if (rainfall_)
                     rainfall_->record(
                         "derive", "proof.function.apply", {"run:" + run}, "fine.proof-elaborator",
                         "A named proof-level function is applied to checked virtual evidence; no runtime call exists",
@@ -997,7 +1045,10 @@ namespace fine {
                 else {
                     index_syntax = expected_syntax.arguments;
                 }
-                return {std::move(name), std::move(expected), "apply:" + function.name, expression.span,
+                return {std::move(name), std::move(expected),
+                        induction_hypothesis_use ? "induction-hypothesis:" + function.name
+                                                 : "apply:" + function.name,
+                        expression.span,
                         std::move(left_source), std::move(right_source), std::move(index_syntax)};
             }
 
@@ -1561,6 +1612,17 @@ namespace fine {
                         ProofEvidence field(binder, std::move(field_type),
                                             "proof-match-field:" + expression.matched_proof,
                                             expression.match_arm_spans[i], "", "", parameter.type.arguments);
+                        auto field_inductive = std::get_if<InductiveType>(&field.type);
+                        if (active_inductive_function_ && active_inductive_function_->induction_parameter &&
+                            field_inductive && field_inductive->family == scrutinee->family) {
+                            std::string const &root = *active_inductive_function_->induction_parameter;
+                            if (expression.matched_proof == root ||
+                                (scrutinee_found->second.structural_root &&
+                                 *scrutinee_found->second.structural_root == root)) {
+                                field.structural_root = root;
+                                field.structural_parent = expression.matched_proof;
+                            }
+                        }
                         auto [inserted, ok] = branch_proofs.emplace(binder, std::move(field));
                         branch_proof_order.push_back(binder);
                         absorb(inserted->second, branch_absorbed,
@@ -1771,10 +1833,24 @@ namespace fine {
                 SemanticProofType result_type =
                     elaborate_proof_type(declaration.result_type, indices, proofs, proof_order, absorbed);
                 std::optional<z3::expr> result_proposition;
+                if (declaration.induction_parameter) {
+                    if (!declaration.has_body)
+                        reject(declaration.span, "`inducts` requires a body-bearing proof function");
+                    auto parameter = proofs.find(*declaration.induction_parameter);
+                    if (parameter == proofs.end())
+                        reject(declaration.span, "unknown induction parameter `" +
+                                                     *declaration.induction_parameter + "`");
+                    if (!std::holds_alternative<InductiveType>(parameter->second.type))
+                        reject(declaration.span, "induction parameter `" + *declaration.induction_parameter +
+                                                     "` is not indexed-family evidence");
+                    proof_functions_.emplace(declaration.name, &declaration);
+                    active_inductive_function_ = &declaration;
+                }
                 if (declaration.has_body) {
                     (void)elaborate_any_proof(declaration.body, declaration.result_type, result_type, indices, proofs,
                                               proof_order, absorbed, declaration.name + ".result", declaration.name,
                                               {}, {});
+                    active_inductive_function_ = nullptr;
                 }
                 else {
                     auto identity = std::get_if<IdentityType>(&result_type);
@@ -1792,7 +1868,8 @@ namespace fine {
                                                      "from its proof parameters");
                 }
 
-                proof_functions_.emplace(declaration.name, &declaration);
+                if (!declaration.induction_parameter)
+                    proof_functions_.emplace(declaration.name, &declaration);
                 bool identity_searchable = declaration.result_type.kind == syntax::ProofType::Kind::identity &&
                                            std::all_of(declaration.proof_parameters.begin(),
                                                        declaration.proof_parameters.end(),

@@ -50,6 +50,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     proof_selections: dict[str, dict[str, Any]] = {}
     proof_holes_closed: set[str] = set()
     proof_functions: dict[str, dict[str, Any]] = {}
+    induction_hypothesis_uses: list[dict[str, Any]] = []
     proof_match_branches: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     proof_matches: set[tuple[str, ...]] = set()
     proof_model_grammars: dict[str, dict[str, Any]] = {}
@@ -255,6 +256,21 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      data.get("runtime_function_created") is False,
                      f"event {sequence}: malformed or repeated proof function")
             proof_functions[function] = data
+        elif operation == "proof.induction.hypothesis.use":
+            function = data.get("function")
+            induction_parameter = data.get("induction_parameter")
+            parent = data.get("parent_evidence")
+            recursive = data.get("recursive_evidence")
+            _require(within == [f"proof-function:{function}"] and
+                     isinstance(function, str) and function and
+                     isinstance(induction_parameter, str) and induction_parameter and
+                     isinstance(parent, str) and parent and
+                     isinstance(recursive, str) and recursive and recursive != parent and
+                     isinstance(data.get("body"), str) and
+                     data["body"].startswith(function) and
+                     data.get("runtime_call_created") is False,
+                     f"event {sequence}: malformed structural induction-hypothesis use")
+            induction_hypothesis_uses.append(data)
         elif operation == "proof.function.apply":
             function = data.get("function")
             indices = data.get("index_arguments")
@@ -535,6 +551,10 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
              {event["data"]["grammar"] for event in proof_model_solves.values()} and
              set(proof_model_solves) == set(proof_model_lifts),
              "proof model replay leaves an unsolved or unlifted grammar")
+    _require(all(use["function"] in proof_functions and
+                 proof_functions[use["function"]].get("status") == "body-checked"
+                 for use in induction_hypothesis_uses),
+             "structural induction replay names an unverified proof function")
 
     allowed = {"exact", "desugared", "generated", "internal_z3"}
     for index, edge in enumerate(evidence):

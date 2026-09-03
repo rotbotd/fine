@@ -1,0 +1,9 @@
+proof inductive Absurd() {
+}
+
+proof function anything(n: Int) -> Absurd() {
+  anything[n]()
+}
+
+run reject_recursion_without_inducts {
+}

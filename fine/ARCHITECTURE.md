@@ -102,6 +102,17 @@ has a valid zero-arm match, and `Even(succ(zero))` likewise has no reachable
 constructors. An unreachable arm must be omitted. Matches remain proof-producing:
 neither the scrutinee nor its proof fields can enter a runtime value.
 
+An optional `inducts(evidence)` clause turns self-application in a body-bearing
+proof function into an explicit induction-hypothesis use. Fine exposes the
+function to its own body only after confirming that `evidence` is an indexed
+proof parameter. Each same-family proof field bound while matching that evidence
+is tagged with its exact parent and structural root. A self-call is accepted only
+when its designated argument names one of those descendants; a call on the root
+evidence is rejected before Z3 is involved. Rainfall retains the function,
+induction parameter, parent evidence, and recursive field separately. This is
+structural induction over proof evidence, not general runtime recursion or a
+numeric termination checker.
+
 ## Contextual proof demand
 
 A function declares evidence required from its caller:

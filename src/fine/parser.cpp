@@ -567,6 +567,12 @@ namespace fine::syntax {
                 result.parameters = value_parameters();
                 if (at("takes"))
                     result.proof_parameters = coeffect_parameters();
+                if (at("inducts")) {
+                    take();
+                    expect("(");
+                    result.induction_parameter = identifier("induction parameter name").text;
+                    expect(")");
+                }
                 expect("->");
                 result.result_type = proof_type();
                 Token end;

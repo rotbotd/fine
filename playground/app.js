@@ -97,7 +97,7 @@ const fineLanguage = StreamLanguage.define({
         state.definitionKind = null;
         return "definition";
       }
-      if (["takes", "ensures", "using", "assert", "match"].includes(word))
+      if (["takes", "inducts", "ensures", "using", "assert", "match"].includes(word))
         return "keyword";
       if (state.valueTypes.has(word))
         return "valueType";

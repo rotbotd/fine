@@ -216,9 +216,18 @@ refinements with `refl`, consumes the recursive `prior`, eliminates a
 zero-constructor family, and omits both impossible constructors of
 `Even(succ(zero))`. Exhaustiveness ranges over reachable constructors.
 
-This does not close the whole slice. Recursive induction hypotheses and source
-proof search remain; a pattern-bound recursive proof is ordinary local evidence,
-not an automatically generated induction hypothesis.
+The first structural induction boundary is now executable. A proof function may
+write `inducts(evidence)`, and a self-application is accepted only when its
+designated argument is an exact same-family proof field descended from that
+evidence. The recursive source application elaborates to an induction-hypothesis
+edge, not a runtime call. `proof-inductive-induction.fine` rebuilds one indexed
+derivation; controls reject both the root evidence passed again and recursion
+without an `inducts` clause. Rainfall retains the root, immediate parent,
+recursive field, and function separately.
+
+This does not close the whole slice. Multiple recursive fields need a fixture
+that forces both induction hypotheses, and typed proof holes inside recursive
+arms remain.
 
 Fine may lower the proposition to a Z3 relation for checking and search, but the
 source constructor table owns branch identity, field scope, recursive-premise

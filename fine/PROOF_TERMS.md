@@ -191,3 +191,32 @@ eliminates evidence of a zero-constructor family into any proof type. The same
 empty match is accepted for `Even(succ(zero))`, since neither constructor result
 can unify with that index. Writing an unreachable arm is rejected rather than
 asking its body to prove nonsense.
+
+## Structural induction hypotheses
+
+A body-bearing proof function may declare exactly which indexed proof parameter
+it structurally follows:
+
+```fine
+proof function rebuild(value: Nat)
+  takes [evidence: Even(value)]
+  inducts(evidence)
+  -> Rebuilt(value) {
+  match evidence {
+    even_zero() => rebuilt_zero(),
+    even_next[previous](prior) =>
+      rebuilt_next[previous](rebuild[previous](prior)),
+  }
+}
+```
+
+The recursive spelling does not denote a runtime call. During the match, Fine's
+constructor table establishes that `prior` is a structurally smaller piece of
+`evidence`; `rebuild[previous](prior)` is therefore an application of the checked
+induction hypothesis. Matching `prior` again propagates the same root to its own
+recursive proof fields. The argument must be an exact named descendant. Neither
+an arbitrary proof expression nor the original `evidence` can pass the descent
+check.
+
+This first termination rule deliberately covers proof-family structure only.
+Recursion over runtime enums and user-supplied numeric measures remain absent.

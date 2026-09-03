@@ -1,0 +1,29 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat) takes [prior: Even(previous)] -> Even(succ(succ(previous)));
+}
+
+proof inductive Rebuilt(value: Nat) {
+  rebuilt_zero() -> Rebuilt(zero);
+  rebuilt_next(previous: Nat) takes [prior: Rebuilt(previous)] -> Rebuilt(succ(succ(previous)));
+}
+
+proof function rebuild(value: Nat)
+  takes [evidence: Even(value)]
+  inducts(evidence)
+  -> Rebuilt(value) {
+  match evidence {
+    even_zero() => rebuilt_zero(),
+    even_next[previous](prior) => rebuilt_next[previous](rebuild[previous](prior)),
+  }
+}
+
+run proof_inductive_induction {
+  proof zero_even: Even(zero) = even_zero();
+  proof rebuilt: Rebuilt(zero) = rebuild[zero](zero_even);
+}
