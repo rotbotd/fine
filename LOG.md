@@ -5022,3 +5022,13 @@ cmake --build .build --target fine-bin -j2
 # latest-published: 11
 for i in $(seq 1 20); do .build/fine live-lift-probe; done
 ```
+
+The full native install check and the unchanged single-threaded Wasm build both
+closed from clean implementation commit `ce698ad0c`:
+
+```text
+nix flake check
+nix build --no-link --print-out-paths .#default .#playground-wasm
+# /nix/store/w2iscjmfsk8gnawalxq9v8qvawf9jq9h-fine-0.1.0
+# /nix/store/vdrfwihnyd5w2m4i4nyhpiad8b6w4wz3-fine-playground-wasm-0.1.0
+```
