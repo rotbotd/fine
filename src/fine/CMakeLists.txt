@@ -5,10 +5,11 @@ add_executable(fine-bin
   rainfall.cpp
   rainfall_lift.cpp
   runtime.cpp
-  runtime_execution.cpp
-  runtime_proof_inductive.cpp
-  runtime_proof_search.cpp
-  runtime_value.cpp
+  document_runner.cpp
+  proof_engine_inductive.cpp
+  proof_engine_search.cpp
+  proof_engine_types.cpp
+  value_elaborator.cpp
   source.cpp
 )
 option(FINE_ENABLE_LIVE_LIFT "Build the nonblocking live-lifting prototype" OFF)

@@ -1,4 +1,4 @@
-#include "runtime_internal.h"
+#include "elaboration_internal.h"
 
 // Stable public runtime API: diagnostics, one-shot execution, and concrete
 // source materialization. Stateful elaboration lives in the consumer files.
@@ -10,7 +10,7 @@ namespace fine {
     std::string SemanticError::format(std::string_view filename, std::string_view source) const {
         std::ostringstream output;
         output << filename << ':' << span_.begin.line << ':' << span_.begin.column << ": " << what();
-        std::string line = runtime_detail::source_line(source, span_.begin.line);
+        std::string line = elaboration::source_line(source, span_.begin.line);
         if (!line.empty()) {
             output << '\n' << line << '\n';
             std::size_t caret = span_.begin.column > 0 ? span_.begin.column - 1 : 0;
@@ -21,7 +21,7 @@ namespace fine {
 
     ExecutionResult execute(syntax::Document const &document, std::ostream &output, std::ostream *rainfall_output,
                             SourceSnapshot const *snapshot, std::string rainfall_run, ExecutionOptions options) {
-        return runtime_detail::Elaborator(output, rainfall_output, snapshot, std::move(rainfall_run), options)
+        return elaboration::DocumentRunner(output, rainfall_output, snapshot, std::move(rainfall_run), options)
             .execute(document);
     }
 

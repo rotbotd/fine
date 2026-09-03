@@ -23,10 +23,10 @@
 #include <variant>
 #include <vector>
 
-namespace fine::runtime_detail {
+namespace fine::elaboration {
 
-// Private semantic vocabulary shared by the independently compiled runtime
-// consumers. ProofEvidence deliberately remains disjoint from ValueTerm here.
+    // Private semantic vocabulary shared by the independently compiled runtime
+    // consumers. ProofEvidence deliberately remains disjoint from ValueTerm here.
     struct ValueKind {
         enum class Tag { integer, boolean, enumeration };
 
@@ -355,205 +355,270 @@ namespace fine::runtime_detail {
         return std::string(source.substr(begin, end - begin));
     }
 
-    class Elaborator {
-    public:
-        Elaborator(std::ostream &output, std::ostream *rainfall_output, SourceSnapshot const *snapshot,
-                   std::string rainfall_run, ExecutionOptions options);
+    [[noreturn]] inline void reject(syntax::SourceSpan span, std::string message) {
+        throw SemanticError(span, std::move(message));
+    }
 
-        ExecutionResult execute(syntax::Document const &document);
+    inline void ensure_fresh(std::string const &name, syntax::SourceSpan span, ValueEnvironment const &values,
+                             ProofEnvironment const &proofs) {
+        if (values.contains(name) || proofs.contains(name))
+            reject(span, "duplicate local name `" + name + "`");
+    }
+
+    class MaterializationSink {
+    public:
+        virtual ~MaterializationSink() = default;
+        virtual void request_materialization(syntax::ConcreteRange range, std::string text,
+                                             syntax::SourceSpan span) = 0;
+    };
+
+    class ProofContext {
+    public:
+        virtual ~ProofContext() = default;
+        virtual bool has_constructor(std::string const &name) const = 0;
+        virtual bool has_function(std::string const &name) const = 0;
+        virtual IdentityType elaborate_identity(syntax::ProofType const &type, ValueEnvironment const &values,
+                                                ProofEnvironment const &proofs,
+                                                std::vector<std::string> const &proof_order,
+                                                std::vector<z3::expr> const &absorbed) = 0;
+        virtual void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed,
+                            std::vector<std::string> within, std::string_view role,
+                            std::optional<std::string> source = std::nullopt) = 0;
+    };
+
+    class ValueElaborator {
+    public:
+        ValueElaborator(std::ostream &output, ExecutionOptions const &options, MaterializationSink &materializations);
+
+        void set_rainfall(RainfallRecorder *rainfall) {
+            rainfall_ = rainfall;
+        }
+        void connect_proofs(ProofContext &proofs) {
+            proofs_ = &proofs;
+        }
+        z3::context &context() {
+            return context_;
+        }
+        z3::context const &context() const {
+            return context_;
+        }
+        bool has_constructor(std::string const &name) const {
+            return constructors_.contains(name);
+        }
+        bool has_function(std::string const &name) const {
+            return functions_.contains(name);
+        }
+        std::size_t functions_verified() const {
+            return functions_verified_;
+        }
+        std::size_t coeffects_resolved() const {
+            return coeffects_resolved_;
+        }
+        std::vector<std::string> runtime_kind_names() const;
+
+        z3::sort sort(ValueKind const &kind);
+        void require_known_type(syntax::ValueType const &type);
+        void declare_enum(syntax::EnumDecl const &declaration);
+        void record_boundary();
+        ValueTerm elaborate_value(syntax::ValueExpr const &expression, ValueEnvironment const &values,
+                                  ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
+                                  std::vector<z3::expr> const &absorbed);
+        bool match_constructor_index(syntax::ValueExpr const &pattern, z3::expr const &target,
+                                     std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings);
+        void declare_function(syntax::FunctionDecl const &declaration);
 
     private:
         z3::context context_;
         std::ostream &output_;
-        ExecutionOptions options_;
-        std::optional<RainfallRecorder> rainfall_;
+        ExecutionOptions const &options_;
+        MaterializationSink &materializations_;
+        RainfallRecorder *rainfall_ = nullptr;
+        ProofContext *proofs_ = nullptr;
         std::map<std::string, std::unique_ptr<RuntimeEnum>> enums_;
         std::map<std::string, std::pair<RuntimeEnum *, std::size_t>> constructors_;
-        std::map<std::string, syntax::ProofInductiveDecl const *> proof_inductives_;
-        std::map<std::string, syntax::ProofConstructorDecl const *> proof_constructors_;
         std::map<std::string, syntax::FunctionDecl const *> functions_;
-        std::map<std::string, syntax::ProofFunctionDecl const *> proof_functions_;
-        std::vector<std::string> proof_function_order_;
-        syntax::ProofFunctionDecl const *active_inductive_function_ = nullptr;
-        ExecutionResult result_;
-        std::map<std::pair<std::size_t, std::size_t>, std::string> materializations_;
-        std::size_t proof_model_index_ = 0;
-        std::size_t live_identity_holes_ = 0;
-
-        [[noreturn]] static void reject(syntax::SourceSpan span, std::string message);
-
-        syntax::ValueExpr proof_syntax_as_value(syntax::ProofExpr const &expression);
-
-        syntax::ValueExpr positional_value_argument(syntax::ProofExpr const &expression, std::size_t position);
-
-        syntax::ProofExpr const &positional_proof_argument(syntax::ProofExpr const &expression, std::size_t position);
-
-        void request_materialization(syntax::ConcreteRange range, std::string text, syntax::SourceSpan span);
-
-        z3::sort sort(ValueKind const &kind);
-
-        void require_known_type(syntax::ValueType const &type);
-
-        void declare_enum(syntax::EnumDecl const &declaration);
-
-        void record_boundary();
-
-        void ensure_fresh(std::string const &name, syntax::SourceSpan span, ValueEnvironment const &values,
-                          ProofEnvironment const &proofs);
+        std::size_t functions_verified_ = 0;
+        std::size_t coeffects_resolved_ = 0;
 
         ValueTerm elaborate_constructor(syntax::ValueExpr const &expression, RuntimeEnum &enumeration,
                                         RuntimeConstructor const &constructor, ValueEnvironment const &values,
                                         ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
                                         std::vector<z3::expr> const &absorbed);
-
         ValueTerm elaborate_match(syntax::ValueExpr const &expression, ValueEnvironment const &values,
                                   ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
                                   std::vector<z3::expr> const &absorbed);
+        ValueTerm elaborate_call(syntax::ValueExpr const &expression, ValueEnvironment const &caller_values,
+                                 ProofEnvironment const &caller_proofs,
+                                 std::vector<std::string> const &caller_proof_order,
+                                 std::vector<z3::expr> const &caller_absorbed);
+        bool contains_parameter(syntax::ValueExpr const &expression, std::map<std::string, ValueKind> const &parameters,
+                                ValueEnvironment const &bindings);
+    };
 
-        ValueTerm elaborate_value(syntax::ValueExpr const &expression, ValueEnvironment const &values,
-                                  ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
-                                  std::vector<z3::expr> const &absorbed);
+    class ProofEngine final : public ProofContext {
+    public:
+        ProofEngine(ValueElaborator &values, std::ostream &output, ExecutionOptions const &options,
+                    MaterializationSink &materializations);
 
-        IdentityType elaborate_identity(syntax::ProofType const &type, ValueEnvironment const &values,
-                                        ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
-                                        std::vector<z3::expr> const &absorbed);
-
-        InductiveType elaborate_inductive_type(syntax::ProofType const &type, ValueEnvironment const &values,
-                                               ProofEnvironment const &proofs,
-                                               std::vector<std::string> const &proof_order,
-                                               std::vector<z3::expr> const &absorbed);
-
+        void set_rainfall(RainfallRecorder *rainfall) {
+            rainfall_ = rainfall;
+        }
+        bool has_constructor(std::string const &name) const override {
+            return proof_constructors_.contains(name);
+        }
+        bool has_function(std::string const &name) const override {
+            return proof_functions_.contains(name);
+        }
+        std::size_t functions_verified() const {
+            return functions_verified_;
+        }
+        std::size_t holes_filled() const {
+            return holes_filled_;
+        }
+        std::size_t holes_checkpointed() const {
+            return holes_checkpointed_;
+        }
+        std::size_t coeffects_resolved() const {
+            return coeffects_resolved_;
+        }
         SemanticProofType elaborate_proof_type(syntax::ProofType const &type, ValueEnvironment const &values,
                                                ProofEnvironment const &proofs,
                                                std::vector<std::string> const &proof_order,
                                                std::vector<z3::expr> const &absorbed);
-
-        bool contains_parameter(syntax::ValueExpr const &expression, std::map<std::string, ValueKind> const &parameters,
-                                ValueEnvironment const &bindings);
-
-        bool match_constructor_index(syntax::ValueExpr const &pattern, z3::expr const &target,
-                                     std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings);
-
-        bool is_refinable_index(syntax::ValueExpr const &source, ValueTerm const &term);
-
-        bool bind_result_index(syntax::ValueExpr const &pattern, z3::expr const &target,
-                               std::string const &target_source, std::map<std::string, ValueKind> const &parameters,
-                               ValueEnvironment &bindings, std::map<std::string, std::string> &source_bindings);
-
-        bool value_pattern_ready(syntax::ValueExpr const &pattern, std::map<std::string, ValueKind> const &parameters,
-                                 ValueEnvironment const &bindings);
-
-        bool match_index_pattern(syntax::ValueExpr const &pattern, z3::expr const &target,
-                                 std::string const &target_source, std::map<std::string, ValueKind> const &parameters,
-                                 ValueEnvironment &bindings, std::map<std::string, std::string> &source_bindings,
-                                 bool &added);
-
-        bool match_identity_pattern(syntax::ProofType const &pattern, ProofEvidence const &target,
-                                    std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings,
-                                    std::map<std::string, std::string> &source_bindings, bool &added);
-
-        bool complete_index_instantiation(syntax::ProofFunctionDecl const &function, IdentityType const &expected,
-                                          IndexInstantiation const &instantiation);
-
-        std::string index_instantiation_key(syntax::ProofFunctionDecl const &function,
-                                            IndexInstantiation const &instantiation);
-
-        std::vector<IndexInstantiation>
-        infer_value_arguments(syntax::ProofFunctionDecl const &function, IdentityType const &expected,
-                              std::string const &left_source, std::string const &right_source,
-                              ProofEnvironment const &proofs, std::vector<std::string> const &proof_order);
-
-        std::optional<IndexInstantiation> infer_inductive_value_arguments(syntax::ProofFunctionDecl const &function,
-                                                                          syntax::ProofType const &expected_syntax,
-                                                                          InductiveType const &expected);
-
-        proof_model::Type proof_model_type(IdentityType const &type);
-
-        std::string proof_model_type_key(proof_model::Type const &type);
-
-        void collect_proof_model_production(ProofCandidate const &candidate, proof_model::Grammar &grammar,
-                                            std::set<std::string> &seen);
-
-        proof_model::Grammar make_proof_model_grammar(std::vector<ProofCandidate> const &candidates,
-                                                      IdentityType const &expected);
-
-        ProofEvidence elaborate_proof_application(syntax::ProofExpr const &expression,
-                                                  syntax::ProofType const &expected_syntax, SemanticProofType expected,
-                                                  ValueEnvironment const &values, ProofEnvironment const &proofs,
-                                                  std::vector<std::string> const &proof_order,
-                                                  std::vector<z3::expr> const &absorbed, std::string name,
-                                                  std::string const &run);
-
-        std::vector<ProofCandidate> enumerate_proof_candidates(
-            syntax::ProofType const &expected_syntax, IdentityType const &expected, std::string const &left_source,
-            std::string const &right_source, ValueEnvironment const &values, ProofEnvironment const &proofs,
-            std::vector<std::string> const &proof_order, std::vector<z3::expr> const &absorbed, std::size_t budget);
-
-        ProofEvidence elaborate_proof(syntax::ProofExpr const &expression, syntax::ProofType const &expected_syntax,
-                                      IdentityType expected, ValueEnvironment const &values,
-                                      ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
-                                      std::vector<z3::expr> const &absorbed, std::string name, std::string const &run,
-                                      std::string const &proof_source, std::string const &type_source);
-
-        std::vector<ProofCandidate> enumerate_inductive_proof_candidates(syntax::ProofType const &expected_syntax,
-                                                                         InductiveType const &expected,
-                                                                         ProofEnvironment const &proofs,
-                                                                         std::vector<std::string> const &proof_order);
-
-        ProofEvidence elaborate_inductive_hole(syntax::ProofExpr const &expression,
-                                               syntax::ProofType const &expected_syntax, InductiveType expected,
-                                               ProofEnvironment const &proofs,
-                                               std::vector<std::string> const &proof_order, std::string name,
-                                               std::string const &run);
-
-        ProofEvidence elaborate_inductive_proof(syntax::ProofExpr const &expression,
-                                                syntax::ProofType const &expected_syntax, InductiveType expected,
-                                                ValueEnvironment const &values, ProofEnvironment const &proofs,
-                                                std::vector<std::string> const &proof_order,
-                                                std::vector<z3::expr> const &absorbed, std::string name,
-                                                std::string const &run);
-
-        ProofEvidence elaborate_proof_match(syntax::ProofExpr const &expression,
-                                            syntax::ProofType const &expected_syntax, SemanticProofType expected,
-                                            ValueEnvironment const &values, ProofEnvironment const &proofs,
-                                            std::vector<std::string> const &proof_order,
-                                            std::vector<z3::expr> const &absorbed, std::string name,
-                                            std::string const &run);
-
         ProofEvidence elaborate_any_proof(syntax::ProofExpr const &expression, syntax::ProofType const &expected_syntax,
                                           SemanticProofType expected, ValueEnvironment const &values,
                                           ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
                                           std::vector<z3::expr> const &absorbed, std::string name,
                                           std::string const &run, std::string const &proof_source,
                                           std::string const &type_source);
-
         void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed, std::vector<std::string> within,
-                    std::string_view role, std::optional<std::string> source = std::nullopt);
-
+                    std::string_view role, std::optional<std::string> source = std::nullopt) override;
         void declare_proof_inductive(syntax::ProofInductiveDecl const &declaration);
-
         void declare_proof_function(syntax::ProofFunctionDecl const &declaration);
 
-        void declare_function(syntax::FunctionDecl const &declaration);
+        IdentityType elaborate_identity(syntax::ProofType const &type, ValueEnvironment const &values,
+                                        ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
+                                        std::vector<z3::expr> const &absorbed) override;
 
-        ValueTerm elaborate_call(syntax::ValueExpr const &expression, ValueEnvironment const &caller_values,
-                                 ProofEnvironment const &caller_proofs,
-                                 std::vector<std::string> const &caller_proof_order,
-                                 std::vector<z3::expr> const &caller_absorbed);
+    private:
+        ValueElaborator &values_;
+        std::ostream &output_;
+        ExecutionOptions const &options_;
+        MaterializationSink &materializations_;
+        RainfallRecorder *rainfall_ = nullptr;
+        std::map<std::string, syntax::ProofInductiveDecl const *> proof_inductives_;
+        std::map<std::string, syntax::ProofConstructorDecl const *> proof_constructors_;
+        std::map<std::string, syntax::ProofFunctionDecl const *> proof_functions_;
+        std::vector<std::string> proof_function_order_;
+        syntax::ProofFunctionDecl const *active_inductive_function_ = nullptr;
+        std::size_t proof_model_index_ = 0;
+        std::size_t live_identity_holes_ = 0;
+        std::size_t functions_verified_ = 0;
+        std::size_t holes_filled_ = 0;
+        std::size_t holes_checkpointed_ = 0;
+        std::size_t coeffects_resolved_ = 0;
 
+        syntax::ValueExpr proof_syntax_as_value(syntax::ProofExpr const &expression);
+        syntax::ValueExpr positional_value_argument(syntax::ProofExpr const &expression, std::size_t position);
+        syntax::ProofExpr const &positional_proof_argument(syntax::ProofExpr const &expression, std::size_t position);
+        InductiveType elaborate_inductive_type(syntax::ProofType const &type, ValueEnvironment const &values,
+                                               ProofEnvironment const &proofs,
+                                               std::vector<std::string> const &proof_order,
+                                               std::vector<z3::expr> const &absorbed);
+        bool is_refinable_index(syntax::ValueExpr const &source, ValueTerm const &term);
+        bool bind_result_index(syntax::ValueExpr const &pattern, z3::expr const &target,
+                               std::string const &target_source, std::map<std::string, ValueKind> const &parameters,
+                               ValueEnvironment &bindings, std::map<std::string, std::string> &source_bindings);
+        bool value_pattern_ready(syntax::ValueExpr const &pattern, std::map<std::string, ValueKind> const &parameters,
+                                 ValueEnvironment const &bindings);
+        bool match_index_pattern(syntax::ValueExpr const &pattern, z3::expr const &target,
+                                 std::string const &target_source, std::map<std::string, ValueKind> const &parameters,
+                                 ValueEnvironment &bindings, std::map<std::string, std::string> &source_bindings,
+                                 bool &added);
+        bool match_identity_pattern(syntax::ProofType const &pattern, ProofEvidence const &target,
+                                    std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings,
+                                    std::map<std::string, std::string> &source_bindings, bool &added);
+        bool complete_index_instantiation(syntax::ProofFunctionDecl const &function, IdentityType const &expected,
+                                          IndexInstantiation const &instantiation);
+        std::string index_instantiation_key(syntax::ProofFunctionDecl const &function,
+                                            IndexInstantiation const &instantiation);
+        std::vector<IndexInstantiation>
+        infer_value_arguments(syntax::ProofFunctionDecl const &function, IdentityType const &expected,
+                              std::string const &left_source, std::string const &right_source,
+                              ProofEnvironment const &proofs, std::vector<std::string> const &proof_order);
+        std::optional<IndexInstantiation> infer_inductive_value_arguments(syntax::ProofFunctionDecl const &function,
+                                                                          syntax::ProofType const &expected_syntax,
+                                                                          InductiveType const &expected);
+        proof_model::Type proof_model_type(IdentityType const &type);
+        std::string proof_model_type_key(proof_model::Type const &type);
+        void collect_proof_model_production(ProofCandidate const &candidate, proof_model::Grammar &grammar,
+                                            std::set<std::string> &seen);
+        proof_model::Grammar make_proof_model_grammar(std::vector<ProofCandidate> const &candidates,
+                                                      IdentityType const &expected);
+        ProofEvidence elaborate_proof_application(syntax::ProofExpr const &expression,
+                                                  syntax::ProofType const &expected_syntax, SemanticProofType expected,
+                                                  ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                                  std::vector<std::string> const &proof_order,
+                                                  std::vector<z3::expr> const &absorbed, std::string name,
+                                                  std::string const &run);
+        std::vector<ProofCandidate> enumerate_proof_candidates(
+            syntax::ProofType const &expected_syntax, IdentityType const &expected, std::string const &left_source,
+            std::string const &right_source, ValueEnvironment const &values, ProofEnvironment const &proofs,
+            std::vector<std::string> const &proof_order, std::vector<z3::expr> const &absorbed, std::size_t budget);
+        ProofEvidence elaborate_proof(syntax::ProofExpr const &expression, syntax::ProofType const &expected_syntax,
+                                      IdentityType expected, ValueEnvironment const &values,
+                                      ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
+                                      std::vector<z3::expr> const &absorbed, std::string name, std::string const &run,
+                                      std::string const &proof_source, std::string const &type_source);
+        std::vector<ProofCandidate> enumerate_inductive_proof_candidates(syntax::ProofType const &expected_syntax,
+                                                                         InductiveType const &expected,
+                                                                         ProofEnvironment const &proofs,
+                                                                         std::vector<std::string> const &proof_order);
+        ProofEvidence elaborate_inductive_hole(syntax::ProofExpr const &expression,
+                                               syntax::ProofType const &expected_syntax, InductiveType expected,
+                                               ProofEnvironment const &proofs,
+                                               std::vector<std::string> const &proof_order, std::string name,
+                                               std::string const &run);
+        ProofEvidence elaborate_inductive_proof(syntax::ProofExpr const &expression,
+                                                syntax::ProofType const &expected_syntax, InductiveType expected,
+                                                ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                                std::vector<std::string> const &proof_order,
+                                                std::vector<z3::expr> const &absorbed, std::string name,
+                                                std::string const &run);
+        ProofEvidence elaborate_proof_match(syntax::ProofExpr const &expression,
+                                            syntax::ProofType const &expected_syntax, SemanticProofType expected,
+                                            ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                            std::vector<std::string> const &proof_order,
+                                            std::vector<z3::expr> const &absorbed, std::string name,
+                                            std::string const &run);
+    };
+
+    class DocumentRunner final : private MaterializationSink {
+    public:
+        DocumentRunner(std::ostream &output, std::ostream *rainfall_output, SourceSnapshot const *snapshot,
+                       std::string rainfall_run, ExecutionOptions options);
+        ExecutionResult execute(syntax::Document const &document);
+
+    private:
+        std::ostream &output_;
+        ExecutionOptions options_;
+        ExecutionResult result_;
+        std::map<std::pair<std::size_t, std::size_t>, std::string> materializations_;
+        ValueElaborator values_;
+        std::optional<RainfallRecorder> rainfall_;
+        ProofEngine proofs_;
+
+        void request_materialization(syntax::ConcreteRange range, std::string text, syntax::SourceSpan span) override;
         void execute_run(syntax::RunDecl const &run);
-
         void execute_statement(syntax::LetDecl const &declaration, std::string const &run, std::size_t &,
                                ValueEnvironment &values, ProofEnvironment &proofs,
                                std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed);
-
         void execute_statement(syntax::ProofDecl const &declaration, std::string const &run, std::size_t &,
                                ValueEnvironment &values, ProofEnvironment &proofs,
                                std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed);
-
         void execute_statement(syntax::AssertDecl const &declaration, std::string const &run,
                                std::size_t &assertion_index, ValueEnvironment &values, ProofEnvironment &proofs,
                                std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed);
     };
 
-}  // namespace fine::runtime_detail
+}  // namespace fine::elaboration

@@ -5522,3 +5522,82 @@ nix build --no-link --print-out-paths \
 # /nix/store/gkj4pd5z2ybdqq2avhwagbrhwmh43qm9-fine-playground-wasm-pthreads-0.1.0
 # /nix/store/gxl022bdwyq6r22xzsq7pk0zl8hwyw69-fine-playground-0.1.0
 ```
+
+## 2026-09-03 — replaced the file split with enforced semantic owners
+
+h immediately rejected the preceding split because every implementation method
+still belonged to one `Elaborator`. That criticism was exact: separate `.cpp`
+files improved navigation but the god object still exposed every registry,
+solver service, trace sink, counter, and execution operation to every consumer.
+The parity suite had proved behavior preservation, not architectural separation.
+
+I removed `Elaborator` entirely and detached the internal semantics from the
+runtime adapter. `runtime.cpp` remains a 47-line public `fine::execute` adapter;
+all semantic implementation now lives in `fine::elaboration` under three owners:
+
+- `ValueElaborator` owns the Z3 context, runtime enum/constructor and value-function
+  registries, value elaboration/calls, and only its two progress counters.
+- `ProofEngine` owns proof-family/constructor/function registries, static proof
+  types, exact index matching, proof search, proof matching/induction, and only
+  its proof-side counters.
+- `DocumentRunner` owns source-order dispatch, run-local environments, Rainfall
+  lifetime, materialization ranges, and the public `ExecutionResult`.
+
+The boundary is compiled rather than conventional. `ValueElaborator` cannot see
+any proof registry; it holds a `ProofContext` interface with only four operations:
+classify proof functions and constructors, elaborate an identity demand, and
+absorb evidence. `ProofEngine` implements that interface and depends on the
+value owner's public typed operations. It has no statement-execution API.
+`DocumentRunner` composes the owners through `ProofContext` and a separate
+`MaterializationSink`. Neither semantic owner receives `ExecutionResult`; each
+owns its counters and the runner assembles the result at document close.
+
+The implementation names now state that boundary rather than treating all
+elaboration as “runtime”:
+
+```text
+runtime.cpp                    47  public API adapter only
+document_runner.cpp           189  source order and executable scopes
+value_elaborator.cpp          483  runtime value semantics and value calls
+proof_engine_types.cpp        208  static proof types and exact index matching
+proof_engine_search.cpp       858  proof application and bounded selection
+proof_engine_inductive.cpp    833  indexed evidence, match, induction, holes
+elaboration_internal.h        624  private vocabulary and owner contracts
+```
+
+One failed mechanical step is retained: I accidentally ran `clang-format` on
+`src/fine/CMakeLists.txt`, which rewrote CMake tokens as malformed C++. CMake
+reported `Parse error. Expected a newline, got identifier with text "option"`.
+I restored that file from `HEAD`, applied only the six source-name edits and the
+new `proof_engine_types.cpp` entry, then regenerated successfully. No malformed
+CMake was committed.
+
+Local discriminator against the clean pre-refactor artifact
+`/nix/store/xihg4c7sp7rb06nqczkq5an3732n137c-fine-0.1.0`:
+
+```text
+cmake --build build/proof-core --target fine-bin -j4
+# built target fine-bin
+python /tmp/fine_parity.py
+# exact run parity: 44 fixtures
+# exact materialize parity: 44 fixtures
+python /tmp/rain_parity.py
+# normalized rainfall parity: 4 fixtures
+git diff --check
+# clean
+```
+
+The Rainfall comparison normalizes only the deliberately time-derived run and
+document identities; event order and all semantic payloads remain exact.
+
+Clean staged-tree validation:
+
+```text
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths \
+  .#default .#playground-wasm-pthreads .#playground
+# /nix/store/l5r7har3x75ysh8g0hj1acadn33wk7xp-fine-0.1.0
+# /nix/store/h7pwwvbnc55l0av7xra7fsjaymfcj2jr-fine-playground-wasm-pthreads-0.1.0
+# /nix/store/ji97ylmfflzvmn3dcjp0pqmqnb3px7pj-fine-playground-0.1.0
+```

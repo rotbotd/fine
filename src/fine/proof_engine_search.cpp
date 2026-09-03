@@ -1,10 +1,14 @@
-#include "runtime_internal.h"
+#include "elaboration_internal.h"
 
 // Bounded proof search: surface argument classification, named proof-function
 // application, deterministic identity grammars, and Z3 model selection.
-namespace fine::runtime_detail {
+namespace fine::elaboration {
 
-    syntax::ValueExpr Elaborator::proof_syntax_as_value(syntax::ProofExpr const &expression) {
+    ProofEngine::ProofEngine(ValueElaborator &values, std::ostream &output, ExecutionOptions const &options,
+                             MaterializationSink &materializations)
+        : values_(values), output_(output), options_(options), materializations_(materializations) {}
+
+    syntax::ValueExpr ProofEngine::proof_syntax_as_value(syntax::ProofExpr const &expression) {
         syntax::ValueExpr result;
         result.span = expression.span;
         result.node_id = expression.node_id;
@@ -34,7 +38,8 @@ namespace fine::runtime_detail {
         }
         return result;
     }
-    syntax::ValueExpr Elaborator::positional_value_argument(syntax::ProofExpr const &expression, std::size_t position) {
+    syntax::ValueExpr ProofEngine::positional_value_argument(syntax::ProofExpr const &expression,
+                                                             std::size_t position) {
         std::size_t value_index = 0;
         std::size_t proof_index = 0;
         for (std::size_t i = 0; i < expression.argument_kinds.size(); ++i) {
@@ -51,8 +56,8 @@ namespace fine::runtime_detail {
         }
         throw std::logic_error("proof call positional value argument is out of range");
     }
-    syntax::ProofExpr const &Elaborator::positional_proof_argument(syntax::ProofExpr const &expression,
-                                                                   std::size_t position) {
+    syntax::ProofExpr const &ProofEngine::positional_proof_argument(syntax::ProofExpr const &expression,
+                                                                    std::size_t position) {
         std::size_t value_index = 0;
         std::size_t proof_index = 0;
         for (std::size_t i = 0; i < expression.argument_kinds.size(); ++i) {
@@ -70,14 +75,15 @@ namespace fine::runtime_detail {
         }
         throw std::logic_error("proof call positional proof argument is out of range");
     }
-    proof_model::Type Elaborator::proof_model_type(IdentityType const &type) {
-        return {sort(type.carrier).id(), Z3_get_ast_id(context_, type.left), Z3_get_ast_id(context_, type.right)};
+    proof_model::Type ProofEngine::proof_model_type(IdentityType const &type) {
+        return {values_.sort(type.carrier).id(), Z3_get_ast_id(values_.context(), type.left),
+                Z3_get_ast_id(values_.context(), type.right)};
     }
-    std::string Elaborator::proof_model_type_key(proof_model::Type const &type) {
+    std::string ProofEngine::proof_model_type_key(proof_model::Type const &type) {
         return std::to_string(type.carrier) + ":" + std::to_string(type.left) + ":" + std::to_string(type.right);
     }
-    void Elaborator::collect_proof_model_production(ProofCandidate const &candidate, proof_model::Grammar &grammar,
-                                                    std::set<std::string> &seen) {
+    void ProofEngine::collect_proof_model_production(ProofCandidate const &candidate, proof_model::Grammar &grammar,
+                                                     std::set<std::string> &seen) {
         if (!candidate.type)
             throw std::logic_error("typed proof candidate lost its result type");
         proof_model::Production production;
@@ -123,8 +129,8 @@ namespace fine::runtime_detail {
         for (auto const &child : candidate.children)
             collect_proof_model_production(child, grammar, seen);
     }
-    proof_model::Grammar Elaborator::make_proof_model_grammar(std::vector<ProofCandidate> const &candidates,
-                                                              IdentityType const &expected) {
+    proof_model::Grammar ProofEngine::make_proof_model_grammar(std::vector<ProofCandidate> const &candidates,
+                                                               IdentityType const &expected) {
         proof_model::Grammar grammar;
         grammar.id = "hole-" + std::to_string(proof_model_index_++);
         grammar.expected = proof_model_type(expected);
@@ -150,13 +156,13 @@ namespace fine::runtime_detail {
                 collect_proof_model_production(candidate, grammar, seen);
         return grammar;
     }
-    ProofEvidence Elaborator::elaborate_proof_application(
+    ProofEvidence ProofEngine::elaborate_proof_application(
         syntax::ProofExpr const &expression, syntax::ProofType const &expected_syntax, SemanticProofType expected,
         ValueEnvironment const &values, ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
         std::vector<z3::expr> const &absorbed, std::string name, std::string const &run) {
         auto found = proof_functions_.find(expression.name);
         if (found == proof_functions_.end()) {
-            if (functions_.contains(expression.name))
+            if (values_.has_function(expression.name))
                 reject(expression.span, "value function `" + expression.name + "` cannot inhabit a proof");
             reject(expression.span, "unknown proof function `" + expression.name + "`");
         }
@@ -169,7 +175,7 @@ namespace fine::runtime_detail {
         std::vector<syntax::ValueExpr> index_arguments;
         for (std::size_t i = 0; i < function.parameters.size(); ++i) {
             syntax::ValueExpr argument_syntax = positional_value_argument(expression, i);
-            ValueTerm argument = elaborate_value(argument_syntax, values, proofs, proof_order, absorbed);
+            ValueTerm argument = values_.elaborate_value(argument_syntax, values, proofs, proof_order, absorbed);
             ValueKind expected_kind = kind_of(function.parameters[i].type);
             if (argument.kind != expected_kind)
                 reject(argument_syntax.span,
@@ -182,7 +188,7 @@ namespace fine::runtime_detail {
         std::vector<z3::expr> no_absorbed;
         SemanticProofType result_type =
             elaborate_proof_type(function.result_type, indices, no_proofs, no_proof_order, no_absorbed);
-        if (!same_type(context_, result_type, expected))
+        if (!same_type(values_.context(), result_type, expected))
             reject(expression.span, "proof application `" + print_proof(expression) + "` has the wrong result type");
 
         std::vector<std::string> index_sources;
@@ -194,7 +200,7 @@ namespace fine::runtime_detail {
         bool arguments_complete = true;
         auto record_coeffect = [&](syntax::CoeffectParameter const &coeffect, std::string const &proof_source,
                                    bool explicit_choice) {
-            ++result_.coeffects_resolved;
+            ++coeffects_resolved_;
             output_ << "resolved coeffect: " << expression.name << '.' << coeffect.name << " <- " << proof_source
                     << (explicit_choice ? " (explicit)" : " (lexical search)") << '\n';
             if (!rainfall_)
@@ -268,7 +274,7 @@ namespace fine::runtime_detail {
             for (auto const &candidate : proof_order) {
                 auto candidate_found = proofs.find(candidate);
                 if (candidate_found != proofs.end() &&
-                    same_type(context_, candidate_found->second.type, parameter_type)) {
+                    same_type(values_.context(), candidate_found->second.type, parameter_type)) {
                     proof_name = candidate;
                     break;
                 }
@@ -296,8 +302,8 @@ namespace fine::runtime_detail {
                 insertion << chosen_locals[i].first << " = " << chosen_locals[i].second;
             }
             insertion << ']';
-            request_materialization(syntax::ConcreteRange::empty_at(expression.call_argument_end), insertion.str(),
-                                    expression.span);
+            materializations_.request_materialization(syntax::ConcreteRange::empty_at(expression.call_argument_end),
+                                                      insertion.str(), expression.span);
         }
 
         bool induction_hypothesis_use = active_inductive_function_ == &function;
@@ -367,7 +373,7 @@ namespace fine::runtime_detail {
                 std::nullopt,
                 arguments_complete};
     }
-    std::vector<ProofCandidate> Elaborator::enumerate_proof_candidates(
+    std::vector<ProofCandidate> ProofEngine::enumerate_proof_candidates(
         syntax::ProofType const &expected_syntax, IdentityType const &expected, std::string const &left_source,
         std::string const &right_source, ValueEnvironment const &values, ProofEnvironment const &proofs,
         std::vector<std::string> const &proof_order, std::vector<z3::expr> const &absorbed, std::size_t budget) {
@@ -391,12 +397,12 @@ namespace fine::runtime_detail {
             auto found = proofs.find(candidate_name);
             if (found != proofs.end()) {
                 auto identity = std::get_if<IdentityType>(&found->second.type);
-                if (identity && same_type(context_, *identity, expected))
+                if (identity && same_type(values_.context(), *identity, expected))
                     candidates.push_back(
                         {candidate_name, "exact-local", candidate_name, std::nullopt, {}, {}, 1, expected, {}});
             }
         }
-        if (same_ast(context_, expected.left, expected.right))
+        if (same_ast(values_.context(), expected.left, expected.right))
             candidates.push_back(
                 {"refl(" + left_source + ")", "refl", std::nullopt, std::nullopt, {}, {}, 1, expected, {}});
 
@@ -495,19 +501,19 @@ namespace fine::runtime_detail {
             candidates.push_back(open_candidate());
         return candidates;
     }
-    ProofEvidence Elaborator::elaborate_proof(syntax::ProofExpr const &expression,
-                                              syntax::ProofType const &expected_syntax, IdentityType expected,
-                                              ValueEnvironment const &values, ProofEnvironment const &proofs,
-                                              std::vector<std::string> const &proof_order,
-                                              std::vector<z3::expr> const &absorbed, std::string name,
-                                              std::string const &run, std::string const &proof_source,
-                                              std::string const &type_source) {
+    ProofEvidence ProofEngine::elaborate_proof(syntax::ProofExpr const &expression,
+                                               syntax::ProofType const &expected_syntax, IdentityType expected,
+                                               ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                               std::vector<std::string> const &proof_order,
+                                               std::vector<z3::expr> const &absorbed, std::string name,
+                                               std::string const &run, std::string const &proof_source,
+                                               std::string const &type_source) {
         if (expression.kind == syntax::ProofExpr::Kind::name) {
             auto found = proofs.find(expression.name);
             if (found == proofs.end())
                 reject(expression.span, "unknown proof `" + expression.name + "`");
             auto identity = std::get_if<IdentityType>(&found->second.type);
-            if (!identity || !same_type(context_, *identity, expected))
+            if (!identity || !same_type(values_.context(), *identity, expected))
                 reject(expression.span, "proof `" + expression.name + "` has the wrong identity type");
             return {std::move(name),
                     std::move(expected),
@@ -517,9 +523,9 @@ namespace fine::runtime_detail {
                     print_value(expected_syntax.right)};
         }
         if (expression.kind == syntax::ProofExpr::Kind::reflexivity) {
-            ValueTerm witness = elaborate_value(expression.value, values, proofs, proof_order, absorbed);
-            if (witness.kind != expected.carrier || !same_ast(context_, witness.expression, expected.left) ||
-                !same_ast(context_, witness.expression, expected.right))
+            ValueTerm witness = values_.elaborate_value(expression.value, values, proofs, proof_order, absorbed);
+            if (witness.kind != expected.carrier || !same_ast(values_.context(), witness.expression, expected.left) ||
+                !same_ast(values_.context(), witness.expression, expected.right))
                 reject(expression.span, "`refl` requires both identity endpoints to elaborate to its exact value");
             return {std::move(name),
                     std::move(expected),
@@ -564,7 +570,7 @@ namespace fine::runtime_detail {
                 proof_model::Grammar grammar = make_proof_model_grammar(frontier, expected);
                 grammar.max_cost = budget;
                 proof_model::Result model_selection = proof_model::select(
-                    context_, grammar,
+                    values_.context(), grammar,
                     [&](proof_model::Grammar const &observed_grammar, z3::context &model_context, z3::expr const &model,
                         proof_model::Result const &result) {
 #ifdef FINE_HAS_LIVE_LIFT
@@ -622,13 +628,12 @@ namespace fine::runtime_detail {
                     break;
             }
 
-            request_materialization(syntax::ConcreteRange::from_span(expression.span), selected.source,
-                                    expression.span);
+            materializations_.request_materialization(syntax::ConcreteRange::from_span(expression.span),
+                                                      selected.source, expression.span);
             if (selected.complete)
-                ++result_.proof_holes_filled;
+                ++holes_filled_;
             else {
-                ++result_.proof_holes_checkpointed;
-                result_.checkpoint_open = true;
+                ++holes_checkpointed_;
             }
             output_ << (selected.complete ? "filled proof hole: " : "checkpointed proof hole: ") << name << " <- "
                     << selected.source << " (live Z3 iterative search)\n";
@@ -708,7 +713,7 @@ namespace fine::runtime_detail {
         std::optional<proof_model::Result> model_selection;
         if (options_.proof_selector == ProofSelector::z3_model) {
             model_grammar = make_proof_model_grammar(candidates, expected);
-            model_selection = proof_model::select(context_, *model_grammar);
+            model_selection = proof_model::select(values_.context(), *model_grammar);
             if (model_selection->status != proof_model::Status::sat)
                 reject(expression.span,
                        "Z3 proof model selector failed for `" + name + "`: " + model_selection->reason);
@@ -727,11 +732,12 @@ namespace fine::runtime_detail {
         }
 
         ProofCandidate const &selected = candidates[selected_index];
-        request_materialization(syntax::ConcreteRange::from_span(expression.span), selected.source, expression.span);
+        materializations_.request_materialization(syntax::ConcreteRange::from_span(expression.span), selected.source,
+                                                  expression.span);
         if (selected.complete)
-            ++result_.proof_holes_filled;
+            ++holes_filled_;
         else
-            ++result_.proof_holes_checkpointed;
+            ++holes_checkpointed_;
         if (rainfall_) {
             if (model_grammar && model_selection) {
                 std::vector<std::string> productions;
@@ -849,4 +855,4 @@ namespace fine::runtime_detail {
                 selected.complete};
     }
 
-}  // namespace fine::runtime_detail
+}  // namespace fine::elaboration

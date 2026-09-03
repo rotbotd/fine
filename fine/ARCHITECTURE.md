@@ -318,27 +318,36 @@ producer-owned cumulative concrete edit set; publishing each hole against the
 original source would silently discard earlier replacements, so Fine rejects
 that shape rather than displaying a plausible but incomplete checkpoint.
 
-## Runtime source ownership
+## Elaboration ownership
 
-The elaborator is one stateful semantic object, but it is not one source file.
-`runtime_internal.h` owns its private semantic vocabulary and method contract;
-in particular, `ValueTerm` and `ProofEvidence` remain disjoint structures there.
-The implementations are divided by the kind of source construct they consume:
+`runtime.cpp` is only the stable public adapter for diagnostics, execution, and
+concrete source materialization. The semantics behind that adapter live in
+`fine::elaboration`; there is no omnibus runtime or elaborator object.
 
-- `runtime_value.cpp` owns runtime enums, value elaboration, value matching, and
-  index unification;
-- `runtime_proof_search.cpp` owns proof-function application and the bounded
-  deterministic and Z3-backed identity grammars;
-- `runtime_proof_inductive.cpp` owns indexed proof constructors, proof matching,
-  structural induction, proof holes, and proof absorption;
-- `runtime_execution.cpp` owns declarations, lexical scopes, value-function
-  calls, run statements, and document execution;
-- `runtime.cpp` is only the stable public adapter for diagnostics, execution,
-  and concrete source materialization.
+Three owners have disjoint private state:
 
-This is a translation-unit boundary, not textual inclusion. Consumer files may
-share the elaborator's private state through the internal header, but they may
-not grow a second semantic representation or a second public execution path.
+- `ValueElaborator` owns the Z3 context, runtime enum/constructor registry,
+  value-function registry, value elaboration, and value-side progress counts.
+- `ProofEngine` owns proof-family, proof-constructor, and proof-function
+  registries; identity and indexed type elaboration; proof search, matching,
+  induction; and proof-side progress counts.
+- `DocumentRunner` owns source-order orchestration, run-local environments,
+  Rainfall lifetime, materialization ranges, and the public `ExecutionResult`.
+
+The value owner cannot see proof maps. It receives only `ProofContext`, whose
+four operations are proof-name classification, identity-type elaboration, and
+absorption. The proof owner depends on the value owner's public typed API and
+cannot execute statements. `DocumentRunner` composes them through that interface
+and a `MaterializationSink`; neither semantic owner receives the public result
+object. At close, the runner reads their separate counters and assembles the
+result. The compiler now enforces these boundaries through private members and
+interfaces rather than relying on translation-unit convention.
+
+`elaboration_internal.h` contains the shared private semantic vocabulary and
+contracts. `ValueTerm` and `ProofEvidence` remain disjoint structures there.
+Implementations are in `value_elaborator.cpp`, `proof_engine_types.cpp`,
+`proof_engine_search.cpp`, `proof_engine_inductive.cpp`, and
+`document_runner.cpp`.
 
 ## Rainfall boundary
 
