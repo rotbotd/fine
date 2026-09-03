@@ -5601,3 +5601,16 @@ nix build --no-link --print-out-paths \
 # /nix/store/h7pwwvbnc55l0av7xra7fsjaymfcj2jr-fine-playground-wasm-pthreads-0.1.0
 # /nix/store/ji97ylmfflzvmn3dcjp0pqmqnb3px7pj-fine-playground-0.1.0
 ```
+
+## 2026-09-03 — repaired the stale architecture boundary
+
+An idle documentation audit found that `fine/ARCHITECTURE.md` still ended with
+the pre-enum claim that Fine had no ordinary datatypes, inductive propositions,
+proof matches, or transitivity search. I replaced that obsolete inventory with
+the current executable boundary: native runtime enums and match; static indexed
+families, refinement, reachable-constructor exhaustiveness, structural induction,
+coeffects, deterministic/model-selected holes, and source checkpoints. The limit
+list now names the actual absences—runtime proof values and elimination, runtime
+recursion and numeric measures, general dependency/universes, global search,
+constructor synthesis, multi-hole live episodes, and direct search before
+frontier enumeration. No implementation changed.

@@ -385,11 +385,23 @@ this target. Their exact implementation and fixtures remain at the preserved
 tag. A future inductive proposition must introduce derivation inhabitants from
 birth and may only use an erased predicate relation as a backend shadow.
 
-## Current limits
+## Current implemented boundary
 
-Only `Int`, `Bool`, identity, reflexivity, proof aliases, checked named proof
-functions, bounded typed identity holes, straight-line functions, guarantees,
-lexical coeffects, lets, and assertions are present.
-There are no ordinary datatypes, inductive propositions, proof matches,
-identity transitivity search, general dependent types, universes, or inductive
-proof constructor synthesis yet.
+Runtime values include `Int`, `Bool`, and native Z3 enum datatypes with typed
+payloads, recursive self fields, construction, and exhaustive matching. Value
+functions are nonrecursive and may declare guarantees and lexical identity
+coeffects.
+
+Static evidence includes identity, reflexivity, named proof functions, indexed
+proof families, proof-only matching with index refinement and unreachable-arm
+elision, structurally checked induction, and lexical coeffects. Typed holes can
+select exact local evidence, reflexivity, bounded identity proof applications,
+or structurally admitted induction-hypothesis applications. Identity search has
+both deterministic and Z3 datatype-model selectors; checkpoint mode can retain
+a typed partial source tree with unresolved holes.
+
+There are no runtime proof values, proof elimination into runtime data, runtime
+recursion, numeric termination measures, general dependent types, universes,
+global theorem search, or proof-constructor synthesis. Live browser search is
+currently limited to one identity hole per source episode, and each bounded
+frontier is enumerated before Z3 compaction.
