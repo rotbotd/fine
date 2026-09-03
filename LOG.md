@@ -4876,3 +4876,9 @@ Clean native build for implementation commit `bc1f068c1`, including the complete
 install-check suite: `/nix/store/l7ff7zsc60pabipm5l6z6v0f5m6cpcgc-fine-0.1.0`.
 The clean playground package is
 `/nix/store/3rb4sr5gw1mpqfnls11ffff60v5lihai-fine-playground-0.1.0`.
+
+After public head `83706a50b`, `fine-playground.service` was restarted and both
+it and `rc-publish-fine.service` were active. Localhost and the public HTTPS page
+served the checkpoint controls and interruption-boundary text. The emitted
+module worker and its content-hashed Fine module dependency both returned 200
+with `Content-Type: text/javascript`.
