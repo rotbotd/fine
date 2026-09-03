@@ -4947,3 +4947,7 @@ Clean native build for implementation commit `a1c2a90db`, including the complete
 install-check suite: `/nix/store/fdvm2x0d0hc8imhhcby9z621vzgg5qsq-fine-0.1.0`.
 The clean playground package is
 `/nix/store/4a6v27qnj0hbq2jq6q8gzmcv3a0wh4ly-fine-playground-0.1.0`.
+
+After public head `f6d9f6a05`, `fine-playground.service` was restarted and both
+it and `rc-publish-fine.service` were active. Localhost and the public HTTPS page
+served the source-and-Rainfall epoch boundary.
