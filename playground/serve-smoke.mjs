@@ -83,8 +83,8 @@ try {
   for (const control of ['id="checkpoint"', 'id="stop-checkpoint"', 'id="checkpoint-budget"'])
     if (!reference.includes(control))
       throw new Error(`served playground is missing checkpoint control: ${control}`);
-  if (!reference.includes("disposable worker") || !reference.includes("source-and-Rainfall pair")
-      || !reference.includes("last completed source snapshot"))
+  if (!reference.includes("one identity hole inside Wasm") || !reference.includes("shared ring")
+      || !reference.includes("last validated source"))
     throw new Error("language reference does not state the checkpoint interruption boundary");
   for (const form of ["runtime enum", "runtime match", "indexed proof family", "indexed constructor evidence", "indexed proof match", "structural proof induction", "indexed proof hole", "partial proof checkpoint", "empty proof match"])
     if (!reference.includes(form))
@@ -99,6 +99,9 @@ try {
   if (!bundleText.includes("crossOriginIsolated") || !bundleText.includes("SharedArrayBuffer")
       || !bundleText.includes("fineRuntime") || !bundleText.includes("pthreads"))
     throw new Error("application bundle omits pthread feature detection and runtime disclosure");
+  if (!bundleText.includes("validate-checkpoint") || !bundleText.includes("fineLiveSequence")
+      || !bundleText.includes("Atomics"))
+    throw new Error("application bundle omits live mailbox source validation");
   if (!reference.includes("two distinct IH edges"))
     throw new Error("language reference omits branching structural induction");
   console.log(`serve smoke passed: ${plain.body.length} -> ${compressed.body.length} bytes`);

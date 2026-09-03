@@ -164,9 +164,9 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       typed holes; rank closed frontier obligations ahead of decorative syntax,
       reparse the fixed subtree without absorbing open evidence, and resume the
       nested hole on a second checkpoint pass.
-- [x] Drive checkpointing from cooperative source epochs in a disposable browser
-      worker; stop by killing the in-flight epoch and commit only the last
-      validated snapshot as one undoable document transaction.
+- [x] Drive fallback checkpointing from cooperative source epochs in a disposable
+      browser worker; stop by killing the in-flight epoch and commit only the
+      last validated snapshot as one undoable document transaction.
 - [x] Prototype nonblocking live lifting for an unbounded solver run. The active
       solver thread must never wait for Fine rendering: each observed term gets
       a monotone sequence number and an independently owned snapshot suitable
@@ -179,9 +179,14 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 - [x] Build and serve a separate pthread Wasm variant behind cross-origin
       isolation, with feature-detected fallback to the single-threaded module
       and a shared-memory smoke that runs the two C++ worker threads.
-- [ ] Connect the pthread pipeline to the browser only when an unbounded
-      source-proof grammar supplies a real producer. Until then, keep cooperative
-      disposable-worker epochs as the visible search boundary.
+- [x] Connect the pthread pipeline to an open-ended iterative proof producer.
+      Queue exact translated model snapshots, publish through bounded shared
+      memory while the worker event loop is inside Wasm, and retain a view only
+      after a second Fine module reparses and rechecks its full source. Stop must
+      kill the producer before installing that last validated view.
+- [ ] Replace per-cost frontier enumeration with a direct finite-state recursive
+      proof grammar only when it reproduces complete/frontier/cost ranking and
+      avoids the recursive-function timeout seen in the first discarded probe.
 
 - [ ] Add proof-only elimination only when a proof consumer cannot be expressed
       by context absorption and a checked proof function; reject elimination

@@ -3,6 +3,7 @@
 #include "c++/z3++.h"
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,10 @@ namespace fine::proof_model {
         std::size_t open_leaves = 0;
     };
 
-    Result select(z3::context &context, Grammar const &grammar);
+    using Observer =
+        std::function<void(Grammar const &, z3::context &, z3::expr const &, Result const &)>;
+
+    std::string lift_model_term(z3::context &context, z3::expr const &value, Grammar const &grammar);
+    Result select(z3::context &context, Grammar const &grammar, Observer observer = {});
 
 }  // namespace fine::proof_model

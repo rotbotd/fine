@@ -309,20 +309,20 @@ shallower budget the unchanged root hole beats decorative unary structure.
 
 The editor transaction primitive is closed for ordinary completed
 materialization: the Wasm CLI writes exact bytes to MEMFS and CodeMirror installs
-them as one undoable change. Cooperative checkpoint epochs and interruption are
-also closed in the browser. A disposable worker repeatedly materializes and
-validates the previous epoch; each completed source is posted, while stop
-terminates the in-flight epoch before the main thread commits only the last
-posted source in one undoable edit. The source checkpoint, rather than a private
-Z3 state, is the persistent frontier. Each source post carries Rainfall emitted
-by that same elaboration, and the browser updates the trace pane only at this
-paired boundary.
+them as one undoable change. On pthread clients, one open-ended iterative search
+now owns the worker while selected model terms cross the native bounded lift
+queue. An eight-slot shared-memory ring lets the page receive those views while
+the worker event loop remains inside Wasm; the page's independent Fine instance
+reparses and rechecks each source before retaining it. Stop terminates the
+in-flight worker before committing only that last validated source. Fallback
+clients retain cooperative source epochs. The persistent object is source, not
+a private Z3 state, in both paths.
 
 This is where Rainfall becomes an editing instrument rather than a log viewer.
 The user should see which source hole and production Fine is working on, not a
 story inferred from solver callback order.
 
-The later live boundary is deliberately different from these source epochs. A
+The live boundary is deliberately different from cooperative source epochs. A
 long-running Z3 search may continue on one solver-owning thread while a second
 Fine worker trails it, lifts observed terms, and replaces only validated source
 for the reader. Callback order receives monotone `(run, sequence)` identities;
@@ -336,10 +336,14 @@ and exact identity validation. In particular, an infinite-fuel search must not
 accumulate observations in an arena whose lifetime is the solver run. The queue
 is bounded, the last validated source/checkpoint is never dropped, and stopping
 must be safe while the lifter trails the solver. Before changing the playground,
-a native stress fixture must show that an artificially slow lifter does not
+the native stress fixture shows that an artificially slow lifter does not
 lengthen solver time and that cancellation causes neither concurrent-manager
-access nor use-after-free; the same ownership code then moves to an Emscripten
-pthread build with the required browser isolation headers.
+access nor use-after-free. That same ownership code now runs in the isolated
+Emscripten pthread build. Its current producer still enumerates each bounded
+typed frontier before model selection; direct grammar search is a scaling
+change, not part of the browser ownership claim. A live episode currently
+accepts one identity hole. Multi-hole search waits for a producer-owned
+cumulative source snapshot rather than composing independent edits in the page.
 
 ## Slice 7 — recover value-language consumers when forced
 

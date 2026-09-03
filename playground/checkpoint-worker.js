@@ -1,4 +1,4 @@
-import { compressedWasm, createFine, ordinaryWasm } from "./generated-assets.js";
+import { compressedWasm, createFine, ordinaryWasm, pthreadCapable } from "./generated-assets.js";
 import { runCheckpointEpoch } from "./checkpoint-epoch.js";
 
 let capture = null;
@@ -47,6 +47,40 @@ self.addEventListener("message", async ({ data }) => {
     return;
   let source = data.source;
   try {
+    if (pthreadCapable) {
+      const inputPath = "/live-checkpoint.fine";
+      const outputPath = "/live-checkpoint-materialized.fine";
+      const rainfallPath = "/live-checkpoint.rain";
+      fine.FS.writeFile(inputPath, source);
+      try {
+        const completed = invoke([
+          "live-checkpoint", "--proof-start", String(data.budget), "--output", outputPath,
+          "--rain-output", rainfallPath, inputPath,
+        ]);
+        if (completed.code !== 0) {
+          const diagnostics = [...completed.stdout, ...completed.stderr].join("\n")
+            || `(exit ${completed.code})`;
+          throw new Error(diagnostics);
+        }
+        source = fine.FS.readFile(outputPath, { encoding: "utf8" });
+        const rainfallText = fine.FS.readFile(rainfallPath, { encoding: "utf8" });
+        self.postMessage({
+          type: "done",
+          epoch: "live",
+          source,
+          rainfall: rainfallText.split("\n").filter((line) => line.length > 0),
+        });
+      } finally {
+        for (const path of [inputPath, outputPath, rainfallPath]) {
+          try {
+            fine.FS.unlink(path);
+          } catch {
+            // An interrupted or failed live run may not publish output files.
+          }
+        }
+      }
+      return;
+    }
     for (let epoch = 1; epoch <= data.maxEpochs; ++epoch) {
       const checkpoint = runCheckpointEpoch(fine, invoke, source, data.budget, epoch);
       if (checkpoint.source === source) {
@@ -63,4 +97,19 @@ self.addEventListener("message", async ({ data }) => {
   }
 });
 
-self.postMessage({ type: "ready" });
+let live = null;
+if (pthreadCapable) {
+  const slots = fine._fine_live_mailbox_slot_count();
+  live = {
+    memory: fine.HEAP8.buffer,
+    latest: fine._fine_live_mailbox_latest_address(),
+    payloadCapacity: fine._fine_live_mailbox_payload_capacity(),
+    sequences: Array.from({ length: slots }, (_, slot) =>
+      fine._fine_live_mailbox_sequence_address(slot)),
+    lengths: Array.from({ length: slots }, (_, slot) =>
+      fine._fine_live_mailbox_length_address(slot)),
+    payloads: Array.from({ length: slots }, (_, slot) =>
+      fine._fine_live_mailbox_payload_address(slot)),
+  };
+}
+self.postMessage({ type: "ready", live });

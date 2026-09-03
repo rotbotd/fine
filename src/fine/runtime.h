@@ -12,6 +12,8 @@
 
 namespace fine {
 
+    class LiveLiftPipeline;
+
     class SemanticError : public std::runtime_error {
     public:
         SemanticError(syntax::SourceSpan span, std::string message);
@@ -50,6 +52,11 @@ namespace fine {
         bool validate_partial_proofs = false;
         std::size_t proof_search_cost = 3;
         ProofSelector proof_selector = ProofSelector::deterministic;
+        bool live_iterative_proof_search = false;
+        std::size_t live_proof_search_start = 1;
+        // Zero leaves the iterative deepening loop to its owning process.
+        std::size_t live_proof_search_limit = 0;
+        LiveLiftPipeline *live_lift = nullptr;
     };
 
     ExecutionResult execute(syntax::Document const &document, std::ostream &output,

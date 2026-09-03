@@ -33,6 +33,18 @@ namespace fine::proof_model {
             return "proof";
         }
 
+        std::vector<std::string> constructor_names(Grammar const &grammar) {
+            std::vector<std::string> result;
+            std::map<std::string, std::size_t> used_names;
+            result.reserve(grammar.productions.size());
+            for (Production const &production : grammar.productions) {
+                std::string base = constructor_base(production);
+                std::size_t ordinal = used_names[base]++;
+                result.push_back(ordinal == 0 ? base : base + "-" + std::to_string(ordinal));
+            }
+            return result;
+        }
+
         z3::expr integer(z3::context &context, unsigned value) {
             return context.int_val(static_cast<std::uint64_t>(value));
         }
@@ -46,12 +58,14 @@ namespace fine::proof_model {
                 : sort(std::move(value)), constructors(sort.constructors()), recognizers(sort.recognizers()) {}
         };
 
-        std::string lift(z3::expr const &value, Grammar const &grammar, Datatype const &datatype) {
+        std::string lift(z3::expr const &value, Grammar const &grammar,
+                         std::vector<std::string> const &names) {
             if (!value.is_app())
                 throw std::runtime_error("proof model is not a constructor application");
             std::size_t index = grammar.productions.size();
+            std::string declaration = value.decl().name().str();
             for (std::size_t i = 0; i < grammar.productions.size(); ++i) {
-                if (value.decl().id() == datatype.constructors[static_cast<unsigned>(i)].id()) {
+                if (declaration == names[i]) {
                     index = i;
                     break;
                 }
@@ -88,7 +102,7 @@ namespace fine::proof_model {
             for (unsigned i = 0; i < value.num_args(); ++i) {
                 if (i)
                     source << ", ";
-                source << lift(value.arg(i), grammar, datatype);
+                source << lift(value.arg(i), grammar, names);
             }
             source << ')';
             return source.str();
@@ -96,7 +110,11 @@ namespace fine::proof_model {
 
     }  // namespace
 
-    Result select(z3::context &context, Grammar const &grammar) {
+    std::string lift_model_term(z3::context &, z3::expr const &value, Grammar const &grammar) {
+        return lift(value, grammar, constructor_names(grammar));
+    }
+
+    Result select(z3::context &context, Grammar const &grammar, Observer observer) {
         if (grammar.productions.empty() || grammar.max_cost == 0)
             return {Status::unsat, "empty bounded Fine proof grammar", {}, {}, 0, false, 0, 0};
 
@@ -105,12 +123,10 @@ namespace fine::proof_model {
         z3::symbol sort_symbol = context.str_symbol(sort_name.c_str());
         z3::sort recursive_sort = context.datatype_sort(sort_symbol);
         z3::constructors declarations(context);
-        std::map<std::string, std::size_t> used_names;
+        std::vector<std::string> names = constructor_names(grammar);
         for (std::size_t i = 0; i < grammar.productions.size(); ++i) {
             Production const &production = grammar.productions[i];
-            std::string base = constructor_base(production);
-            std::size_t ordinal = used_names[base]++;
-            std::string name = ordinal == 0 ? base : base + "-" + std::to_string(ordinal);
+            std::string const &name = names[i];
             std::string recognizer = "is-" + name;
             std::vector<z3::symbol> field_names;
             std::vector<z3::sort> field_sorts;
@@ -240,14 +256,17 @@ namespace fine::proof_model {
         std::uint64_t selected_opens = 0;
         if (!frontier_value.is_numeral_u64(selected_frontier) || !opens_value.is_numeral_u64(selected_opens))
             throw std::runtime_error("partial proof model scores did not evaluate to numerals");
-        return {Status::sat,
-                {},
-                value.to_string(),
-                lift(value, grammar, datatype),
-                static_cast<std::size_t>(selected_cost),
-                complete_value.is_true(),
-                static_cast<std::size_t>(selected_frontier),
-                static_cast<std::size_t>(selected_opens)};
+        Result result{Status::sat,
+                      {},
+                      value.to_string(),
+                      lift(value, grammar, names),
+                      static_cast<std::size_t>(selected_cost),
+                      complete_value.is_true(),
+                      static_cast<std::size_t>(selected_frontier),
+                      static_cast<std::size_t>(selected_opens)};
+        if (observer)
+            observer(grammar, context, value, result);
+        return result;
     }
 
 }  // namespace fine::proof_model

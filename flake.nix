@@ -393,6 +393,32 @@
             "$src/fine/fixtures/identity-checkpoint.fine" > "$shallow_checkpoint"
           cmp "$src/fine/fixtures/identity-checkpoint.fine" "$shallow_checkpoint"
 
+          live_checkpoint="$(mktemp)"
+          $out/bin/fine live-checkpoint --proof-limit 2 --output "$live_checkpoint" \
+            "$src/fine/fixtures/identity-checkpoint.fine"
+          cmp "$src/fine/fixtures/identity-checkpoint-materialized.fine" "$live_checkpoint"
+          live_complete="$(mktemp)"
+          $out/bin/fine live-checkpoint --output "$live_complete" --rain-output /dev/null \
+            "$src/fine/fixtures/identity-checkpoint.fine"
+          if grep -F '= ?;' "$live_complete"; then
+            echo "live proof search stopped before closing its source term" >&2
+            exit 1
+          fi
+          $out/bin/fine run "$live_complete" | grep -F \
+            'verified assertion: identity_checkpoint.0'
+
+          two_live_holes="$(mktemp)"
+          sed '/proof partial:/a\  proof second: Id(Bool, right, right) = ?;' \
+            "$src/fine/fixtures/identity-checkpoint.fine" > "$two_live_holes"
+          two_live_holes_error="$(mktemp)"
+          if $out/bin/fine live-checkpoint --output /dev/null --rain-output /dev/null "$two_live_holes" \
+            > "$two_live_holes_error" 2>&1; then
+            echo "live proof search silently accepted independent multi-hole snapshots" >&2
+            exit 1
+          fi
+          grep -F 'live iterative search currently supports one identity hole per source episode' \
+            "$two_live_holes_error"
+
           open_checkpoint_run="$(mktemp)"
           if $out/bin/fine run "$checkpoint" > "$open_checkpoint_run" 2>&1; then
             echo "ordinary run accepted a checkpoint with a residual proof hole" >&2
@@ -799,7 +825,8 @@
             ${./fine/fixtures/identity-checkpoint.fine} \
             ${./fine/fixtures/identity-checkpoint-materialized.fine} \
             ${./fine/fixtures/identity-checkpoint-complete.fine}
-          node pthread-smoke.mjs ${self.packages.${system}.playground-wasm-pthreads}
+          node pthread-smoke.mjs ${self.packages.${system}.playground-wasm-pthreads} \
+            ${./fine/fixtures/identity-checkpoint.fine}
           node serve-smoke.mjs
           runHook postCheck
         '';

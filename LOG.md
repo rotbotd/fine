@@ -5111,3 +5111,104 @@ no console error. Live HTML and pthread-Wasm responses through Cloudflare retain
 `Cross-Origin-Embedder-Policy: require-corp`. This establishes actual browser
 selection and worker startup. It does not connect the visible checkpoint search
 to the native live-lift queue; that separate integration remains open.
+
+## 2026-09-03 — live model lifting connected to the browser worker
+
+Connected the deployed pthread substrate to visible checkpoint search without
+letting the presentation thread touch the producer's Z3 manager. The proof-model
+selector now exposes a callback after model selection and lifts constructor
+applications by their deterministic constructor symbols rather than manager-local
+declaration identities. `LiveLiftPipeline` accepts a per-snapshot lift closure;
+the producer translates the selected ground datatype term into a private Z3
+context, and the Fine pthread reconstructs the exact selected Fine proof tree in
+that context before releasing it.
+
+The first producer is deliberately narrower than the intended final search. A
+single `fine live-checkpoint` execution performs open-ended iterative deepening
+over the existing exact typed frontier. Each cost frontier is still completely
+enumerated before being compacted into a bounded Z3 datatype model. A selected
+view carries the hole's concrete byte range, budget, completeness, closed
+frontier, open-leaf count, and cost through the bounded queue. This closes the
+concurrent lifting path; it does not claim that enumeration has become scalable.
+
+The publisher writes an encoded full-source checkpoint into an eight-slot,
+256-KiB-per-slot ring in shared Wasm memory. Slot publication uses a sequence
+word as the release boundary and advances a separate latest-sequence word only
+after the payload is complete. The main page polls that ring even while the
+checkpoint worker's JavaScript event loop is blocked in `callMain`. Before a
+view may appear in the trace pane or become installable, the page writes its
+source into its independent Fine module and runs `validate-checkpoint`. Stop
+terminates the producer worker first and then installs only the last source
+which passed that independent check. A completed run replaces the provisional
+mailbox event with Rainfall from that exact execution.
+
+Multi-hole live episodes were rejected explicitly. Publishing the second hole's
+replacement against the original concrete tree would omit the first completed
+replacement; a partial validator can then stop at the remaining hole and make
+that stale source appear acceptable. The runtime therefore accepts one identity
+hole per live source episode until the producer owns a cumulative concrete edit
+set. The native install check constructs a two-hole file and requires this
+diagnostic rather than accepting a plausible incomplete snapshot.
+
+### Discarded direct-grammar experiment
+
+Before retaining iterative deepening, I tried replacing per-budget enumeration
+with one finite type-state recursive datatype grammar. Recursive Z3 functions
+computed well-formedness and cost over the proof tree so a budget constraint
+could select a model directly. Even the cost-one query returned `canceled` under
+the existing resource limit: the recursive `well`/`cost` encoding made the
+ground datatype query substantially harder than the already deterministic
+finite frontier. The experiment was reverted rather than increasing fuel until
+it produced a ceremonial green result. A later direct grammar must reproduce
+the current complete/frontier/cost ordering and close cheaply before it replaces
+enumeration.
+
+### Executable checks and deployed browser observations
+
+The pthread Node smoke now runs both the original two-C++-thread pressure probe
+and `live-checkpoint --proof-limit 2`. It drains the shared ring, requires two
+ordered publications ending in
+`trans[left, middle, right](p, ?)` at budget two, compares that source with the
+command output, and reruns `validate-checkpoint`. Native checks separately
+require an open budget-two source, an open-ended completion which verifies with
+search disabled, and the multi-hole rejection.
+
+The public Chromium completion check against `https://fine.shit.yachts` observed:
+
+```text
+status: checkpointed
+runtime: pthreads
+live sequence: 1
+live budget: 3
+live complete: true
+result: checkpoint search settled / installed epoch 3
+```
+
+A separate public interruption check replaced the editor with a premise-preserving
+cyclic proof grammar, began at budget two, waited for a live partial publication,
+and pressed stop while the producer continued. The installed source contained:
+
+```fine
+proof impossible: Id(Bool, left, false)
+  = trans[left, left, false](p, ?);
+```
+
+The page reported `checkpoint search interrupted / installed epoch 2`; the
+editor changed only after worker termination. After the final scope guard and
+documentation rebuild, the public completion check was repeated with the same
+pthread/budget-three result.
+
+Dirty-tree validation after the final guard:
+
+```text
+nix flake check
+# all checks passed
+nix build --no-link --print-out-paths .#default .#playground-wasm-pthreads .#playground
+# /nix/store/5pi60f4fi9a13pz3h8rmp4hzzkigx0vg-fine-0.1.0
+# /nix/store/waawlwbjrhf5yz134vpw9m5jjqwl8gwz-fine-playground-wasm-pthreads-0.1.0
+# /nix/store/zdnfdsylm0w8v9ns33p5wjdl1l1kk8lw-fine-playground-0.1.0
+```
+
+`fine-playground.service` and `rc-publish-fine.service` were active after the
+deployment restart. The public HTML response retained both cross-origin
+isolation headers.

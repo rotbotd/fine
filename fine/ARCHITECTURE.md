@@ -222,10 +222,10 @@ open proof into the SMT context, and stops the run at the incomplete declaration
 Running `checkpoint` again searches the nested holes in their now-explicit
 context; `identity-checkpoint.fine` closes its second child on the second pass.
 
-This is the persistent epoch boundary. The browser driver below provides
-asynchronous interruption by discarding the current worker and retaining its
-last completed source epoch; it never scrapes Z3's private learned clauses and
-calls them proof structure.
+This remains the persistent source boundary. Browser interruption discards its
+current worker and retains only a source which another Fine instance has
+reparsed and rechecked; it never scrapes Z3's private learned clauses and calls
+them proof structure.
 
 The browser now has the atomic edit half of this boundary for completed search.
 `materialize holes` asks the Wasm CLI to write exact materialized bytes to MEMFS,
@@ -235,17 +235,24 @@ primitive receives completed checkpoint epochs without inspecting a solver's
 in-flight state.
 
 Checkpoint interruption uses process ownership rather than solver-private
-state. A dedicated Web Worker owns a second Wasm runtime and repeatedly runs
-`checkpoint --proof-budget n --output ...` on its last source. Only a completely
-reparsed and validated epoch may post a source snapshot to the main thread. That
-same execution optionally writes `--rain-output`; source and trace are read
-and posted as one pair, so the visible Rainfall can never come from a second
-solver run over nominally similar source. On stop, the main thread first
-terminates the worker, thereby discarding the
-in-flight Z3 context, and only then installs the last posted snapshot with the
-atomic editor transaction. The editor is read-only during the episode. No
-partially written MEMFS file, callback trace, or learned clause crosses this
-boundary.
+state. On a pthread-capable client, the dedicated Web Worker runs one
+`live-checkpoint` command whose producer increases the exact bounded proof cost
+without a predeclared final cost. Each selected Z3 datatype model is translated
+into a private context and queued; the Fine pthread lifts it while the producer
+starts the next frontier. Its publisher writes full source plus score metadata
+to an eight-slot shared-memory ring. The page drains that ring while the
+worker's JavaScript event loop is blocked inside Wasm and uses its independent
+Fine module to reparse and recheck every retained source. Only then does a view
+enter the Rainfall pane or become the last installable checkpoint.
+
+On clients without cross-origin isolation, the same Web Worker retains the
+older cooperative protocol: it repeatedly runs `checkpoint --proof-budget n`
+and posts each source-and-Rainfall epoch after validation. Under either path,
+stop first terminates the owning worker and its in-flight Z3 context, then
+installs only the last independently validated source in one atomic editor
+transaction. A completed live run replaces the provisional mailbox event with
+Rainfall from the exact completing execution. No partially written MEMFS file,
+learned clause, or unvalidated mailbox payload crosses the edit boundary.
 
 ### Native nonblocking live lifting prototype
 
@@ -287,10 +294,16 @@ module's live heap to require shared backing memory and runs the complete
 two-thread C++ probe. The served-response smoke separately requires both headers
 on HTML, ordinary Wasm, and pthread Wasm.
 
-This establishes the Wasm ownership and deployment substrate; it does not claim
-that the visible browser search uses live lifting. The browser still uses
-disposable checkpoint epochs until a real unbounded source-proof producer can
-feed the queue.
+The visible pthread path now uses this queue. Its producer is open-ended
+iterative deepening over Fine's existing exact typed frontiers: each individual
+frontier is still enumerated before Z3 compacts and selects it, so this closes
+browser concurrency and interruption, not proof-search scalability. A direct
+finite-state recursive grammar remains separate work and must preserve the
+current complete/frontier/cost ranking before replacing enumeration. One live
+source episode owns exactly one identity hole. Supporting several requires a
+producer-owned cumulative concrete edit set; publishing each hole against the
+original source would silently discard earlier replacements, so Fine rejects
+that shape rather than displaying a plausible but incomplete checkpoint.
 
 ## Rainfall boundary
 

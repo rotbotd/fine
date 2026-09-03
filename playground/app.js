@@ -21,6 +21,10 @@ let nextInput = 0;
 let checkpointWorker = null;
 let lastCheckpoint = null;
 let completedEpochs = 0;
+let liveMailbox = null;
+let liveNextSequence = 0;
+let livePoll = null;
+const utf8 = new TextDecoder();
 
 const fineLanguage = StreamLanguage.define({
   tokenTable: {
@@ -282,6 +286,11 @@ async function materializeSource() {
 }
 
 function resetCheckpointControls() {
+  if (livePoll !== null)
+    clearInterval(livePoll);
+  livePoll = null;
+  liveMailbox = null;
+  liveNextSequence = 0;
   editor.dispatch({ effects: editing.reconfigure(EditorView.editable.of(true)) });
   checkpointWorker = null;
   lastCheckpoint = null;
@@ -291,6 +300,98 @@ function resetCheckpointControls() {
   checkpoint.disabled = false;
   checkpointBudget.disabled = false;
   stopCheckpoint.disabled = true;
+}
+
+function sharedUint32(address) {
+  return new Uint32Array(liveMailbox.memory, address, 1);
+}
+
+function validateLiveCheckpoint(view) {
+  const path = `/live-view-${view.sequence}.fine`;
+  fine.FS.writeFile(path, view.source);
+  try {
+    const validation = invoke(["validate-checkpoint", path]);
+    if (validation.code !== 0) {
+      throw new Error([...validation.stdout, ...validation.stderr].join("\n")
+        || `live checkpoint validation exited ${validation.code}`);
+    }
+  } finally {
+    fine.FS.unlink(path);
+  }
+
+  lastCheckpoint = view.source;
+  completedEpochs = view.budget;
+  document.documentElement.dataset.fineLiveSequence = String(view.sequence);
+  document.documentElement.dataset.fineLiveBudget = String(view.budget);
+  document.documentElement.dataset.fineLiveComplete = String(view.complete);
+  const event = {
+    schema: "fine.rainfall.v2",
+    run: "browser-live-search",
+    recorder: "browser-mailbox",
+    manager: "independent-lift-snapshot",
+    event_id: `live-view:${view.sequence}`,
+    sequence: view.sequence,
+    kind: "transform",
+    operation: "proof.search.live.publish",
+    producer: {
+      component: "fine.browser-live-mailbox",
+      coverage: "A translated model was lifted on the Fine pthread, then its source checkpoint reparsed and rechecked in an independent browser module",
+    },
+    data: {
+      body: view.body,
+      budget: view.budget,
+      cost: view.cost,
+      complete: view.complete,
+      closed_frontier: view.closed_frontier,
+      open_leaves: view.open_leaves,
+      source_revalidated: true,
+    },
+  };
+  rainfall.textContent = showRainfall([JSON.stringify(event)]);
+  result.textContent = `validated live checkpoint at budget ${view.budget}\n`
+    + `${view.body}\n\nthe editor is unchanged until stop`;
+}
+
+function pollLiveMailbox() {
+  if (!liveMailbox || !checkpointWorker)
+    return;
+  const empty = 0xffffffff;
+  const latest = Atomics.load(sharedUint32(liveMailbox.latest), 0) >>> 0;
+  if (latest === empty)
+    return;
+  const firstAvailable = latest >= liveMailbox.sequences.length
+    ? latest - liveMailbox.sequences.length + 1
+    : 0;
+  let next = Math.max(liveNextSequence, firstAvailable);
+  for (; next <= latest; ++next) {
+    const slot = next % liveMailbox.sequences.length;
+    const sequenceView = sharedUint32(liveMailbox.sequences[slot]);
+    if ((Atomics.load(sequenceView, 0) >>> 0) !== next)
+      continue;
+    const length = Atomics.load(sharedUint32(liveMailbox.lengths[slot]), 0) >>> 0;
+    if (length > liveMailbox.payloadCapacity)
+      throw new Error("live checkpoint mailbox published an invalid length");
+    const bytes = new Uint8Array(liveMailbox.memory, liveMailbox.payloads[slot], length).slice();
+    if ((Atomics.load(sequenceView, 0) >>> 0) !== next)
+      continue;
+    validateLiveCheckpoint(JSON.parse(utf8.decode(bytes)));
+  }
+  liveNextSequence = latest + 1;
+}
+
+function startLivePolling(mailbox) {
+  liveMailbox = mailbox;
+  liveNextSequence = 0;
+  livePoll = setInterval(() => {
+    try {
+      pollLiveMailbox();
+    } catch (error) {
+      checkpointWorker?.terminate();
+      result.textContent = error?.stack ?? String(error);
+      status.textContent = "live checkpoint validation failed";
+      resetCheckpointControls();
+    }
+  }, 16);
 }
 
 function installLastCheckpoint(label) {
@@ -329,6 +430,8 @@ function beginCheckpointSearch() {
     if (!checkpointWorker)
       return;
     if (data?.type === "ready") {
+      if (data.live)
+        startLivePolling(data.live);
       checkpointWorker.postMessage({
         type: "start",
         source: lastCheckpoint,
@@ -346,8 +449,10 @@ function beginCheckpointSearch() {
       return;
     }
     if (data?.type === "done") {
+      pollLiveMailbox();
       lastCheckpoint = data.source;
-      completedEpochs = data.epoch;
+      if (typeof data.epoch === "number")
+        completedEpochs = data.epoch;
       rainfall.textContent = showRainfall(data.rainfall);
       installLastCheckpoint("checkpoint search settled");
       return;

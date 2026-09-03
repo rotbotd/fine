@@ -1,5 +1,7 @@
 #include "parser.h"
 #ifdef FINE_HAS_LIVE_LIFT
+#include "browser_live.h"
+#include "live_lift.h"
 #include "live_lift_probe.h"
 #endif
 #include "runtime.h"
@@ -11,6 +13,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -46,6 +49,30 @@ namespace {
     bool parse_revision(std::string_view text, std::size_t &result) {
         auto parsed = std::from_chars(text.data(), text.data() + text.size(), result);
         return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
+    }
+
+    std::string json_quote(std::string_view text) {
+        std::ostringstream output;
+        output << '"';
+        for (unsigned char character : text) {
+            switch (character) {
+            case '"': output << "\\\""; break;
+            case '\\': output << "\\\\"; break;
+            case '\n': output << "\\n"; break;
+            case '\r': output << "\\r"; break;
+            case '\t': output << "\\t"; break;
+            default:
+                if (character < 0x20) {
+                    constexpr char digits[] = "0123456789abcdef";
+                    output << "\\u00" << digits[character >> 4] << digits[character & 15];
+                }
+                else {
+                    output << static_cast<char>(character);
+                }
+            }
+        }
+        output << '"';
+        return output.str();
     }
 
     int run_file(char const *path, bool rainfall = false, RainRequest const *request = nullptr,
@@ -101,7 +128,8 @@ namespace {
     }
 
     int checkpoint_file(char const *path, std::size_t budget, char const *output_path = nullptr,
-                        char const *rainfall_output_path = nullptr) {
+                        char const *rainfall_output_path = nullptr, bool regular_search = false,
+                        std::size_t regular_search_limit = 0, std::size_t regular_search_start = 1) {
         std::string source = read_file(path);
         try {
             fine::syntax::ConcreteSyntaxTree tree = fine::syntax::parse_tree(source);
@@ -109,12 +137,50 @@ namespace {
             first_options.proof_selector = fine::ProofSelector::z3_model;
             first_options.synthesize_partial_proofs = true;
             first_options.proof_search_cost = budget;
+#ifdef FINE_HAS_LIVE_LIFT
+            std::unique_ptr<fine::LiveLiftPipeline> live_lift;
+            if (regular_search) {
+                fine::reset_browser_live_mailbox();
+                live_lift = std::make_unique<fine::LiveLiftPipeline>(
+                    8, [&](fine::LiveLiftView view) {
+                        std::istringstream metadata(view.run);
+                        std::size_t begin = 0, end = 0, search_budget = 0, complete = 0;
+                        std::size_t closed_frontier = 0, open_leaves = 0, cost = 0;
+                        if (!(metadata >> begin >> end >> search_budget >> complete >> closed_frontier >> open_leaves >> cost))
+                            throw std::runtime_error("invalid live proof metadata");
+                        std::string candidate = fine::apply_materializations(
+                            tree, {{fine::syntax::ConcreteRange{begin, end}, view.text}});
+                        std::ostringstream payload;
+                        payload << "{\"sequence\":" << view.sequence << ",\"budget\":" << search_budget
+                                << ",\"cost\":" << cost << ",\"complete\":"
+                                << (complete ? "true" : "false") << ",\"closed_frontier\":"
+                                << closed_frontier << ",\"open_leaves\":" << open_leaves
+                                << ",\"body\":" << json_quote(view.text)
+                                << ",\"source\":" << json_quote(candidate) << '}';
+                        fine::publish_browser_live_payload(static_cast<std::uint32_t>(view.sequence), payload.str());
+                    });
+                first_options.live_iterative_proof_search = true;
+                first_options.live_proof_search_start = regular_search_start;
+                first_options.live_proof_search_limit = regular_search_limit;
+                first_options.live_lift = live_lift.get();
+            }
+#else
+            (void)regular_search;
+            (void)regular_search_limit;
+            (void)regular_search_start;
+#endif
             std::ostringstream first_output;
             std::ostringstream rainfall_output;
             fine::SourceSnapshot snapshot = fine::make_source_snapshot(path, source);
             fine::ExecutionResult result = fine::execute(
                 tree.ast, first_output, rainfall_output_path ? &rainfall_output : nullptr,
                 rainfall_output_path ? &snapshot : nullptr, {}, first_options);
+#ifdef FINE_HAS_LIVE_LIFT
+            if (live_lift) {
+                live_lift->close();
+                live_lift->join();
+            }
+#endif
             std::string checkpoint = fine::apply_materializations(tree, result.materializations);
             fine::syntax::ConcreteSyntaxTree reparsed = fine::syntax::parse_tree(checkpoint);
             fine::ExecutionOptions validation;
@@ -148,7 +214,34 @@ int main(int argc, char **argv) try {
 #ifdef FINE_HAS_LIVE_LIFT
     if (argc == 2 && std::string_view(argv[1]) == "live-lift-probe")
         return fine::run_live_lift_probe(std::cout);
+    if (argc == 7 && std::string_view(argv[1]) == "live-checkpoint" &&
+        std::string_view(argv[2]) == "--output" && std::string_view(argv[4]) == "--rain-output")
+        return checkpoint_file(argv[6], 1, argv[3], argv[5], true);
+    if (argc == 9 && std::string_view(argv[1]) == "live-checkpoint" &&
+        std::string_view(argv[2]) == "--proof-start" && std::string_view(argv[4]) == "--output" &&
+        std::string_view(argv[6]) == "--rain-output") {
+        std::size_t start = 0;
+        if (!parse_revision(argv[3], start) || start == 0) {
+            std::cerr << "fine: proof start must be a positive integer\n";
+            return EXIT_FAILURE;
+        }
+        return checkpoint_file(argv[8], 1, argv[5], argv[7], true, 0, start);
+    }
+    if (argc == 7 && std::string_view(argv[1]) == "live-checkpoint" &&
+        std::string_view(argv[2]) == "--proof-limit" && std::string_view(argv[4]) == "--output") {
+        std::size_t limit = 0;
+        if (!parse_revision(argv[3], limit) || limit == 0) {
+            std::cerr << "fine: proof limit must be a positive integer\n";
+            return EXIT_FAILURE;
+        }
+        return checkpoint_file(argv[6], 1, argv[5], nullptr, true, limit);
+    }
 #endif
+    if (argc == 3 && std::string_view(argv[1]) == "validate-checkpoint") {
+        fine::ExecutionOptions options;
+        options.validate_partial_proofs = true;
+        return run_file(argv[2], false, nullptr, options);
+    }
     if (argc == 3 && std::string_view(argv[1]) == "run")
         return run_file(argv[2]);
     if (argc == 3 && std::string_view(argv[1]) == "rain")
@@ -256,6 +349,7 @@ int main(int argc, char **argv) try {
                  "       fine checkpoint --proof-budget <n> --output <output.fine> <source.fine>\n"
                  "       fine checkpoint --proof-budget <n> --output <output.fine> "
                  "--rain-output <trace.rain> <source.fine>\n"
+                 "       fine validate-checkpoint <source.fine>\n"
                  "       fine rain --checkpoint --proof-budget <n> <source.fine>\n"
                  "       fine {run|rain|materialize} --proof-selector z3 <source.fine>\n"
                  "       fine rain --document <id> --revision <n> "
@@ -263,7 +357,11 @@ int main(int argc, char **argv) try {
                  "       fine rain --proof-selector z3 --document <id> --revision <n> "
                  "--generation <id> <source.fine>\n";
 #ifdef FINE_HAS_LIVE_LIFT
-    std::cerr << "       fine live-lift-probe\n";
+    std::cerr << "       fine live-lift-probe\n"
+                 "       fine live-checkpoint --output <output.fine> --rain-output <trace.rain> <source.fine>\n"
+                 "       fine live-checkpoint --proof-start <n> --output <output.fine> "
+                 "--rain-output <trace.rain> <source.fine>\n"
+                 "       fine live-checkpoint --proof-limit <n> --output <output.fine> <source.fine>\n";
 #endif
     return EXIT_FAILURE;
 } catch (z3::exception const &error) {

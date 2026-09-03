@@ -10,6 +10,7 @@ add_executable(fine-bin
 option(FINE_ENABLE_LIVE_LIFT "Build the nonblocking live-lifting prototype" OFF)
 if (NOT EMSCRIPTEN OR FINE_ENABLE_LIVE_LIFT)
   target_sources(fine-bin PRIVATE
+    browser_live.cpp
     live_lift.cpp
     live_lift_probe.cpp
   )

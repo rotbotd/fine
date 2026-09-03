@@ -2,6 +2,9 @@
 
 #include "proof_model_selector.h"
 #include "rainfall.h"
+#ifdef FINE_HAS_LIVE_LIFT
+#include "live_lift.h"
+#endif
 
 #include "c++/z3++.h"
 
@@ -414,6 +417,7 @@ namespace fine {
             ExecutionResult result_;
             std::map<std::pair<std::size_t, std::size_t>, std::string> materializations_;
             std::size_t proof_model_index_ = 0;
+            std::size_t live_identity_holes_ = 0;
 
             [[noreturn]] static void reject(syntax::SourceSpan span, std::string message) {
                 throw SemanticError(span, std::move(message));
@@ -1303,6 +1307,104 @@ namespace fine {
 
                 if (options_.require_materialized_proofs)
                     reject(expression.span, "proof hole remains after materialization");
+
+                if (options_.live_iterative_proof_search) {
+                    if (live_identity_holes_++ != 0)
+                        reject(expression.span,
+                               "live iterative search currently supports one identity hole per source episode");
+                    ProofCandidate selected;
+                    std::size_t budget = options_.live_proof_search_start - 1;
+                    std::string last_observed_source;
+                    for (;;) {
+                        ++budget;
+                        std::vector<ProofCandidate> frontier = enumerate_proof_candidates(
+                            expected_syntax, expected, print_value(expected_syntax.left),
+                            print_value(expected_syntax.right), values, proofs, proof_order, absorbed, budget);
+                        if (frontier.empty())
+                            reject(expression.span, "live proof search produced an empty typed frontier");
+                        proof_model::Grammar grammar = make_proof_model_grammar(frontier, expected);
+                        grammar.max_cost = budget;
+                        proof_model::Result model_selection = proof_model::select(
+                            context_, grammar,
+                            [&](proof_model::Grammar const &observed_grammar, z3::context &model_context,
+                                z3::expr const &model, proof_model::Result const &result) {
+#ifdef FINE_HAS_LIVE_LIFT
+                                if (options_.live_lift && result.source != last_observed_source) {
+                                    std::ostringstream metadata;
+                                    metadata << expression.span.begin.offset << '\t' << expression.span.end.offset
+                                             << '\t' << budget << '\t' << (result.complete ? 1 : 0) << '\t'
+                                             << result.closed_frontier << '\t' << result.open_leaves << '\t'
+                                             << result.cost;
+                                    std::string expected_source = result.source;
+                                    options_.live_lift->observe(
+                                        metadata.str(), model_context, model,
+                                        [observed_grammar, expected_source](z3::context &copied_context,
+                                                                            z3::expr const &copied_model) {
+                                            std::string lifted = proof_model::lift_model_term(
+                                                copied_context, copied_model, observed_grammar);
+                                            if (lifted != expected_source)
+                                                throw std::runtime_error(
+                                                    "translated live proof model changed its Fine source");
+                                            return lifted;
+                                        });
+                                    last_observed_source = result.source;
+                                }
+#else
+                                (void)observed_grammar;
+                                (void)model_context;
+                                (void)model;
+                                (void)result;
+#endif
+                            });
+                        if (model_selection.status != proof_model::Status::sat)
+                            reject(expression.span, "live Z3 proof selector failed for `" + name + "`: " +
+                                                        model_selection.reason);
+                        if (model_selection.source != grammar.preferred_source)
+                            reject(expression.span,
+                                   "live Z3 proof model did not reproduce Fine's preferred source tree");
+                        auto found = std::find_if(frontier.begin(), frontier.end(), [&](ProofCandidate const &item) {
+                            return item.source == model_selection.source && item.cost == model_selection.cost &&
+                                   item.complete == model_selection.complete &&
+                                   item.closed_frontier == model_selection.closed_frontier &&
+                                   item.open_leaves == model_selection.open_leaves;
+                        });
+                        if (found == frontier.end())
+                            reject(expression.span, "live Z3 proof model lifted outside its exact typed frontier");
+                        selected = *found;
+                        if (rainfall_)
+                            rainfall_->record(
+                                "derive", "proof.search.live.model", {"run:" + run},
+                                "fine.proof-model-selector",
+                                "One bounded typed frontier produced the next exact source checkpoint while the "
+                                "following frontier may continue independently of presentation",
+                                {RainfallRecorder::string_field("body", selected.source),
+                                 RainfallRecorder::number_field("budget", budget),
+                                 RainfallRecorder::number_field("cost", selected.cost),
+                                 RainfallRecorder::boolean_field("complete", selected.complete),
+                                 RainfallRecorder::number_field("closed_frontier", selected.closed_frontier),
+                                 RainfallRecorder::number_field("open_leaves", selected.open_leaves)});
+                        if (selected.complete ||
+                            (options_.live_proof_search_limit != 0 && budget >= options_.live_proof_search_limit))
+                            break;
+                    }
+
+                    request_materialization(syntax::ConcreteRange::from_span(expression.span), selected.source,
+                                            expression.span);
+                    if (selected.complete)
+                        ++result_.proof_holes_filled;
+                    else {
+                        ++result_.proof_holes_checkpointed;
+                        result_.checkpoint_open = true;
+                    }
+                    output_ << (selected.complete ? "filled proof hole: " : "checkpointed proof hole: ") << name
+                            << " <- " << selected.source << " (live Z3 iterative search)\n";
+                    return {std::move(name),
+                            std::move(expected),
+                            selected.complete ? "search:z3-live:complete" : "search:z3-live:open",
+                            expression.span,
+                            print_value(expected_syntax.left),
+                            print_value(expected_syntax.right), {}, std::nullopt, std::nullopt, selected.complete};
+                }
 
                 std::vector<ProofCandidate> candidates = enumerate_proof_candidates(
                     expected_syntax, expected, print_value(expected_syntax.left), print_value(expected_syntax.right),

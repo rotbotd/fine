@@ -47,6 +47,7 @@ namespace fine {
         LiveLiftPipeline &operator=(LiveLiftPipeline const &) = delete;
 
         std::uint64_t observe(std::string run, z3::context &source_context, z3::expr const &term);
+        std::uint64_t observe(std::string run, z3::context &source_context, z3::expr const &term, Lift lift);
 
         // close() drains every queued view. request_cancel() discards every
         // queued intermediate view except the newest one. join() waits for the

@@ -71,7 +71,7 @@
               </tr>
               <tr>
                 <td>partial proof checkpoint</td>
-                <td><code>fine checkpoint --proof-budget n</code> writes the best typed partial term as ordinary Fine. In the browser, <code>search checkpoints</code> repeats exact epochs in a disposable worker; each completed source-and-Rainfall pair updates the trace pane, and stopping installs only the last completed source snapshot.</td>
+                <td><code>fine checkpoint --proof-budget n</code> writes the best typed partial term as ordinary Fine. In an isolated browser, <code>search checkpoints</code> deepens one identity hole inside Wasm while a Fine pthread lifts selected models into a shared ring; the page reparses and rechecks each source before showing it. Stop kills the search, then installs only that last validated source. Other clients retain disposable source epochs.</td>
                 <td><code>trans[left, middle, right](p, ?)</code></td>
               </tr>
               <tr>
@@ -124,7 +124,7 @@
       <p>
         <button id="run" type="button" disabled>run</button>
         <button id="materialize" type="button" disabled>materialize holes</button>
-        <label>checkpoint budget <input id="checkpoint-budget" type="number" min="1" max="8" value="2" disabled></label>
+        <label>starting budget <input id="checkpoint-budget" type="number" min="1" max="8" value="2" disabled></label>
         <button id="checkpoint" type="button" disabled>search checkpoints</button>
         <button id="stop-checkpoint" type="button" disabled>stop and materialize</button>
         <span id="status">loading Fine…</span>
