@@ -4464,3 +4464,76 @@ python fine/rainfall_replay.py \
 The run formed `result : Rebuilt(node(leaf, leaf))`; replay accepted the complete
 trace; a direct event inspection found exactly the distinct `left_grows` and
 `right_grows` IH uses under parent `evidence`.
+
+## 2026-09-03 — indexed holes select exact locals and structural IH applications
+
+The first indexed-family hole grammar is deliberately smaller than the identity
+grammar. It has two productions, in deterministic order:
+
+```
+[exact-local, induction-hypothesis]
+```
+
+Exact locals require same-family, same-arity, manager-local AST identity at every
+index. The IH production exists only while checking a body-bearing proof function
+with `inducts(...)`. Fine matches the function's indexed result against the hole
+expectation, recovers every directly determined value parameter, re-elaborates
+the result to demand exact type identity, and builds the Cartesian product of
+exact lexical evidence for its proof parameters. The designated induction
+argument receives an additional filter: its evidence must carry the active
+function's structural root. The application costs one plus its proof arguments
+under the existing total bound of three.
+
+This does not synthesize proof constructors, infer result parameters that remain
+undetermined by direct result matching, or enter the identity-specific Z3
+datatype-model selector. `--proof-selector z3` on an indexed hole fails with an
+explicit diagnostic. Retaining that refusal matters: silently using a different
+grammar under the requested selector would make source selection irreproducible.
+
+`proof-inductive-holes.fine` discriminates both admitted productions. Its
+recursive `Even` constructor exposes `prior: Even(previous)` and a deliberately
+wrong local `wrong: Rebuilt(succ(previous))`. The hole expects
+`Rebuilt(previous)`, so the wrong local is absent before enumeration and the sole
+candidate is `rebuild[previous](prior)`. A second run-level hole expects
+`Even(zero)` and selects exact local `zero_even`. The materialized companion
+contains both replacements and reruns with proof search forbidden.
+`reject-empty-inductive-hole.fine` removes `inducts`; the wrong-index local remains
+visible in source but the exact grammar is empty and the function fails at that
+hole.
+
+Rainfall reuses the existing `proof.search.open/candidate/select/close` lifecycle
+with proof-type-sensitive schema fields. Indexed opens name an inductive type
+source, carry no equality proposition, state the two-production grammar, and
+assert that nondecreasing IH candidates were excluded. An IH candidate retains
+function, inferred value indices, exact proof arguments, induction root, parent,
+and recursive field. Replay accepts identity and indexed hole shapes separately,
+requires every candidate production to belong to its declared grammar, and
+validates the structural edge of each IH candidate. Existing identity-hole replay
+still passes.
+
+Local validation:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/proof-inductive-holes.fine
+.build/fine rain fine/fixtures/proof-inductive-holes.fine \
+  > /tmp/fine-inductive-holes.rain
+python fine/rainfall_validate.py fine/fixtures/proof-inductive-holes.fine \
+  /tmp/fine-inductive-holes.rain
+.build/fine materialize fine/fixtures/proof-inductive-holes.fine \
+  > /tmp/fine-inductive-holes.materialized
+cmp fine/fixtures/proof-inductive-holes-materialized.fine \
+  /tmp/fine-inductive-holes.materialized
+.build/fine run /tmp/fine-inductive-holes.materialized
+.build/fine run fine/fixtures/reject-empty-inductive-hole.fine
+.build/fine run --proof-selector z3 fine/fixtures/proof-inductive-holes.fine
+.build/fine rain fine/fixtures/identity-holes.fine > /tmp/identity-holes.rain
+python fine/rainfall_validate.py fine/fixtures/identity-holes.fine \
+  /tmp/identity-holes.rain
+```
+
+The indexed trace contained exactly the candidates
+`(induction-hypothesis, rebuild[previous](prior))` and
+`(exact-local, zero_even)` in their separate hole scopes. The materialized file
+matched byte-for-byte. The empty grammar and unsupported selector controls both
+exited nonzero with their dedicated diagnostics.

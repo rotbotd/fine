@@ -1,0 +1,28 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Rebuilt(value: Nat) {
+  rebuilt_zero() -> Rebuilt(zero);
+  rebuilt_next(previous: Nat) takes [prior: Rebuilt(previous)] -> Rebuilt(succ(succ(previous)));
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat)
+    takes [prior: Even(previous), wrong: Rebuilt(succ(previous))]
+    -> Even(succ(succ(previous)));
+}
+
+proof function stuck(value: Nat)
+  takes [evidence: Even(value)]
+  -> Rebuilt(value) {
+  match evidence {
+    even_zero() => rebuilt_zero(),
+    even_next[previous](prior, wrong) => rebuilt_next[previous](?),
+  }
+}
+
+run reject_empty_inductive_hole {
+}

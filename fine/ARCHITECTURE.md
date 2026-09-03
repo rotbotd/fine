@@ -113,6 +113,15 @@ induction parameter, parent evidence, and recursive field separately. This is
 structural induction over proof evidence, not general runtime recursion or a
 numeric termination checker.
 
+Indexed proof holes preserve that same boundary. Their deterministic grammar is
+`[exact-local, induction-hypothesis]`: a local must have exact family and index
+identity, while an IH application must first pass structural descent and then
+instantiate direct result indices and every proof parameter exactly. The root
+evidence and mismatched locals never become candidates. Materialization replaces
+the hole with the chosen Fine term and reruns with search forbidden. Proof
+constructor synthesis and the Z3 datatype-model selector remain outside this
+grammar.
+
 ## Contextual proof demand
 
 A function declares evidence required from its caller:

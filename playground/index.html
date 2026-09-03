@@ -70,6 +70,11 @@
                 <td><code>proof q: Id(Int, n, n) = ?;</code></td>
               </tr>
               <tr>
+                <td>indexed proof hole</td>
+                <td>Deterministic search admits exact local family evidence and structurally decreasing IH applications. Wrong indices and the root are absent before enumeration; constructor and Z3-model search are not yet admitted.</td>
+                <td><code>even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;rebuilt_next[previous](?)<br>// ? &larr; rebuild[previous](prior)</code></td>
+              </tr>
+              <tr>
                 <td>proof function</td>
                 <td>Its result follows from its value indices and taken evidence; it cannot be called as runtime code.</td>
                 <td><code>proof function symm(left: Bool, right: Bool)<br>takes [p: Id(Bool, left, right)]<br>-&gt; Id(Bool, right, left);</code></td>

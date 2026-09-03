@@ -140,6 +140,57 @@
           assert {use["induction_parameter"] for use in uses} == {"evidence"}, uses
           PY
 
+          inductive_hole_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-holes.fine")"
+          echo "$inductive_hole_output"
+          grep -F "filled proof hole: rebuild.result.even_next.prior <- rebuild[previous](prior) (typed search)" \
+            <<<"$inductive_hole_output"
+          grep -F "filled proof hole: copied <- zero_even (typed search)" <<<"$inductive_hole_output"
+
+          inductive_hole_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-inductive-holes.fine" > "$inductive_hole_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-inductive-holes.fine" "$inductive_hole_rain"
+          ${pkgs.python3}/bin/python - "$inductive_hole_rain" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              events = [json.loads(line) for line in stream]
+          candidates = [event["data"] for event in events
+                        if event["operation"] == "proof.search.candidate"]
+          assert [(item["production"], item["body"]) for item in candidates] == [
+              ("induction-hypothesis", "rebuild[previous](prior)"),
+              ("exact-local", "zero_even"),
+          ], candidates
+          assert candidates[0]["recursive_evidence"] == "prior", candidates
+          assert candidates[0]["parent_evidence"] == "evidence", candidates
+          PY
+
+          inductive_hole_materialized="$(mktemp)"
+          $out/bin/fine materialize "$src/fine/fixtures/proof-inductive-holes.fine" \
+            > "$inductive_hole_materialized"
+          cmp "$src/fine/fixtures/proof-inductive-holes-materialized.fine" \
+            "$inductive_hole_materialized"
+          $out/bin/fine run "$inductive_hole_materialized"
+
+          empty_inductive_hole="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-empty-inductive-hole.fine" \
+              >"$empty_inductive_hole" 2>&1; then
+            echo "empty indexed proof grammar unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'has no candidate in grammar [exact-local, induction-hypothesis]' \
+            "$empty_inductive_hole"
+
+          unsupported_inductive_selector="$(mktemp)"
+          if $out/bin/fine run --proof-selector z3 "$src/fine/fixtures/proof-inductive-holes.fine" \
+              >"$unsupported_inductive_selector" 2>&1; then
+            echo "indexed hole silently entered the identity Z3 selector" >&2
+            exit 1
+          fi
+          grep -F 'Z3 proof selector does not yet cover indexed proof holes' \
+            "$unsupported_inductive_selector"
+
           nondecreasing_recursion="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-nondecreasing-proof-recursion.fine" \
               >"$nondecreasing_recursion" 2>&1; then

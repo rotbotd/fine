@@ -28,6 +28,12 @@
   its root evidence rather than a recursive constructor field.
 - `reject-recursion-without-inducts.fine` shows that an ordinary body-bearing
   proof function is not visible recursively.
+- `proof-inductive-holes.fine` gives an indexed hole exactly one structurally
+  valid IH application while a wrong-index local is excluded, then gives a
+  second hole an exact local. Its materialized companion replaces both holes and
+  reruns without search.
+- `reject-empty-inductive-hole.fine` removes `inducts`, so the wrong-index local
+  cannot prevent the indexed grammar from closing empty.
 - `reject-nonexhaustive-proof-match.fine` omits one constructor that remains
   reachable for a symbolic index.
 - `reject-unreachable-proof-match-arm.fine` writes a constructor arm after index

@@ -231,8 +231,13 @@ the target constructor requires both recursive results. Rainfall retains two
 distinct IH edges, `left_grows` and `right_grows`, under the same exact parent,
 so one child cannot stand in for joint support.
 
-This does not close the whole slice. Typed proof holes inside recursive arms
-remain.
+Typed holes inside recursive arms are now closed for the exact first grammar.
+They enumerate matching locals and structurally admitted IH applications only;
+wrong-index locals and nondecreasing roots are absent before enumeration.
+`proof-inductive-holes.fine` uniquely selects `rebuild[previous](prior)`, retains
+the typed frontier in Rainfall, materializes, and reruns without search. A second
+hole selects exact local indexed evidence. Constructor synthesis and the Z3
+datatype-model selector remain separate slices.
 
 Fine may lower the proposition to a Z3 relation for checking and search, but the
 source constructor table owns branch identity, field scope, recursive-premise

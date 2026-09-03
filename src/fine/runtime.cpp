@@ -870,6 +870,37 @@ namespace fine {
                 return completed;
             }
 
+            std::optional<IndexInstantiation>
+            infer_inductive_value_arguments(syntax::ProofFunctionDecl const &function,
+                                             syntax::ProofType const &expected_syntax,
+                                             InductiveType const &expected) {
+                if (function.result_type.kind != syntax::ProofType::Kind::inductive ||
+                    function.result_type.name != expected.family ||
+                    function.result_type.arguments.size() != expected.indices.size() ||
+                    expected_syntax.arguments.size() != expected.indices.size())
+                    return std::nullopt;
+                std::map<std::string, ValueKind> parameters;
+                for (auto const &parameter : function.parameters)
+                    parameters.emplace(parameter.name, kind_of(parameter.type));
+                IndexInstantiation result;
+                bool added = false;
+                for (std::size_t i = 0; i < expected.indices.size(); ++i)
+                    if (!match_index_pattern(function.result_type.arguments[i], expected.indices[i].expression,
+                                             print_value(expected_syntax.arguments[i]), parameters, result.values,
+                                             result.sources, added))
+                        return std::nullopt;
+                if (result.values.size() != function.parameters.size())
+                    return std::nullopt;
+                ProofEnvironment no_proofs;
+                std::vector<std::string> no_proof_order;
+                std::vector<z3::expr> no_absorbed;
+                SemanticProofType instantiated = elaborate_proof_type(
+                    function.result_type, result.values, no_proofs, no_proof_order, no_absorbed);
+                if (!same_type(context_, instantiated, SemanticProofType(expected)))
+                    return std::nullopt;
+                return result;
+            }
+
             proof_model::Type proof_model_type(IdentityType const &type) {
                 return {sort(type.carrier).id(), Z3_get_ast_id(context_, type.left),
                         Z3_get_ast_id(context_, type.right)};
@@ -1373,6 +1404,210 @@ namespace fine {
                         print_value(expected_syntax.right)};
             }
 
+            std::vector<ProofCandidate>
+            enumerate_inductive_proof_candidates(syntax::ProofType const &expected_syntax,
+                                                 InductiveType const &expected,
+                                                 ProofEnvironment const &proofs,
+                                                 std::vector<std::string> const &proof_order) {
+                std::vector<ProofCandidate> candidates;
+                for (auto const &candidate_name : proof_order) {
+                    auto found = proofs.find(candidate_name);
+                    if (found == proofs.end())
+                        continue;
+                    auto inductive = std::get_if<InductiveType>(&found->second.type);
+                    if (inductive && same_type(context_, *inductive, expected))
+                        candidates.push_back({candidate_name, "exact-local", candidate_name, std::nullopt,
+                                              {}, {}, 1, std::nullopt, {}});
+                }
+
+                if (!active_inductive_function_ || !active_inductive_function_->induction_parameter)
+                    return candidates;
+                syntax::ProofFunctionDecl const &function = *active_inductive_function_;
+                auto instantiation = infer_inductive_value_arguments(function, expected_syntax, expected);
+                if (!instantiation)
+                    return candidates;
+
+                std::vector<std::vector<std::string>> argument_frontiers;
+                for (auto const &parameter : function.proof_parameters) {
+                    ProofEnvironment no_proofs;
+                    std::vector<std::string> no_proof_order;
+                    std::vector<z3::expr> no_absorbed;
+                    SemanticProofType parameter_type = elaborate_proof_type(
+                        parameter.type, instantiation->values, no_proofs, no_proof_order, no_absorbed);
+                    std::vector<std::string> frontier;
+                    for (auto const &proof_name : proof_order) {
+                        auto found = proofs.find(proof_name);
+                        if (found == proofs.end() || !same_type(context_, found->second.type, parameter_type))
+                            continue;
+                        if (parameter.name == *function.induction_parameter &&
+                            (!found->second.structural_root ||
+                             *found->second.structural_root != *function.induction_parameter))
+                            continue;
+                        frontier.push_back(proof_name);
+                    }
+                    if (frontier.empty())
+                        return candidates;
+                    argument_frontiers.push_back(std::move(frontier));
+                }
+
+                std::vector<std::vector<std::string>> combinations(1);
+                for (auto const &frontier : argument_frontiers) {
+                    std::vector<std::vector<std::string>> next;
+                    for (auto const &combination : combinations)
+                        for (auto const &argument : frontier) {
+                            auto extended = combination;
+                            extended.push_back(argument);
+                            next.push_back(std::move(extended));
+                        }
+                    combinations = std::move(next);
+                }
+                for (auto const &arguments : combinations) {
+                    std::size_t cost = 1 + arguments.size();
+                    if (cost > max_proof_search_cost)
+                        continue;
+                    std::ostringstream source;
+                    source << function.name;
+                    std::vector<std::string> index_arguments;
+                    if (!function.parameters.empty()) {
+                        source << '[';
+                        for (std::size_t i = 0; i < function.parameters.size(); ++i) {
+                            if (i)
+                                source << ", ";
+                            std::string const &argument = instantiation->sources.at(function.parameters[i].name);
+                            source << argument;
+                            index_arguments.push_back(argument);
+                        }
+                        source << ']';
+                    }
+                    source << '(';
+                    for (std::size_t i = 0; i < arguments.size(); ++i) {
+                        if (i)
+                            source << ", ";
+                        source << arguments[i];
+                    }
+                    source << ')';
+                    candidates.push_back({source.str(), "induction-hypothesis", std::nullopt, function.name,
+                                          std::move(index_arguments), arguments, cost, std::nullopt, {}});
+                }
+                return candidates;
+            }
+
+            ProofEvidence elaborate_inductive_hole(syntax::ProofExpr const &expression,
+                                                    syntax::ProofType const &expected_syntax,
+                                                    InductiveType expected,
+                                                    ProofEnvironment const &proofs,
+                                                    std::vector<std::string> const &proof_order,
+                                                    std::string name, std::string const &run) {
+                if (options_.require_materialized_proofs)
+                    reject(expression.span, "proof hole remains after materialization");
+                if (options_.proof_selector == ProofSelector::z3_model)
+                    reject(expression.span,
+                           "Z3 proof selector does not yet cover indexed proof holes; use deterministic selection");
+
+                std::vector<ProofCandidate> candidates =
+                    enumerate_inductive_proof_candidates(expected_syntax, expected, proofs, proof_order);
+                std::string proof_source;
+                std::string type_source;
+                std::string hole;
+                std::vector<std::string> candidate_events;
+                if (rainfall_) {
+                    proof_source = rainfall_->source_node(expression.node_id, expression.span,
+                                                          "proof.expression.hole");
+                    type_source = rainfall_->source_node(expected_syntax.node_id, expected_syntax.span,
+                                                         "proof-type.inductive");
+                    hole = "proof-hole:" + proof_source;
+                    rainfall_->record(
+                        "object", "proof.search.open", {"run:" + run, hole}, "fine.typed-proof-search",
+                        "An indexed proof hole opens with exact local evidence and structurally admitted induction "
+                        "hypothesis applications only",
+                        {RainfallRecorder::string_field("id", hole),
+                         RainfallRecorder::string_field("source", proof_source),
+                         RainfallRecorder::string_field("type_source", type_source),
+                         RainfallRecorder::string_field("binding", name),
+                         RainfallRecorder::string_field("expected_type", print_proof_type(expected_syntax)),
+                         RainfallRecorder::string_field("proposition", ""),
+                         RainfallRecorder::raw_field("grammar", "[\"exact-local\",\"induction-hypothesis\"]"),
+                         RainfallRecorder::number_field("max_cost", max_proof_search_cost),
+                         RainfallRecorder::boolean_field("ill_typed_candidates_enumerated", false),
+                         RainfallRecorder::boolean_field("nondecreasing_ih_candidates_enumerated", false)});
+                    for (auto const &candidate : candidates) {
+                        std::vector<RainfallField> data = {
+                            RainfallRecorder::string_field("hole", hole),
+                            RainfallRecorder::string_field("body", candidate.source),
+                            RainfallRecorder::string_field("production", candidate.production),
+                            RainfallRecorder::string_field("expected_type", print_proof_type(expected_syntax)),
+                            RainfallRecorder::boolean_field("exact_type", true),
+                            RainfallRecorder::boolean_field("runtime_value_created", false),
+                            RainfallRecorder::number_field("cost", candidate.cost),
+                        };
+                        if (candidate.local_proof)
+                            data.push_back(RainfallRecorder::string_field("proof", *candidate.local_proof));
+                        if (candidate.proof_function) {
+                            auto const &function = *active_inductive_function_;
+                            auto parameter = std::find_if(
+                                function.proof_parameters.begin(), function.proof_parameters.end(),
+                                [&](syntax::CoeffectParameter const &item) {
+                                    return item.name == *function.induction_parameter;
+                                });
+                            std::size_t position = static_cast<std::size_t>(parameter - function.proof_parameters.begin());
+                            std::string const &recursive = candidate.proof_arguments[position];
+                            auto const &evidence = proofs.at(recursive);
+                            data.push_back(RainfallRecorder::string_field("function", *candidate.proof_function));
+                            data.push_back(RainfallRecorder::raw_field(
+                                "index_arguments", RainfallRecorder::string_array(candidate.index_arguments)));
+                            data.push_back(RainfallRecorder::raw_field(
+                                "proof_arguments", RainfallRecorder::string_array(candidate.proof_arguments)));
+                            data.push_back(RainfallRecorder::string_field(
+                                "induction_parameter", *function.induction_parameter));
+                            data.push_back(RainfallRecorder::string_field(
+                                "parent_evidence", evidence.structural_parent.value_or("")));
+                            data.push_back(RainfallRecorder::string_field("recursive_evidence", recursive));
+                        }
+                        candidate_events.push_back(rainfall_->record(
+                            "derive", "proof.search.candidate", {"run:" + run, hole}, "fine.typed-proof-search",
+                            "An exact indexed proof candidate entered the frontier after structural descent "
+                            "filtering",
+                            data));
+                    }
+                }
+
+                if (candidates.empty())
+                    reject(expression.span, "indexed proof hole `" + name +
+                                                "` has no candidate in grammar "
+                                                "[exact-local, induction-hypothesis]");
+                ProofCandidate const &selected = candidates.front();
+                request_materialization(expression.span.begin.offset, expression.span.end.offset, selected.source,
+                                        expression.span);
+                ++result_.proof_holes_filled;
+                if (rainfall_) {
+                    std::string selection = rainfall_->record(
+                        "transition", "proof.search.select", {"run:" + run, hole}, "fine.typed-proof-search",
+                        "The first deterministic exact indexed proof candidate is selected for materialization",
+                        {RainfallRecorder::string_field("hole", hole),
+                         RainfallRecorder::string_field("candidate", candidate_events.front()),
+                         RainfallRecorder::string_field("body", selected.source),
+                         RainfallRecorder::string_field("production", selected.production)});
+                    std::vector<std::string> residual(candidate_events.begin() + 1, candidate_events.end());
+                    rainfall_->record(
+                        "transition", "proof.search.close", {"run:" + run, hole}, "fine.typed-proof-search",
+                        "The indexed hole has a checked source witness and a complete residual frontier",
+                        {RainfallRecorder::string_field("hole", hole),
+                         RainfallRecorder::string_field("selection", selection),
+                         RainfallRecorder::string_field("selected_candidate", candidate_events.front()),
+                         RainfallRecorder::raw_field("residual_candidates",
+                                                     RainfallRecorder::string_array(residual)),
+                         RainfallRecorder::string_field("status", "selected"),
+                         RainfallRecorder::boolean_field("materialization_requested", true)});
+                }
+                output_ << "filled proof hole: " << name << " <- " << selected.source
+                        << " (typed search)\n";
+                std::string formation = selected.local_proof
+                                            ? "search:exact-local:" + *selected.local_proof
+                                            : "search:induction-hypothesis:" + *selected.proof_function;
+                return {std::move(name), std::move(expected), std::move(formation), expression.span, "", "",
+                        expected_syntax.arguments};
+            }
+
             ProofEvidence elaborate_inductive_proof(syntax::ProofExpr const &expression,
                                                     syntax::ProofType const &expected_syntax, InductiveType expected,
                                                     ValueEnvironment const &values, ProofEnvironment const &proofs,
@@ -1392,7 +1627,8 @@ namespace fine {
                 if (expression.kind == syntax::ProofExpr::Kind::reflexivity)
                     reject(expression.span, "`refl` constructs identity evidence, not `" + expected.family + "`");
                 if (expression.kind == syntax::ProofExpr::Kind::hole)
-                    reject(expression.span, "proof inductive holes are not admitted before their exact grammar exists");
+                    return elaborate_inductive_hole(expression, expected_syntax, std::move(expected), proofs,
+                                                    proof_order, std::move(name), run);
 
                 auto found = proof_constructors_.find(expression.name);
                 if (found == proof_constructors_.end()) {

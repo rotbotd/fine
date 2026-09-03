@@ -117,6 +117,21 @@ opened hole, every typed candidate, the selected candidate, and the complete
 residual frontier. Materialization replaces each `?`, reparses, and reruns with
 both proof and coeffect search forbidden before returning source.
 
+An indexed proof hole uses a smaller exact grammar. Outside induction it can
+select exact local family evidence. Inside a function annotated with
+`inducts(evidence)`, it may also synthesize a self-application whose designated
+argument is an exact recursive field:
+
+```fine
+even_next[previous](prior, wrong) => rebuilt_next[previous](?)
+// materializes the hole as rebuild[previous](prior)
+```
+
+The mismatched `wrong: Rebuilt(succ(previous))` and the nondecreasing root are
+absent before enumeration. Constructor synthesis and the Z3 datatype-model
+selector do not yet cover indexed holes; requesting that selector fails rather
+than silently changing the grammar.
+
 The optional Z3 proof selector compacts that same finite frontier into a
 recursive datatype grammar. It asks Z3 for a bounded ground constructor tree,
 lifts the model value back to Fine proof syntax, and rejects it unless it is an

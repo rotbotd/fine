@@ -295,41 +295,50 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             _require(source_id in source_nodes and type_source in source_nodes,
                      f"event {sequence}: proof hole names unknown source syntax")
             source_node = source_nodes[source_id]
+            type_kind = source_nodes[type_source].get("syntax_kind")
             _require(source_node.get("syntax_kind") == "proof.expression.hole" and
-                     source_nodes[type_source].get("syntax_kind") == "proof-type.identity",
+                     type_kind in {"proof-type.identity", "proof-type.inductive"},
                      f"event {sequence}: proof hole source has the wrong syntax kind")
             span = source_node["span"]
             _require(source[span["begin"]["offset"]:span["end"]["offset"]] == b"?",
                      f"event {sequence}: proof hole source does not select `?`")
+            identity_hole = type_kind == "proof-type.identity"
+            grammar = data.get("grammar")
+            expected_type = data.get("expected_type")
+            type_shape_ok = ((identity_hole and isinstance(expected_type, str) and
+                              expected_type.startswith("Id(") and
+                              data.get("proposition") in terms and
+                              grammar == ["exact-local", "refl", "proof-application"]) or
+                             (not identity_hole and isinstance(expected_type, str) and
+                              expected_type and not expected_type.startswith("Id(") and
+                              data.get("proposition") == "" and
+                              grammar == ["exact-local", "induction-hypothesis"] and
+                              data.get("nondecreasing_ih_candidates_enumerated") is False))
             _require(isinstance(data.get("binding"), str) and data["binding"] and
-                     isinstance(data.get("expected_type"), str) and
-                     data["expected_type"].startswith("Id(") and
-                     data.get("proposition") in terms and
-                     data.get("grammar") == ["exact-local", "refl",
-                                             "proof-application"] and
+                     type_shape_ok and
                      isinstance(data.get("max_cost"), int) and
                      data["max_cost"] > 0 and
                      data.get("ill_typed_candidates_enumerated") is False,
-                     f"event {sequence}: malformed typed identity proof hole")
+                     f"event {sequence}: malformed typed proof hole")
             proof_holes[hole] = data
             proof_candidates_by_hole[hole] = []
         elif operation == "proof.search.candidate":
             hole = data.get("hole")
             _require(hole in proof_holes and hole not in proof_holes_closed,
                      f"event {sequence}: proof candidate names no open proof hole")
+            production = data.get("production")
             _require(isinstance(data.get("body"), str) and data["body"] and
-                     data.get("production") in {"exact-local", "refl",
-                                                "proof-application"} and
+                     production in proof_holes[hole]["grammar"] and
                      data.get("expected_type") == proof_holes[hole]["expected_type"] and
                      data.get("exact_type") is True and
                      data.get("runtime_value_created") is False and
                      isinstance(data.get("cost"), int) and
                      0 < data["cost"] <= proof_holes[hole]["max_cost"],
                      f"event {sequence}: malformed or ill-typed proof candidate")
-            if data["production"] == "exact-local":
+            if production == "exact-local":
                 _require(data.get("proof") == data["body"],
                          f"event {sequence}: local proof candidate loses its source binding")
-            elif data["production"] == "refl":
+            elif production == "refl":
                 _require("proof" not in data and data["body"].startswith("refl(") and
                          data["body"].endswith(")"),
                          f"event {sequence}: reflexivity candidate is not Fine proof syntax")
@@ -348,6 +357,15 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                          data["body"].startswith(function) and
                          data["body"].endswith(")"),
                          f"event {sequence}: proof application candidate loses its source tree")
+                if production == "induction-hypothesis":
+                    induction_parameter = data.get("induction_parameter")
+                    parent = data.get("parent_evidence")
+                    recursive = data.get("recursive_evidence")
+                    _require(isinstance(induction_parameter, str) and induction_parameter and
+                             isinstance(parent, str) and parent and
+                             isinstance(recursive, str) and recursive and recursive != parent and
+                             recursive in arguments,
+                             f"event {sequence}: induction candidate loses its structural edge")
             _require(event_id not in proof_candidates,
                      f"event {sequence}: reused proof candidate event")
             proof_candidates[event_id] = data

@@ -226,3 +226,24 @@ indices or result families coincide.
 
 This first termination rule deliberately covers proof-family structure only.
 Recursion over runtime enums and user-supplied numeric measures remain absent.
+
+## Indexed proof holes
+
+`?` may inhabit an indexed family through two productions: exact lexical
+evidence, then a structurally admitted use of the active induction hypothesis.
+The second production first matches direct value-index occurrences in the proof
+function result against the expected family indices. It then searches exact
+locals for every instantiated proof parameter and requires the designated
+argument to carry the function's structural root. The cost is one application
+plus its proof arguments under the same total bound of three.
+
+`proof-inductive-holes.fine` places the hole at `Rebuilt(previous)` in the
+recursive `Even` arm. `wrong: Rebuilt(succ(previous))` is absent by exact index
+identity, while `prior: Even(previous)` permits the sole IH candidate
+`rebuild[previous](prior)`. A second run-level hole selects exact local
+`zero_even`. Rainfall records each grammar, candidate, selection, and complete
+residual frontier. Materialization produces the explicit calls and reruns with
+proof search forbidden.
+
+This is not constructor search. It also does not feed the indexed frontier into
+the current Z3 datatype-model selector; asking for that selector fails explicitly.

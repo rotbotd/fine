@@ -11,8 +11,10 @@ static indexed constructor evidence without creating runtime proof datatypes. It
 checks structural induction over that evidence with explicit `inducts(...)`
 clauses and exact recursive constructor fields. It
 forms identity proofs, absorbs their propositions into Z3 contexts, declares
-caller-local proof coeffects, and fills typed identity holes from a finite grammar
-of exact local evidence and reflexivity. Materialization
+caller-local proof coeffects, and fills typed holes from finite exact grammars.
+Identity holes admit local evidence, reflexivity, and bounded proof applications;
+indexed holes currently admit exact locals and structurally valid induction-
+hypothesis applications. Materialization
 replaces the holes and writes explicit coeffect arguments, then reparses and
 reruns with both searches forbidden.
 

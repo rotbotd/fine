@@ -111,6 +111,22 @@ name itself at all. `proof-inductive-branching-induction.fine` additionally
 forces independent left/right IH uses under one parent. Numeric measures and
 runtime recursion remain separate work.
 
+## Closed: exact indexed proof holes
+
+- [x] Admit exact lexical evidence at an indexed-family `?`.
+- [x] Under `inducts(evidence)`, infer direct result indices and enumerate only
+      self-applications whose designated argument is a structural descendant.
+- [x] Exclude wrong-index locals and nondecreasing roots before candidate events.
+- [x] Retain typed candidates, exact selection, and complete residual frontier
+      in Rainfall; materialize and rerun with proof search forbidden.
+- [x] Reject an empty indexed grammar and reject use of the identity-only Z3
+      selector rather than changing the candidate language silently.
+
+Exit test: `proof-inductive-holes.fine` selects
+`rebuild[previous](prior)` inside the recursive arm and `zero_even` at run level.
+`reject-empty-inductive-hole.fine` removes `inducts`, leaving a wrong-index local
+but no admissible candidate. Constructor synthesis is not part of this slice.
+
 ## Closed: typed identity holes
 
 - [x] Add `?` with an expected identity proof type.
