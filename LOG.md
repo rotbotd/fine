@@ -4715,3 +4715,9 @@ its concrete-range edits as one editor transaction.
 
 Clean native build for implementation commit `49ff762c6`, including the complete
 install-check suite: `/nix/store/j022fyfax59flncsjzgcxg959sw9yd1j-fine-0.1.0`.
+
+The browser package for public head `ba7fde3d0` built as
+`/nix/store/6gipf10v49zavp95d5kna4lmycg38hin-fine-playground-0.1.0`.
+`fine-playground.service` was restarted onto the new package;
+`rc-publish-fine.service` remained active, and both the localhost response and
+`https://fine.shit.yachts/` contained the new partial-proof-checkpoint reference.
