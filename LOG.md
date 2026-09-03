@@ -4584,3 +4584,6 @@ nix build --no-link --print-out-paths .#default
 The dirty-tree derivation, including every install check, produced
 `/nix/store/ldhwjklyls4qbrhizc8z281yb9w3f4fp-fine-0.1.0`. A clean commit build
 is recorded below when closed.
+
+Clean native build for implementation commit `6e19a72ee`, including the complete
+install-check suite: `/nix/store/jcb8aikam2zv96zd07lbd7j5qr8pp1kn-fine-0.1.0`.
