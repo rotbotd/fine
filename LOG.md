@@ -4587,3 +4587,9 @@ is recorded below when closed.
 
 Clean native build for implementation commit `6e19a72ee`, including the complete
 install-check suite: `/nix/store/jcb8aikam2zv96zd07lbd7j5qr8pp1kn-fine-0.1.0`.
+
+The browser package built as
+`/nix/store/pxrf3ixnpq04qcf38qqi0xgpi1jmjsm5-fine-playground-0.1.0`.
+`fine-playground.service` was restarted onto that package; both it and
+`rc-publish-fine.service` were active, and an HTTPS fetch of
+`https://fine.shit.yachts/` returned the Fine playground page.
