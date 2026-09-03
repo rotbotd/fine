@@ -4942,3 +4942,8 @@ node playground/smoke.mjs <new-wasm-package> \
 The local native sidecar replayed with 75 events. The dirty-tree playground
 package, including the paired-epoch Wasm smoke and served reference check,
 produced `/nix/store/fnr75da236xcklcj59qpxdw1p983ljj2-fine-playground-0.1.0`.
+
+Clean native build for implementation commit `a1c2a90db`, including the complete
+install-check suite: `/nix/store/fdvm2x0d0hc8imhhcby9z621vzgg5qsq-fine-0.1.0`.
+The clean playground package is
+`/nix/store/4a6v27qnj0hbq2jq6q8gzmcv3a0wh4ly-fine-playground-0.1.0`.
