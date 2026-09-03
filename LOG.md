@@ -5460,3 +5460,65 @@ nix build --no-link --print-out-paths .#playground-wasm-pthreads .#playground
 # /nix/store/z3fnwghxgi2pygw4j8fgskravhy243jg-fine-playground-wasm-pthreads-0.1.0
 # /nix/store/164p524r0pdiaf3s87lfk3h1wqh3jm3z-fine-playground-0.1.0
 ```
+
+## 2026-09-03 — split the proof-term runtime by semantic consumer
+
+The proof-term restart had allowed `src/fine/runtime.cpp` to grow back to 3,052
+lines after the earlier Bool-predicate implementation had already demonstrated
+the need for a split. h's reminder identified the regression. I retained one
+stateful `Elaborator` and made the boundary a real set of translation units
+rather than `.inc` fragments:
+
+```text
+runtime.cpp                    47  public diagnostics/execute/materialize adapter
+runtime_execution.cpp         380  declarations, functions, scopes, and run
+runtime_value.cpp             467  runtime values, enums, match, and indices
+runtime_proof_search.cpp      852  proof applications and bounded search
+runtime_proof_inductive.cpp   833  indexed constructors, match, induction, holes
+runtime_internal.h            559  private semantic vocabulary and contract
+```
+
+`runtime_internal.h` keeps `ValueTerm` and `ProofEvidence` structurally
+disjoint, so the split does not introduce a generic term layer. The five
+implementation files consume different Fine source constructs while sharing the
+one elaboration state. `runtime.cpp` is now a 47-line stable public adapter.
+
+The first compile exposed one mechanical extraction error: the out-of-class
+definition of `Elaborator::absorb` repeated the header's default argument. I
+removed the default from the definition. No semantic correction was needed.
+
+I used the previous clean native artifact
+`/nix/store/hkk15k6if9x83naj4a45px8g2pj32z3j-fine-0.1.0` as an executable
+oracle. The split binary matched it exactly on stdout, stderr, and exit status
+for all 44 `.fine` fixtures, and `materialize` output matched for all eight
+materializable fixtures. Four representative Rainfall traces
+(`identity-coeffect`, `proof-inductive-even`, `proof-inductive-induction`, and
+`top-level-declarations`) also matched after normalizing only the deliberately
+time-derived top-level run/document identities. Event order, payloads, source
+ownership, and generated terms were otherwise exact.
+
+Local commands before the clean Nix build:
+
+```text
+cmake --build build/proof-core --target fine-bin -j4
+# built target fine-bin
+python <fixture parity harness>
+# exact run parity: 44 fixtures
+# exact materialization parity: 8 fixtures
+python <normalized rainfall parity harness>
+# normalized rainfall parity: 4 fixtures
+git diff --check
+# clean
+```
+
+Clean validation for implementation commit `179461090`:
+
+```text
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths \
+  .#default .#playground-wasm-pthreads .#playground
+# /nix/store/xihg4c7sp7rb06nqczkq5an3732n137c-fine-0.1.0
+# /nix/store/gkj4pd5z2ybdqq2avhwagbrhwmh43qm9-fine-playground-wasm-pthreads-0.1.0
+# /nix/store/gxl022bdwyq6r22xzsq7pk0zl8hwyw69-fine-playground-0.1.0
+```

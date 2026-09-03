@@ -318,6 +318,28 @@ producer-owned cumulative concrete edit set; publishing each hole against the
 original source would silently discard earlier replacements, so Fine rejects
 that shape rather than displaying a plausible but incomplete checkpoint.
 
+## Runtime source ownership
+
+The elaborator is one stateful semantic object, but it is not one source file.
+`runtime_internal.h` owns its private semantic vocabulary and method contract;
+in particular, `ValueTerm` and `ProofEvidence` remain disjoint structures there.
+The implementations are divided by the kind of source construct they consume:
+
+- `runtime_value.cpp` owns runtime enums, value elaboration, value matching, and
+  index unification;
+- `runtime_proof_search.cpp` owns proof-function application and the bounded
+  deterministic and Z3-backed identity grammars;
+- `runtime_proof_inductive.cpp` owns indexed proof constructors, proof matching,
+  structural induction, proof holes, and proof absorption;
+- `runtime_execution.cpp` owns declarations, lexical scopes, value-function
+  calls, run statements, and document execution;
+- `runtime.cpp` is only the stable public adapter for diagnostics, execution,
+  and concrete source materialization.
+
+This is a translation-unit boundary, not textual inclusion. Consumer files may
+share the elaborator's private state through the internal header, but they may
+not grow a second semantic representation or a second public execution path.
+
 ## Rainfall boundary
 
 The existing manager-local term registry and `fine.generated-term.v1` renderer
