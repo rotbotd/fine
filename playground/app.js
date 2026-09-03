@@ -2,7 +2,7 @@ import { basicSetup, EditorView } from "codemirror";
 import { defaultHighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
 import { Compartment } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
-import { compressedWasm, createFine, ordinaryWasm } from "./generated-assets.js";
+import { compressedWasm, createFine, ordinaryWasm, pthreadCapable } from "./generated-assets.js";
 import { replaceDocument, terminateAndReplace } from "./atomic-edit.js";
 import { selectedProofHoles } from "./rainfall.js";
 
@@ -146,6 +146,7 @@ const fine = await createFine({
     capture?.stderr.push(line);
   },
 });
+document.documentElement.dataset.fineRuntime = pthreadCapable ? "pthreads" : "single-threaded";
 
 const sample = await fetch("./sample.fine").then((response) => response.text());
 const editing = new Compartment();

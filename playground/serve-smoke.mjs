@@ -85,6 +85,14 @@ try {
       throw new Error(`language reference is missing current form: ${form}`);
   if (!reference.includes("takes [") || reference.includes("<code>needs ["))
     throw new Error("language reference does not expose only the current static-input keyword");
+  const bundleName = reference.match(/\/assets\/index-[^"']+\.js/)?.[0];
+  if (!bundleName)
+    throw new Error("served playground does not reference its application bundle");
+  const bundle = await request(bundleName);
+  const bundleText = bundle.body.toString("utf8");
+  if (!bundleText.includes("crossOriginIsolated") || !bundleText.includes("SharedArrayBuffer")
+      || !bundleText.includes("fineRuntime") || !bundleText.includes("pthreads"))
+    throw new Error("application bundle omits pthread feature detection and runtime disclosure");
   if (!reference.includes("two distinct IH edges"))
     throw new Error("language reference omits branching structural induction");
   console.log(`serve smoke passed: ${plain.body.length} -> ${compressed.body.length} bytes`);
