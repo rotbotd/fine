@@ -4415,3 +4415,52 @@ paths were:
 /nix/store/3lvnghirkrl8qs8ngy1fxhwvai7nsf6l-fine-0.1.0
 /nix/store/0qmxv9pimdqxmprqwlyfsn4idgh8ypfv-fine-playground-0.1.0
 ```
+
+## 2026-09-03 — branching induction keeps joint support
+
+The unary `Even` induction fixture established structural descent but could not
+detect a representation that merged multiple recursive fields. The branching
+fixture closes that gap without expanding the elaborator.
+
+`proof-inductive-branching-induction.fine` uses a runtime `Tree` enum and two
+static indexed families, `Grows(tree)` and `Rebuilt(tree)`. Each node constructor
+has left and right value indices plus two same-family virtual proof fields. The
+body-bearing `rebuild` function matches a `Grows(tree)` derivation under
+`inducts(evidence)` and the target `rebuilt_node` constructor requires both
+`rebuild[left](left_grows)` and `rebuild[right](right_grows)`. The run constructs
+two leaf proofs, one binary root, and the rebuilt result at the exact native Z3
+datatype index `node(leaf, leaf)`.
+
+The existing per-evidence structural metadata already behaved correctly. Both
+fields received root `evidence` and parent `evidence`, then produced two
+`proof.induction.hypothesis.use` events with distinct recursive evidence names.
+No runtime or parser change was needed. This null implementation result is kept:
+the representation was already per field rather than per constructor.
+
+The flake install check now runs and replay-validates the branching fixture, then
+parses its JSONL and requires exactly these two recursive fields:
+
+```
+{left_grows, right_grows}
+```
+
+Both must share exact parent and induction parameter `evidence`. This assertion
+would fail if one child were dropped, duplicated, renamed onto the other, or
+reported only as a constructor-level summary. The proof-term guide, roadmap,
+TODO, fixture index, browser reference, and served-page smoke now state that
+branching constructor support remains distinct.
+
+Local validation before the declared build:
+
+```
+.build/fine run fine/fixtures/proof-inductive-branching-induction.fine
+.build/fine rain fine/fixtures/proof-inductive-branching-induction.fine \
+  > /tmp/fine-branching-induction.rain
+python fine/rainfall_replay.py \
+  fine/fixtures/proof-inductive-branching-induction.fine \
+  /tmp/fine-branching-induction.rain
+```
+
+The run formed `result : Rebuilt(node(leaf, leaf))`; replay accepted the complete
+trace; a direct event inspection found exactly the distinct `left_grows` and
+`right_grows` IH uses under parent `evidence`.

@@ -91,7 +91,7 @@
               </tr>
               <tr>
                 <td>structural proof induction</td>
-                <td><code>inducts(evidence)</code> exposes the function to its own proof body only as an induction hypothesis. A self-call must consume an exact recursive field descended from that evidence; it creates no runtime call.</td>
+                <td><code>inducts(evidence)</code> exposes the function to its own proof body only as an induction hypothesis. Each self-call must consume its exact recursive field; constructors with two fields retain two distinct IH edges. No runtime call is created.</td>
                 <td><code>proof function rebuild(value: Nat)<br>&nbsp;&nbsp;takes [evidence: Even(value)]<br>&nbsp;&nbsp;inducts(evidence)<br>&nbsp;&nbsp;-&gt; Rebuilt(value) {<br>&nbsp;&nbsp;match evidence {<br>&nbsp;&nbsp;&nbsp;&nbsp;even_zero() =&gt; rebuilt_zero(),<br>&nbsp;&nbsp;&nbsp;&nbsp;even_next[previous](prior) =&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rebuilt_next[previous](rebuild[previous](prior)),<br>&nbsp;&nbsp;}<br>}</code></td>
               </tr>
               <tr>

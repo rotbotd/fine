@@ -20,6 +20,10 @@
   `Even` derivation. Its recursive spelling is accepted only on the exact
   same-family `prior` field and is recorded as an induction-hypothesis edge, not
   a runtime call.
+- `proof-inductive-branching-induction.fine` rebuilds a binary derivation whose
+  node constructor owns two recursive fields. Its target constructor needs both
+  recursive results, and Rainfall must retain two distinct IH-use events under
+  the same exact parent.
 - `reject-nondecreasing-proof-recursion.fine` calls the annotated function on
   its root evidence rather than a recursive constructor field.
 - `reject-recursion-without-inducts.fine` shows that an ordinary body-bearing

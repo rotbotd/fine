@@ -225,9 +225,14 @@ derivation; controls reject both the root evidence passed again and recursion
 without an `inducts` clause. Rainfall retains the root, immediate parent,
 recursive field, and function separately.
 
-This does not close the whole slice. Multiple recursive fields need a fixture
-that forces both induction hypotheses, and typed proof holes inside recursive
-arms remain.
+The branching control is also closed. `proof-inductive-branching-induction.fine`
+matches a binary-tree derivation whose node owns two same-family proof fields;
+the target constructor requires both recursive results. Rainfall retains two
+distinct IH edges, `left_grows` and `right_grows`, under the same exact parent,
+so one child cannot stand in for joint support.
+
+This does not close the whole slice. Typed proof holes inside recursive arms
+remain.
 
 Fine may lower the proposition to a Z3 relation for checking and search, but the
 source constructor table owns branch identity, field scope, recursive-premise

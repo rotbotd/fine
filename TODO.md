@@ -101,11 +101,15 @@ separate non-exhaustiveness from an explicitly written impossible arm.
       exact descendant, never the root evidence or an arbitrary proof expression.
 - [x] Retain the function/root/parent/field edge in Rainfall without creating a
       runtime recursive call.
+- [x] Force two recursive constructor fields to produce two distinct IH-use
+      edges and require both results in the target constructor.
 
 Exit test: `proof-inductive-induction.fine` recursively rebuilds an `Even`
 derivation. `reject-nondecreasing-proof-recursion.fine` passes the root evidence
 again and fails the descent check; `reject-recursion-without-inducts.fine` cannot
-name itself at all. Numeric measures and runtime recursion remain separate work.
+name itself at all. `proof-inductive-branching-induction.fine` additionally
+forces independent left/right IH uses under one parent. Numeric measures and
+runtime recursion remain separate work.
 
 ## Closed: typed identity holes
 

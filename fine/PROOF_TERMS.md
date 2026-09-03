@@ -218,5 +218,11 @@ recursive proof fields. The argument must be an exact named descendant. Neither
 an arbitrary proof expression nor the original `evidence` can pass the descent
 check.
 
+The descent metadata is per field, not per constructor. A branching constructor
+with `left_grows` and `right_grows` yields two separate induction-hypothesis uses
+under the same parent, and a target constructor may require both recursive
+results. Fine never replaces that pair with one marginal fact merely because the
+indices or result families coincide.
+
 This first termination rule deliberately covers proof-family structure only.
 Recursion over runtime enums and user-supplied numeric measures remain absent.

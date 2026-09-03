@@ -117,6 +117,29 @@
             "$src/fine/fixtures/proof-inductive-induction.fine" "$induction_rain"
           grep -F '"operation":"proof.induction.hypothesis.use"' "$induction_rain"
 
+          branching_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-branching-induction.fine")"
+          echo "$branching_output"
+          grep -F "formed proof: result : Rebuilt(node(leaf, leaf)) (virtual)" <<<"$branching_output"
+
+          branching_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/proof-inductive-branching-induction.fine" \
+            > "$branching_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/proof-inductive-branching-induction.fine" "$branching_rain"
+          ${pkgs.python3}/bin/python - "$branching_rain" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              events = [json.loads(line) for line in stream]
+          uses = [event["data"] for event in events
+                  if event["operation"] == "proof.induction.hypothesis.use"]
+          assert len(uses) == 2, uses
+          assert {use["recursive_evidence"] for use in uses} == {"left_grows", "right_grows"}, uses
+          assert {use["parent_evidence"] for use in uses} == {"evidence"}, uses
+          assert {use["induction_parameter"] for use in uses} == {"evidence"}, uses
+          PY
+
           nondecreasing_recursion="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-nondecreasing-proof-recursion.fine" \
               >"$nondecreasing_recursion" 2>&1; then
