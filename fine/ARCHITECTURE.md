@@ -5,6 +5,22 @@ is preserved at Git tag `pre-pat-1d7222a23`. This branch begins again at the
 parser and elaborator because its central distinction must be structural:
 proofs are static evidence and cannot become runtime values.
 
+## Lossless concrete ownership
+
+The lexer emits two coordinated views in one pass. The semantic token stream
+feeds the existing AST parser; the concrete stream retains every identifier,
+literal, symbol, whitespace byte, and line comment with an exact source span.
+`ConcreteSyntaxTree` owns that stream, a document root with ordered declaration
+children, and the semantic `Document`. Concatenating the concrete tokens must
+reproduce the input byte-for-byte before parsing is considered successful.
+
+The AST still owns meaning. The concrete tree owns preservation and edits.
+Every semantic span maps to a named `ConcreteRange`, so proof-hole replacements
+and implicit coeffect insertions no longer pass anonymous byte pairs across the
+materializer boundary. `fine roundtrip file.fine` exposes the identity check;
+the build checks ordinary fixtures, deliberately ugly comments/tabs/spacing,
+CRLF input, and exact materialization without normalizing surrounding trivia.
+
 ## Two representations, not one tagged union
 
 The source syntax has separate `ValueType` and `ProofType` nodes. The elaborator
@@ -153,7 +169,7 @@ can be materialized as:
 replace(x, y) using [same = p]
 ```
 
-`fine materialize` applies those insertions, reparses the resulting bytes, and
+`fine materialize` applies those concrete-range insertions, reparses the resulting bytes, and
 reruns with all implicit coeffect resolution forbidden. An explicit proof
 argument is checked again but never becomes a runtime argument.
 

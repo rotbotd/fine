@@ -26,8 +26,7 @@ namespace fine {
     };
 
     struct Materialization {
-        std::size_t begin = 0;
-        std::size_t end = 0;
+        syntax::ConcreteRange range;
         std::string text;
     };
 
@@ -52,6 +51,7 @@ namespace fine {
                             std::ostream *rainfall_output = nullptr, SourceSnapshot const *snapshot = nullptr,
                             std::string rainfall_run = {}, ExecutionOptions options = {});
 
-    std::string apply_materializations(std::string_view source, std::vector<Materialization> materializations);
+    std::string apply_materializations(syntax::ConcreteSyntaxTree const &tree,
+                                       std::vector<Materialization> materializations);
 
 }  // namespace fine

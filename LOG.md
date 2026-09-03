@@ -4537,3 +4537,50 @@ The indexed trace contained exactly the candidates
 `(exact-local, zero_even)` in their separate hole scopes. The materialized file
 matched byte-for-byte. The empty grammar and unsupported selector controls both
 exited nonzero with their dedicated diagnostics.
+
+## 2026-09-02 — lossless concrete syntax ownership and exact roundtrips
+
+Fine's parser now produces two coordinated views from one lexer pass. The
+semantic token stream continues into the two-level AST unchanged. A parallel
+concrete stream retains every identifier, integer, symbol, whitespace run, and
+`//` comment with its exact `SourceSpan`. `ConcreteSyntaxTree` owns those tokens,
+a document root with source-ordered top-level declaration nodes, and the
+semantic `Document`. `render()` is the concatenation of the concrete token
+texts, and `parse_tree` rejects an internal loss if that concatenation differs
+from the original byte string.
+
+The split is deliberate: the AST still owns elaboration and solver meaning;
+the concrete tree owns preservation and source editing. `ConcreteRange` is now
+the materializer's public boundary. Proof holes pass their AST span through
+`ConcreteRange::from_span`, while implicit proof arguments use an empty concrete
+range at the call's closing parenthesis. `apply_materializations` receives the
+parsed concrete tree rather than an unrelated source string, orders and checks
+those ranges, then edits the tree's exact rendered bytes. The old `parse`
+function remains as a compatibility wrapper over `parse_tree`.
+
+The new `fine roundtrip <file>` command exposes the identity property. The
+install check roundtrips representative identity, enum, indexed-match, and
+indexed-hole programs. `cst-roundtrip-ugly.fine` adds leading/inter-declaration/
+trailing comments, tabs, blank lines, and irregular spacing. It also contains a
+proof hole and an implicit coeffect call; its materialized companion proves that
+`refl(7)` and `using [same = same]` are the only byte changes. Generated controls
+exercise CRLF and a final line comment with no terminating newline.
+
+Local validation before the clean derivation:
+
+```
+cmake --build .build -j2
+.build/fine roundtrip fine/fixtures/cst-roundtrip-ugly.fine \
+  | cmp fine/fixtures/cst-roundtrip-ugly.fine -
+.build/fine run fine/fixtures/cst-roundtrip-ugly.fine
+.build/fine materialize fine/fixtures/cst-roundtrip-ugly.fine \
+  | cmp fine/fixtures/cst-roundtrip-ugly-materialized.fine -
+.build/fine materialize fine/fixtures/proof-inductive-holes.fine \
+  | cmp fine/fixtures/proof-inductive-holes-materialized.fine -
+nix flake check
+nix build --no-link --print-out-paths .#default
+```
+
+The dirty-tree derivation, including every install check, produced
+`/nix/store/ldhwjklyls4qbrhizc8z281yb9w3f4fp-fine-0.1.0`. A clean commit build
+is recorded below when closed.

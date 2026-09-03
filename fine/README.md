@@ -99,7 +99,13 @@ build/proof-core/fine rain fine/fixtures/identity-coeffect.fine > trace.jsonl
 python fine/rainfall_validate.py fine/fixtures/identity-coeffect.fine trace.jsonl
 build/proof-core/fine materialize fine/fixtures/identity-coeffect.fine > explicit.fine
 build/proof-core/fine run explicit.fine
+build/proof-core/fine roundtrip fine/fixtures/cst-roundtrip-ugly.fine > unchanged.fine
 ```
+
+`roundtrip` parses through Fine's lossless concrete token tree and emits the
+owned bytes again. It preserves comments, tabs, line endings, blank lines, and
+all other trivia exactly; the semantic AST remains a separate view over the
+same source ranges.
 
 `fine materialize` writes an explicit `using [same = p]` argument, reparses it,
 and rechecks it with implicit resolution disabled before returning source.

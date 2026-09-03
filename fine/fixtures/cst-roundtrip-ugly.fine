@@ -1,0 +1,20 @@
+// leading trivia belongs to the document, not the first declaration
+
+function	identity( // the parameter list keeps this comment
+  value : Int
+)  ->  Int
+	takes [same : Id(Int, value, value)]
+  ensures { result == value; }
+{
+	value // the body range includes its internal trivia
+}
+
+// trivia between declarations remains exactly where it was written
+run   concrete_roundtrip {
+  proof same : Id(Int, 7, 7) = // the hole owns only its question mark
+    ?;
+  let answer : Int = identity(
+    7
+  );
+	assert answer == 7; // trailing source trivia survives too
+}

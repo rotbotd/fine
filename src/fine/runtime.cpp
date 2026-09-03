@@ -407,9 +407,8 @@ namespace fine {
                 throw SemanticError(span, std::move(message));
             }
 
-            void request_materialization(std::size_t begin, std::size_t end, std::string text,
-                                         syntax::SourceSpan span) {
-                auto [found, inserted] = materializations_.emplace(std::pair{begin, end}, text);
+            void request_materialization(syntax::ConcreteRange range, std::string text, syntax::SourceSpan span) {
+                auto [found, inserted] = materializations_.emplace(std::pair{range.begin, range.end}, text);
                 if (!inserted && found->second != text)
                     reject(span, "two materializations disagree at one source range");
             }
@@ -1299,7 +1298,7 @@ namespace fine {
                 }
 
                 ProofCandidate const &selected = candidates[selected_index];
-                request_materialization(expression.span.begin.offset, expression.span.end.offset, selected.source,
+                request_materialization(syntax::ConcreteRange::from_span(expression.span), selected.source,
                                         expression.span);
                 ++result_.proof_holes_filled;
                 if (rainfall_) {
@@ -1576,7 +1575,7 @@ namespace fine {
                                                 "` has no candidate in grammar "
                                                 "[exact-local, induction-hypothesis]");
                 ProofCandidate const &selected = candidates.front();
-                request_materialization(expression.span.begin.offset, expression.span.end.offset, selected.source,
+                request_materialization(syntax::ConcreteRange::from_span(expression.span), selected.source,
                                         expression.span);
                 ++result_.proof_holes_filled;
                 if (rainfall_) {
@@ -2347,8 +2346,8 @@ namespace fine {
                         insertion << chosen[i].first << " = " << chosen[i].second;
                     }
                     insertion << ']';
-                    request_materialization(expression.call_argument_end, expression.call_argument_end, insertion.str(),
-                                            expression.span);
+                    request_materialization(syntax::ConcreteRange::empty_at(expression.call_argument_end),
+                                            insertion.str(), expression.span);
                 }
                 ValueTerm result =
                     elaborate_value(function.body, callee_values, callee_proofs, callee_proof_order, callee_absorbed);
@@ -2372,7 +2371,7 @@ namespace fine {
                         statement);
                 }
                 for (auto const &[range, text] : materializations_)
-                    result_.materializations.push_back({range.first, range.second, text});
+                    result_.materializations.push_back({{range.first, range.second}, text});
             }
 
             void execute_statement(syntax::LetDecl const &declaration, std::string const &run, std::size_t &,
@@ -2492,18 +2491,20 @@ namespace fine {
         return Elaborator(output, rainfall_output, snapshot, std::move(rainfall_run), options).execute(document);
     }
 
-    std::string apply_materializations(std::string_view source, std::vector<Materialization> materializations) {
+    std::string apply_materializations(syntax::ConcreteSyntaxTree const &tree,
+                                       std::vector<Materialization> materializations) {
+        std::string source = tree.render();
         std::sort(materializations.begin(), materializations.end(), [](auto const &left, auto const &right) {
-            return std::pair{left.begin, left.end} < std::pair{right.begin, right.end};
+            return std::pair{left.range.begin, left.range.end} < std::pair{right.range.begin, right.range.end};
         });
         std::ostringstream output;
         std::size_t cursor = 0;
         for (auto const &materialization : materializations) {
-            if (materialization.begin < cursor || materialization.begin > materialization.end ||
-                materialization.end > source.size())
+            if (materialization.range.begin < cursor || materialization.range.begin > materialization.range.end ||
+                materialization.range.end > source.size())
                 throw std::runtime_error("invalid or overlapping source materialization");
-            output << source.substr(cursor, materialization.begin - cursor) << materialization.text;
-            cursor = materialization.end;
+            output << source.substr(cursor, materialization.range.begin - cursor) << materialization.text;
+            cursor = materialization.range.end;
         }
         output << source.substr(cursor);
         return output.str();

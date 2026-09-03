@@ -54,6 +54,33 @@
         installCheckPhase = ''
           runHook preInstallCheck
 
+          for source in \
+            "$src/fine/fixtures/cst-roundtrip-ugly.fine" \
+            "$src/fine/fixtures/identity-coeffect.fine" \
+            "$src/fine/fixtures/runtime-enum.fine" \
+            "$src/fine/fixtures/proof-inductive-match.fine" \
+            "$src/fine/fixtures/proof-inductive-holes.fine"; do
+            concrete_roundtrip="$(mktemp)"
+            $out/bin/fine roundtrip "$source" > "$concrete_roundtrip"
+            cmp "$source" "$concrete_roundtrip"
+          done
+
+          crlf_source="$(mktemp)"
+          crlf_roundtrip="$(mktemp)"
+          sed 's/$/\r/' "$src/fine/fixtures/cst-roundtrip-ugly.fine" > "$crlf_source"
+          $out/bin/fine roundtrip "$crlf_source" > "$crlf_roundtrip"
+          cmp "$crlf_source" "$crlf_roundtrip"
+
+          eof_source="$(mktemp)"
+          eof_roundtrip="$(mktemp)"
+          printf '%s' 'run eof_comment { assert true == true; } // no newline' > "$eof_source"
+          $out/bin/fine roundtrip "$eof_source" > "$eof_roundtrip"
+          cmp "$eof_source" "$eof_roundtrip"
+
+          ugly_materialized="$(mktemp)"
+          $out/bin/fine materialize "$src/fine/fixtures/cst-roundtrip-ugly.fine" > "$ugly_materialized"
+          cmp "$src/fine/fixtures/cst-roundtrip-ugly-materialized.fine" "$ugly_materialized"
+
           output="$($out/bin/fine run "$src/fine/fixtures/identity-coeffect.fine")"
           echo "$output"
           grep -F "verified function: replace" <<<"$output"

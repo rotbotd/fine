@@ -21,6 +21,27 @@ namespace fine::syntax {
         SourcePosition end;
     };
 
+    struct ConcreteRange {
+        std::size_t begin = 0;
+        std::size_t end = 0;
+
+        static ConcreteRange from_span(SourceSpan span) {
+            return {span.begin.offset, span.end.offset};
+        }
+
+        static ConcreteRange empty_at(std::size_t offset) {
+            return {offset, offset};
+        }
+    };
+
+    enum class ConcreteTokenKind { whitespace, line_comment, identifier, integer, symbol };
+
+    struct ConcreteToken {
+        ConcreteTokenKind kind = ConcreteTokenKind::whitespace;
+        std::string text;
+        SourceSpan span;
+    };
+
     class ParseError : public std::runtime_error {
     public:
         ParseError(SourceSpan span, std::string message);
@@ -213,6 +234,39 @@ namespace fine::syntax {
         RunDecl run;
     };
 
+    enum class ConcreteNodeKind {
+        document,
+        enum_declaration,
+        proof_inductive_declaration,
+        function_declaration,
+        proof_function_declaration,
+        run_declaration,
+    };
+
+    // The concrete tree owns every source byte. Its declaration nodes provide
+    // stable edit ranges while the existing AST remains the semantic view.
+    // Trivia between declarations belongs to the document root; trivia inside
+    // a declaration lies within that declaration's concrete range.
+    struct ConcreteNode {
+        ConcreteNodeKind kind = ConcreteNodeKind::document;
+        ConcreteRange range;
+        std::size_t first_token = 0;
+        std::size_t end_token = 0;
+        std::vector<ConcreteNode> children;
+    };
+
+    struct ConcreteSyntaxTree {
+        std::vector<ConcreteToken> tokens;
+        ConcreteNode root;
+        Document ast;
+
+        std::string render() const;
+        ConcreteRange range(SourceSpan span) const {
+            return ConcreteRange::from_span(span);
+        }
+    };
+
+    ConcreteSyntaxTree parse_tree(std::string_view source);
     Document parse(std::string_view source);
 
 }  // namespace fine::syntax

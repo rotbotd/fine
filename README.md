@@ -18,6 +18,11 @@ hypothesis applications. Materialization
 replaces the holes and writes explicit coeffect arguments, then reparses and
 reruns with both searches forbidden.
 
+Parsing is lossless without making whitespace semantic. Fine retains every
+token, comment, and whitespace byte in a concrete syntax tree while the
+existing AST remains the semantic view. Source materialization edits named
+concrete ranges and is checked by an exact parse/render roundtrip.
+
 See [`fine/README.md`](fine/README.md) to run it,
 [`fine/ARCHITECTURE.md`](fine/ARCHITECTURE.md) for the current boundary, and
 [`fine/ROADMAP.md`](fine/ROADMAP.md) for the ordered slices. The

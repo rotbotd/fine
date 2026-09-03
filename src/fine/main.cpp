@@ -40,15 +40,15 @@ namespace {
                  fine::ExecutionOptions options = {}) {
         std::string source = read_file(path);
         try {
-            fine::syntax::Document document = fine::syntax::parse(source);
+            fine::syntax::ConcreteSyntaxTree tree = fine::syntax::parse_tree(source);
             if (!rainfall) {
-                fine::execute(document, std::cout, nullptr, nullptr, {}, options);
+                fine::execute(tree.ast, std::cout, nullptr, nullptr, {}, options);
                 return EXIT_SUCCESS;
             }
             fine::SourceSnapshot snapshot = fine::make_source_snapshot(path, source, request ? request->revision : 0,
                                                                        request ? request->document_id : std::string{});
             std::ostringstream ordinary_output;
-            fine::execute(document, ordinary_output, &std::cout, &snapshot,
+            fine::execute(tree.ast, ordinary_output, &std::cout, &snapshot,
                           request ? request->generation : std::string{}, options);
             return EXIT_SUCCESS;
         } catch (fine::syntax::ParseError const &error) {
@@ -63,16 +63,16 @@ namespace {
     int materialize_file(char const *path, fine::ExecutionOptions first_options = {}) {
         std::string source = read_file(path);
         try {
-            fine::syntax::Document document = fine::syntax::parse(source);
+            fine::syntax::ConcreteSyntaxTree tree = fine::syntax::parse_tree(source);
             std::ostringstream first_output;
-            fine::ExecutionResult result = fine::execute(document, first_output, nullptr, nullptr, {}, first_options);
-            std::string materialized = fine::apply_materializations(source, result.materializations);
-            fine::syntax::Document reparsed = fine::syntax::parse(materialized);
+            fine::ExecutionResult result = fine::execute(tree.ast, first_output, nullptr, nullptr, {}, first_options);
+            std::string materialized = fine::apply_materializations(tree, result.materializations);
+            fine::syntax::ConcreteSyntaxTree reparsed = fine::syntax::parse_tree(materialized);
             std::ostringstream check_output;
             fine::ExecutionOptions options;
             options.require_explicit_coeffects = true;
             options.require_materialized_proofs = true;
-            fine::execute(reparsed, check_output, nullptr, nullptr, {}, options);
+            fine::execute(reparsed.ast, check_output, nullptr, nullptr, {}, options);
             std::cout << materialized;
             return EXIT_SUCCESS;
         } catch (fine::syntax::ParseError const &error) {
@@ -93,6 +93,16 @@ int main(int argc, char **argv) try {
         return run_file(argv[2], true);
     if (argc == 3 && std::string_view(argv[1]) == "materialize")
         return materialize_file(argv[2]);
+    if (argc == 3 && std::string_view(argv[1]) == "roundtrip") {
+        std::string source = read_file(argv[2]);
+        try {
+            std::cout << fine::syntax::parse_tree(source).render();
+            return EXIT_SUCCESS;
+        } catch (fine::syntax::ParseError const &error) {
+            std::cerr << error.format(argv[2], source) << '\n';
+            return EXIT_FAILURE;
+        }
+    }
     if (argc == 5 && std::string_view(argv[2]) == "--proof-selector" && std::string_view(argv[3]) == "z3") {
         fine::ExecutionOptions options;
         options.proof_selector = fine::ProofSelector::z3_model;
@@ -127,6 +137,7 @@ int main(int argc, char **argv) try {
     std::cerr << "usage: fine run <source.fine>\n"
                  "       fine rain <source.fine>\n"
                  "       fine materialize <source.fine>\n"
+                 "       fine roundtrip <source.fine>\n"
                  "       fine {run|rain|materialize} --proof-selector z3 <source.fine>\n"
                  "       fine rain --document <id> --revision <n> "
                  "--generation <id> <source.fine>\n"

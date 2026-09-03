@@ -15,17 +15,24 @@ namespace fine::syntax {
             SourceSpan span;
         };
 
+        struct LexedSource {
+            std::vector<Token> semantic;
+            std::vector<ConcreteToken> concrete;
+            SourcePosition end;
+        };
+
         class Lexer {
         public:
             explicit Lexer(std::string_view source) : source_(source) {}
 
-            std::vector<Token> lex() {
-                std::vector<Token> result;
+            LexedSource lex() {
+                LexedSource result;
                 while (true) {
-                    skip_space_and_comments();
+                    lex_trivia(result.concrete);
                     SourcePosition begin = position();
                     if (offset_ == source_.size()) {
-                        result.push_back({Token::Kind::end, {}, {begin, begin}});
+                        result.semantic.push_back({Token::Kind::end, {}, {begin, begin}});
+                        result.end = begin;
                         return result;
                     }
                     unsigned char c = static_cast<unsigned char>(source_[offset_]);
@@ -38,9 +45,7 @@ namespace fine::syntax {
                                 break;
                             advance();
                         }
-                        result.push_back({Token::Kind::identifier,
-                                          std::string(source_.substr(start, offset_ - start)),
-                                          {begin, position()}});
+                        emit(result, Token::Kind::identifier, ConcreteTokenKind::identifier, start, begin);
                         continue;
                     }
                     if (std::isdigit(c)) {
@@ -49,22 +54,19 @@ namespace fine::syntax {
                             advance();
                         } while (offset_ < source_.size() &&
                                  std::isdigit(static_cast<unsigned char>(source_[offset_])));
-                        result.push_back({Token::Kind::integer,
-                                          std::string(source_.substr(start, offset_ - start)),
-                                          {begin, position()}});
+                        emit(result, Token::Kind::integer, ConcreteTokenKind::integer, start, begin);
                         continue;
                     }
                     auto two = offset_ + 1 < source_.size() ? source_.substr(offset_, 2) : std::string_view{};
                     if (two == "->" || two == "==" || two == "=>") {
                         advance();
                         advance();
-                        result.push_back({Token::Kind::symbol, std::string(two), {begin, position()}});
+                        emit(result, Token::Kind::symbol, ConcreteTokenKind::symbol, begin.offset, begin);
                         continue;
                     }
                     if (std::string_view("(){}[],:;=?").find(static_cast<char>(c)) != std::string_view::npos) {
                         advance();
-                        result.push_back(
-                            {Token::Kind::symbol, std::string(1, static_cast<char>(c)), {begin, position()}});
+                        emit(result, Token::Kind::symbol, ConcreteTokenKind::symbol, begin.offset, begin);
                         continue;
                     }
                     throw ParseError({begin, after_one()},
@@ -105,16 +107,37 @@ namespace fine::syntax {
                 }
             }
 
-            void skip_space_and_comments() {
+            void emit(LexedSource &result, Token::Kind semantic_kind, ConcreteTokenKind concrete_kind,
+                      std::size_t start, SourcePosition begin) {
+                std::string text(source_.substr(start, offset_ - start));
+                SourceSpan span{begin, position()};
+                result.semantic.push_back({semantic_kind, text, span});
+                result.concrete.push_back({concrete_kind, std::move(text), span});
+            }
+
+            void lex_trivia(std::vector<ConcreteToken> &result) {
                 while (offset_ < source_.size()) {
                     unsigned char c = static_cast<unsigned char>(source_[offset_]);
                     if (std::isspace(c)) {
-                        advance();
+                        SourcePosition begin = position();
+                        std::size_t start = offset_;
+                        do {
+                            advance();
+                        } while (offset_ < source_.size() &&
+                                 std::isspace(static_cast<unsigned char>(source_[offset_])));
+                        result.push_back({ConcreteTokenKind::whitespace,
+                                          std::string(source_.substr(start, offset_ - start)),
+                                          {begin, position()}});
                         continue;
                     }
                     if (offset_ + 1 < source_.size() && source_[offset_] == '/' && source_[offset_ + 1] == '/') {
+                        SourcePosition begin = position();
+                        std::size_t start = offset_;
                         while (offset_ < source_.size() && source_[offset_] != '\n')
                             advance();
+                        result.push_back({ConcreteTokenKind::line_comment,
+                                          std::string(source_.substr(start, offset_ - start)),
+                                          {begin, position()}});
                         continue;
                     }
                     break;
@@ -124,7 +147,7 @@ namespace fine::syntax {
 
         class Parser {
         public:
-            explicit Parser(std::string_view source) : tokens_(Lexer(source).lex()) {}
+            explicit Parser(std::vector<Token> tokens) : tokens_(std::move(tokens)) {}
 
             Document document() {
                 Document result;
@@ -702,8 +725,65 @@ namespace fine::syntax {
         return output.str();
     }
 
+    std::string ConcreteSyntaxTree::render() const {
+        std::string result;
+        for (auto const &token : tokens)
+            result += token.text;
+        return result;
+    }
+
+    ConcreteSyntaxTree parse_tree(std::string_view source) {
+        LexedSource lexed = Lexer(source).lex();
+        ConcreteSyntaxTree tree;
+        tree.tokens = std::move(lexed.concrete);
+        tree.ast = Parser(std::move(lexed.semantic)).document();
+        tree.root.kind = ConcreteNodeKind::document;
+        tree.root.range = {0, lexed.end.offset};
+        tree.root.first_token = 0;
+        tree.root.end_token = tree.tokens.size();
+
+        struct DeclarationRange {
+            ConcreteNodeKind kind;
+            SourceSpan span;
+        };
+        std::vector<DeclarationRange> declarations;
+        for (auto const &declaration : tree.ast.enums)
+            declarations.push_back({ConcreteNodeKind::enum_declaration, declaration.span});
+        for (auto const &declaration : tree.ast.proof_inductives)
+            declarations.push_back({ConcreteNodeKind::proof_inductive_declaration, declaration.span});
+        for (auto const &declaration : tree.ast.functions)
+            declarations.push_back({ConcreteNodeKind::function_declaration, declaration.span});
+        for (auto const &declaration : tree.ast.proof_functions)
+            declarations.push_back({ConcreteNodeKind::proof_function_declaration, declaration.span});
+        declarations.push_back({ConcreteNodeKind::run_declaration, tree.ast.run.span});
+        std::sort(declarations.begin(), declarations.end(), [](auto const &left, auto const &right) {
+            return left.span.begin.offset < right.span.begin.offset;
+        });
+        for (auto const &declaration : declarations) {
+            ConcreteNode node;
+            node.kind = declaration.kind;
+            node.range = ConcreteRange::from_span(declaration.span);
+            node.first_token = tree.tokens.size();
+            node.end_token = tree.tokens.size();
+            for (std::size_t index = 0; index < tree.tokens.size(); ++index) {
+                auto const &span = tree.tokens[index].span;
+                if (span.end.offset <= node.range.begin)
+                    continue;
+                if (span.begin.offset >= node.range.end)
+                    break;
+                if (node.first_token == tree.tokens.size())
+                    node.first_token = index;
+                node.end_token = index + 1;
+            }
+            tree.root.children.push_back(std::move(node));
+        }
+        if (tree.render() != source)
+            throw std::logic_error("concrete syntax tree lost source bytes");
+        return tree;
+    }
+
     Document parse(std::string_view source) {
-        return Parser(source).document();
+        return std::move(parse_tree(source).ast);
     }
 
 }  // namespace fine::syntax
