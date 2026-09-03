@@ -14,3 +14,8 @@ export function replaceDocument(view, source) {
   });
   return true;
 }
+
+export function terminateAndReplace(worker, view, source) {
+  worker.terminate();
+  return replaceDocument(view, source);
+}

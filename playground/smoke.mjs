@@ -3,13 +3,17 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { history, undo } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
-import { replaceDocument } from "./atomic-edit.js";
+import { terminateAndReplace } from "./atomic-edit.js";
+import { runCheckpointEpoch } from "./checkpoint-epoch.js";
 import { selectedProofHoles } from "./rainfall.js";
 
 const root = path.resolve(process.argv[2]);
 const samplePath = path.resolve(process.argv[3] ?? path.join(root, "sample.fine"));
 const materializePath = process.argv[4] ? path.resolve(process.argv[4]) : null;
 const expectedMaterializedPath = process.argv[5] ? path.resolve(process.argv[5]) : null;
+const checkpointPath = process.argv[6] ? path.resolve(process.argv[6]) : null;
+const partialCheckpointPath = process.argv[7] ? path.resolve(process.argv[7]) : null;
+const completeCheckpointPath = process.argv[8] ? path.resolve(process.argv[8]) : null;
 const createFine = (await import(pathToFileURL(path.join(root, "fine.mjs")))).default;
 const stdout = [];
 const stderr = [];
@@ -77,12 +81,18 @@ if (materializePath && expectedMaterializedPath) {
       return state;
     },
     dispatch(...specs) {
+      if (requiresTermination && !terminated)
+        throw new Error("checkpoint source changed before its worker was terminated");
       state = state.update(...specs).state;
     },
   };
+  let terminated = false;
+  let requiresTermination = false;
   view.dispatch({ changes: { from: state.doc.length, insert: "// unsaved prior edit" } });
   const beforeMaterialization = state.doc.toString();
-  if (!replaceDocument(view, materialized) || state.doc.toString() !== expected)
+  const worker = { terminate() { terminated = true; } };
+  requiresTermination = true;
+  if (!terminateAndReplace(worker, view, materialized) || state.doc.toString() !== expected)
     throw new Error("atomic editor replacement did not install the materialized source");
   if (!undo(view) || state.doc.toString() !== beforeMaterialization)
     throw new Error("one undo did not restore the exact pre-materialization bytes");
@@ -90,4 +100,29 @@ if (materializePath && expectedMaterializedPath) {
     throw new Error("materialization merged with prior editor history or created extra transactions");
 }
 
-console.log(`wasm smoke passed with ${events.length} Rainfall events and atomic materialization`);
+if (checkpointPath && partialCheckpointPath && completeCheckpointPath) {
+  const original = await readFile(checkpointPath, "utf8");
+  const expectedPartial = await readFile(partialCheckpointPath, "utf8");
+  const expectedComplete = await readFile(completeCheckpointPath, "utf8");
+  const invokeEpoch = (args) => {
+    stdout.length = 0;
+    stderr.length = 0;
+    let epochCode = 0;
+    try {
+      epochCode = fine.callMain(args) ?? 0;
+    } catch (error) {
+      if (typeof error?.status === "number")
+        epochCode = error.status;
+      else
+        throw error;
+    }
+    return { code: epochCode, stdout: [...stdout], stderr: [...stderr] };
+  };
+  const partial = runCheckpointEpoch(fine, invokeEpoch, original, 2, 1);
+  const complete = runCheckpointEpoch(fine, invokeEpoch, partial, 2, 2);
+  const settled = runCheckpointEpoch(fine, invokeEpoch, complete, 2, 3);
+  if (partial !== expectedPartial || complete !== expectedComplete || settled !== complete)
+    throw new Error("checkpoint epochs did not retain partial, complete, and settled source snapshots exactly");
+}
+
+console.log(`wasm smoke passed with ${events.length} Rainfall events, atomic materialization, and checkpoint epochs`);

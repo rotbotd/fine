@@ -368,8 +368,8 @@
             "$z3_transitivity_materialized"
 
           checkpoint="$(mktemp)"
-          $out/bin/fine checkpoint --proof-budget 2 \
-            "$src/fine/fixtures/identity-checkpoint.fine" > "$checkpoint"
+          $out/bin/fine checkpoint --proof-budget 2 --output "$checkpoint" \
+            "$src/fine/fixtures/identity-checkpoint.fine"
           cmp "$src/fine/fixtures/identity-checkpoint-materialized.fine" "$checkpoint"
 
           checkpoint_complete="$(mktemp)"
@@ -752,7 +752,10 @@
           node smoke.mjs ${self.packages.${system}.playground-wasm} \
             ${./fine/fixtures/identity-transitivity.fine} \
             ${./fine/fixtures/cst-roundtrip-ugly.fine} \
-            ${./fine/fixtures/cst-roundtrip-ugly-materialized.fine}
+            ${./fine/fixtures/cst-roundtrip-ugly-materialized.fine} \
+            ${./fine/fixtures/identity-checkpoint.fine} \
+            ${./fine/fixtures/identity-checkpoint-materialized.fine} \
+            ${./fine/fixtures/identity-checkpoint-complete.fine}
           node serve-smoke.mjs
           runHook postCheck
         '';

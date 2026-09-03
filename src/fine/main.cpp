@@ -97,7 +97,7 @@ namespace {
         }
     }
 
-    int checkpoint_file(char const *path, std::size_t budget) {
+    int checkpoint_file(char const *path, std::size_t budget, char const *output_path = nullptr) {
         std::string source = read_file(path);
         try {
             fine::syntax::ConcreteSyntaxTree tree = fine::syntax::parse_tree(source);
@@ -119,7 +119,10 @@ namespace {
                 fine::execute(reparsed.ast, validation_output, nullptr, nullptr, {}, validation);
             if (validated.checkpoint_open != result.checkpoint_open)
                 throw std::runtime_error("checkpoint reparse changed whether the proof is complete");
-            std::cout << checkpoint;
+            if (output_path)
+                write_file(output_path, checkpoint);
+            else
+                std::cout << checkpoint;
             return EXIT_SUCCESS;
         } catch (fine::syntax::ParseError const &error) {
             std::cerr << error.format(path, source) << '\n';
@@ -160,6 +163,15 @@ int main(int argc, char **argv) try {
             return EXIT_FAILURE;
         }
         return checkpoint_file(argv[4], budget);
+    }
+    if (argc == 7 && std::string_view(argv[1]) == "checkpoint" &&
+        std::string_view(argv[2]) == "--proof-budget" && std::string_view(argv[4]) == "--output") {
+        std::size_t budget = 0;
+        if (!parse_revision(argv[3], budget) || budget == 0) {
+            std::cerr << "fine: proof budget must be a positive integer\n";
+            return EXIT_FAILURE;
+        }
+        return checkpoint_file(argv[6], budget, argv[5]);
     }
     if (argc == 6 && std::string_view(argv[1]) == "rain" && std::string_view(argv[2]) == "--checkpoint" &&
         std::string_view(argv[3]) == "--proof-budget") {
@@ -218,6 +230,7 @@ int main(int argc, char **argv) try {
                  "       fine materialize [--proof-selector z3] --output <output.fine> <source.fine>\n"
                  "       fine roundtrip <source.fine>\n"
                  "       fine checkpoint --proof-budget <n> <source.fine>\n"
+                 "       fine checkpoint --proof-budget <n> --output <output.fine> <source.fine>\n"
                  "       fine rain --checkpoint --proof-budget <n> <source.fine>\n"
                  "       fine {run|rain|materialize} --proof-selector z3 <source.fine>\n"
                  "       fine rain --document <id> --revision <n> "

@@ -4796,3 +4796,78 @@ The clean playground package is
 `fine-playground.service` was restarted after public head `328092fd5` and both
 it and `rc-publish-fine.service` were active. Localhost and
 `https://fine.shit.yachts/` both served the new `materialize holes` action.
+
+## 2026-09-03 — disposable-worker checkpoint interruption
+
+The browser can now interrupt proof search without asking a live Z3 context to
+serialize half-finished state. `search checkpoints` creates a dedicated Web
+Worker with its own Fine Wasm instance. The worker repeatedly runs one fixed-
+budget source epoch:
+
+```
+fine checkpoint --proof-budget N --output next.fine current.fine
+```
+
+An epoch is publishable only after Fine has selected its partial tree, applied
+concrete ranges, reparsed the exact output, rechecked every fixed subtree with
+search disabled, and written the resulting bytes to MEMFS. The worker posts that
+source to the main thread and uses it as the next epoch's input. Identical output
+means the search has settled. A hard limit of 64 epochs prevents an accidental
+nonconverging browser loop.
+
+The interruption boundary is process ownership. While search runs, the editor is
+read-only but the main thread remains responsive. `stop and materialize` first
+calls `Worker.terminate()`, destroying the in-flight solver and its unpublished
+MEMFS files. Only after termination does the main thread install the last source
+snapshot it received, through the existing history-isolated CodeMirror
+transaction. Stopping before the first completed epoch is a no-op on source. A
+settled search installs the final snapshot automatically. No callback stream,
+learned clause, model under construction, or partially written file is treated
+as a resumable proof.
+
+The budget-two identity checkpoint is now an exact three-epoch Wasm control. The
+shared `runCheckpointEpoch` primitive must produce, in order:
+
+1. `identity-checkpoint-materialized.fine`, containing
+   `trans[left, middle, right](p, ?)`;
+2. `identity-checkpoint-complete.fine`, with the nested child closed; and
+3. the same complete bytes again, proving the fixed point.
+
+The editor smoke uses the production `terminateAndReplace` helper with a fake
+worker and makes its dispatch fail if termination has not happened first. It
+then retains the earlier history-isolation checks. The served-page smoke requires
+the budget input, start button, stop button, and the reference's explicit
+last-completed-snapshot wording. The native install check now exercises
+checkpoint's exact `--output` protocol as well.
+
+Two frontend build failures fixed real boundaries rather than being bypassed.
+Vite initially compiled workers as IIFEs and rejected the worker's top-level
+`await`; workers are now emitted as ES modules, matching the main application's
+existing module requirement. The next build could not resolve the content-hashed
+absolute `/fine-*.mjs` import inside the worker bundle. The same narrow external
+predicate is now applied to both main and worker Rollup configurations; the built
+worker retains that public absolute import and Vite still owns the worker chunk.
+
+Validation before the clean commit:
+
+```
+cmake --build .build -j2
+.build/fine checkpoint --proof-budget 2 --output /tmp/checkpoint.fine \
+  fine/fixtures/identity-checkpoint.fine
+cmp fine/fixtures/identity-checkpoint-materialized.fine /tmp/checkpoint.fine
+node playground/smoke.mjs \
+  /nix/store/r4rv26nsf5cgq4krk1plnxylj4r1km4v-fine-playground-wasm-0.1.0 \
+  fine/fixtures/identity-transitivity.fine \
+  fine/fixtures/cst-roundtrip-ugly.fine \
+  fine/fixtures/cst-roundtrip-ugly-materialized.fine \
+  fine/fixtures/identity-checkpoint.fine \
+  fine/fixtures/identity-checkpoint-materialized.fine \
+  fine/fixtures/identity-checkpoint-complete.fine
+nix flake check
+nix build --no-link --print-out-paths .#playground
+```
+
+The direct Wasm smoke reported 85 Rainfall events and passed atomic
+materialization plus all three checkpoint epochs. The dirty-tree package,
+including the worker build and served-page smoke, produced
+`/nix/store/3rb4sr5gw1mpqfnls11ffff60v5lihai-fine-playground-0.1.0`.

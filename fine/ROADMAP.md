@@ -309,10 +309,12 @@ shallower budget the unchanged root hole beats decorative unary structure.
 
 The editor transaction primitive is closed for ordinary completed
 materialization: the Wasm CLI writes exact bytes to MEMFS and CodeMirror installs
-them as one undoable change. Still open here: cooperative bounded epochs, an
-interrupt signal which returns the last completed epoch, and connecting that
-partial checkpoint result to the same editor transaction. Those must reuse the
-checkpoint boundary rather than creating another proof-state format.
+them as one undoable change. Cooperative checkpoint epochs and interruption are
+also closed in the browser. A disposable worker repeatedly materializes and
+validates the previous epoch; each completed source is posted, while stop
+terminates the in-flight epoch before the main thread commits only the last
+posted source in one undoable edit. The source checkpoint, rather than a private
+Z3 state, is the persistent frontier.
 
 This is where Rainfall becomes an editing instrument rather than a log viewer.
 The user should see which source hole and production Fine is working on, not a

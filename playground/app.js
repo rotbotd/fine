@@ -1,19 +1,26 @@
 import { basicSetup, EditorView } from "codemirror";
 import { defaultHighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
+import { Compartment } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 import { compressedWasm, createFine, ordinaryWasm } from "./generated-assets.js";
-import { replaceDocument } from "./atomic-edit.js";
+import { replaceDocument, terminateAndReplace } from "./atomic-edit.js";
 import { selectedProofHoles } from "./rainfall.js";
 
 const sourceHost = document.querySelector("#source");
 const run = document.querySelector("#run");
 const materialize = document.querySelector("#materialize");
+const checkpoint = document.querySelector("#checkpoint");
+const stopCheckpoint = document.querySelector("#stop-checkpoint");
+const checkpointBudget = document.querySelector("#checkpoint-budget");
 const status = document.querySelector("#status");
 const result = document.querySelector("#result");
 const rainfall = document.querySelector("#rainfall");
 
 let capture = null;
 let nextInput = 0;
+let checkpointWorker = null;
+let lastCheckpoint = null;
+let completedEpochs = 0;
 
 const fineLanguage = StreamLanguage.define({
   tokenTable: {
@@ -141,6 +148,7 @@ const fine = await createFine({
 });
 
 const sample = await fetch("./sample.fine").then((response) => response.text());
+const editing = new Compartment();
 const editor = new EditorView({
   doc: sample,
   extensions: [
@@ -148,6 +156,7 @@ const editor = new EditorView({
     fineLanguage,
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     EditorView.lineWrapping,
+    editing.of(EditorView.editable.of(true)),
   ],
   parent: sourceHost,
 });
@@ -186,6 +195,8 @@ function showRainfall(lines) {
 async function execute() {
   run.disabled = true;
   materialize.disabled = true;
+  checkpoint.disabled = true;
+  checkpointBudget.disabled = true;
   status.textContent = "running…";
   result.textContent = "";
   rainfall.textContent = "";
@@ -218,12 +229,16 @@ async function execute() {
     fine.FS.unlink(path);
     run.disabled = false;
     materialize.disabled = false;
+    checkpoint.disabled = false;
+    checkpointBudget.disabled = false;
   }
 }
 
 async function materializeSource() {
   run.disabled = true;
   materialize.disabled = true;
+  checkpoint.disabled = true;
+  checkpointBudget.disabled = true;
   status.textContent = "materializing…";
   result.textContent = "";
   rainfall.textContent = "";
@@ -260,11 +275,116 @@ async function materializeSource() {
     }
     run.disabled = false;
     materialize.disabled = false;
+    checkpoint.disabled = false;
+    checkpointBudget.disabled = false;
   }
+}
+
+function resetCheckpointControls() {
+  editor.dispatch({ effects: editing.reconfigure(EditorView.editable.of(true)) });
+  checkpointWorker = null;
+  lastCheckpoint = null;
+  completedEpochs = 0;
+  run.disabled = false;
+  materialize.disabled = false;
+  checkpoint.disabled = false;
+  checkpointBudget.disabled = false;
+  stopCheckpoint.disabled = true;
+}
+
+function installLastCheckpoint(label) {
+  const source = lastCheckpoint;
+  const epochs = completedEpochs;
+  const worker = checkpointWorker;
+  const changed = terminateAndReplace(worker, editor, source);
+  resetCheckpointControls();
+  result.textContent = changed
+    ? `${label}\ninstalled epoch ${epochs} as one undoable editor transaction`
+    : `${label}\nno completed epoch changed the source`;
+  status.textContent = changed ? "checkpointed" : "unchanged";
+}
+
+function beginCheckpointSearch() {
+  const budget = Number.parseInt(checkpointBudget.value, 10);
+  if (!Number.isInteger(budget) || budget < 1) {
+    status.textContent = "budget must be positive";
+    return;
+  }
+
+  run.disabled = true;
+  materialize.disabled = true;
+  checkpoint.disabled = true;
+  checkpointBudget.disabled = true;
+  stopCheckpoint.disabled = false;
+  editor.dispatch({ effects: editing.reconfigure(EditorView.editable.of(false)) });
+  status.textContent = "starting checkpoint worker…";
+  result.textContent = "no completed epoch yet";
+  rainfall.textContent = "";
+  lastCheckpoint = editor.state.doc.toString();
+  completedEpochs = 0;
+  checkpointWorker = new Worker(new URL("./checkpoint-worker.js", import.meta.url), { type: "module" });
+
+  checkpointWorker.addEventListener("message", ({ data }) => {
+    if (!checkpointWorker)
+      return;
+    if (data?.type === "ready") {
+      checkpointWorker.postMessage({
+        type: "start",
+        source: lastCheckpoint,
+        budget,
+        maxEpochs: 64,
+      });
+      status.textContent = "searching checkpoint epochs…";
+      return;
+    }
+    if (data?.type === "epoch") {
+      lastCheckpoint = data.source;
+      completedEpochs = data.epoch;
+      result.textContent = `completed checkpoint epoch ${completedEpochs}\nthe editor is unchanged until stop`;
+      return;
+    }
+    if (data?.type === "done") {
+      lastCheckpoint = data.source;
+      completedEpochs = data.epoch;
+      installLastCheckpoint("checkpoint search settled");
+      return;
+    }
+    if (data?.type === "limit") {
+      lastCheckpoint = data.source;
+      completedEpochs = data.epoch;
+      installLastCheckpoint("checkpoint epoch limit reached");
+      return;
+    }
+    if (data?.type === "error") {
+      checkpointWorker.terminate();
+      result.textContent = data.message;
+      status.textContent = "checkpoint failed";
+      resetCheckpointControls();
+    }
+  });
+  checkpointWorker.addEventListener("error", (error) => {
+    if (!checkpointWorker)
+      return;
+    checkpointWorker.terminate();
+    result.textContent = error.message || "checkpoint worker crashed";
+    status.textContent = "checkpoint crashed";
+    resetCheckpointControls();
+  });
+}
+
+function interruptCheckpointSearch() {
+  if (!checkpointWorker)
+    return;
+  installLastCheckpoint("checkpoint search interrupted");
 }
 
 run.disabled = false;
 materialize.disabled = false;
+checkpoint.disabled = false;
+checkpointBudget.disabled = false;
+stopCheckpoint.disabled = true;
 status.textContent = "ready";
 run.addEventListener("click", execute);
 materialize.addEventListener("click", materializeSource);
+checkpoint.addEventListener("click", beginCheckpointSearch);
+stopCheckpoint.addEventListener("click", interruptCheckpointSearch);

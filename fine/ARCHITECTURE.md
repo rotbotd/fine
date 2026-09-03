@@ -222,17 +222,27 @@ open proof into the SMT context, and stops the run at the incomplete declaration
 Running `checkpoint` again searches the nested holes in their now-explicit
 context; `identity-checkpoint.fine` closes its second child on the second pass.
 
-This is an epoch boundary, not arbitrary asynchronous interruption yet. A later
-cancellable driver may retain the last completed epoch and invoke this same
-materializer; it must not scrape Z3's private learned clauses and call them proof
-structure.
+This is the persistent epoch boundary. The browser driver below provides
+asynchronous interruption by discarding the current worker and retaining its
+last completed source epoch; it never scrapes Z3's private learned clauses and
+calls them proof structure.
 
 The browser now has the atomic edit half of this boundary for completed search.
 `materialize holes` asks the Wasm CLI to write exact materialized bytes to MEMFS,
 then replaces the CodeMirror document with one transaction. A failed check makes
-no edit, and one undo restores the exact prior bytes. This does not yet drive or
-interrupt checkpoint epochs; it is the transaction primitive those epochs must
-reuse.
+no edit, and one undo restores the exact prior bytes. That same transaction
+primitive receives completed checkpoint epochs without inspecting a solver's
+in-flight state.
+
+Checkpoint interruption uses process ownership rather than solver-private
+state. A dedicated Web Worker owns a second Wasm runtime and repeatedly runs
+`checkpoint --proof-budget n --output ...` on its last source. Only a completely
+reparsed and validated epoch may post a source snapshot to the main thread. On
+stop, the main thread first terminates the worker, thereby discarding the
+in-flight Z3 context, and only then installs the last posted snapshot with the
+atomic editor transaction. The editor is read-only during the episode. No
+partially written MEMFS file, callback trace, or learned clause crosses this
+boundary.
 
 ## Rainfall boundary
 

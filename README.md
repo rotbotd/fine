@@ -32,6 +32,9 @@ again resumes those nested holes.
 The browser playground's `materialize holes` action now performs the checked
 source rewrite as one CodeMirror transaction. Failed checks do not edit the
 document, and one undo restores the exact prior comments, spacing, and holes.
+Checkpoint search runs successive source epochs in a disposable worker. Stop
+terminates the current epoch first, then installs only the last completely
+validated snapshot through that same atomic edit.
 
 See [`fine/README.md`](fine/README.md) to run it,
 [`fine/ARCHITECTURE.md`](fine/ARCHITECTURE.md) for the current boundary, and

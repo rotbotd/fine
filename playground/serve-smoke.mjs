@@ -65,6 +65,11 @@ try {
   const reference = page.body.toString("utf8");
   if (!reference.includes('id="materialize"') || !reference.includes("materialize holes"))
     throw new Error("served playground is missing the materialize action");
+  for (const control of ['id="checkpoint"', 'id="stop-checkpoint"', 'id="checkpoint-budget"'])
+    if (!reference.includes(control))
+      throw new Error(`served playground is missing checkpoint control: ${control}`);
+  if (!reference.includes("disposable worker") || !reference.includes("last completed source snapshot"))
+    throw new Error("language reference does not state the checkpoint interruption boundary");
   for (const form of ["runtime enum", "runtime match", "indexed proof family", "indexed constructor evidence", "indexed proof match", "structural proof induction", "indexed proof hole", "partial proof checkpoint", "empty proof match"])
     if (!reference.includes(form))
       throw new Error(`language reference is missing current form: ${form}`);

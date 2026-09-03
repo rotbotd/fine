@@ -190,6 +190,14 @@ including comments and whitespace. Failed materialization leaves the editor
 untouched. The CLI's `materialize --output file` form exists so the browser does
 not reconstruct source from line-oriented stdout callbacks.
 
+`search checkpoints` creates a separate Web Worker with its own Wasm runtime and
+repeatedly applies the selected proof budget to the last completed source. Each
+epoch writes, reparses, and validates an exact MEMFS checkpoint before posting it
+to the main thread. The editor remains unchanged and read-only while search is
+active. `stop and materialize` terminates the worker immediately, discards the
+in-flight epoch, and installs only the last posted source through the same one-
+transaction edit. A settled search installs its last source automatically.
+
 ```sh
 nix build --no-link --print-out-paths .#playground
 nix run .#playground-service
@@ -201,7 +209,10 @@ JavaScript does not rebuild the 11 MiB solver module. `playground/smoke.mjs`
 runs the compiled module under Node and requires the grammar, model solve,
 structural lift, and closed-run Rainfall events. It also materializes the ugly
 CST fixture byte-for-byte, applies the result as one editor transaction, and
-requires one undo to recover the original bytes. The production service is a
+requires one undo to recover the original bytes. Three checkpoint epochs must
+produce the exact partial fixture, exact complete fixture, and then no change;
+the termination helper is required to kill its worker before dispatching the
+editor transaction. The production service is a
 static file server: source and solver execution remain in the visitor's browser.
 
 The former Bool-predicate implementation remains runnable from tag

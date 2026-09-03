@@ -164,8 +164,9 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       typed holes; rank closed frontier obligations ahead of decorative syntax,
       reparse the fixed subtree without absorbing open evidence, and resume the
       nested hole on a second checkpoint pass.
-- [ ] Drive checkpointing from cooperative search epochs and editor interruption;
-      commit the concrete-range edit as one undoable document transaction.
+- [x] Drive checkpointing from cooperative source epochs in a disposable browser
+      worker; stop by killing the in-flight epoch and commit only the last
+      validated snapshot as one undoable document transaction.
 
 - [ ] Add proof-only elimination only when a proof consumer cannot be expressed
       by context absorption and a checked proof function; reject elimination
@@ -181,8 +182,8 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 - [ ] Recover ordinary model/counterexample consumers one at a time.
 - [x] Connect completed source proof materialization to one atomic CodeMirror
       transaction; require one undo to restore the exact source bytes.
-- [ ] Feed an interrupted partial checkpoint through that same editor
-      transaction only after cooperative search epochs exist.
+- [x] Feed an interrupted partial checkpoint through the same editor transaction;
+      never expose the in-flight worker's Z3 or MEMFS state.
 - [x] After the proof syntax, Rainfall schema, and materialization contract
       survive a two-child proof function and the bounded Z3 selector, build the
       first browser vertical slice: the real Fine core in WASM, CodeMirror 6,

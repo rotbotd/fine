@@ -56,8 +56,18 @@ function precompressedZstd() {
   };
 }
 
+function externalFine(id) {
+  return /^\/fine-[0-9a-f]+\.mjs$/.test(id);
+}
+
 export default defineConfig({
   plugins: [precompressedZstd()],
+  worker: {
+    format: "es",
+    rollupOptions: {
+      external: externalFine,
+    },
+  },
   preview: {
     allowedHosts: ["fine.shit.yachts"],
   },
@@ -65,9 +75,7 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      external(id) {
-        return /^\/fine-[0-9a-f]+\.mjs$/.test(id);
-      },
+      external: externalFine,
     },
   },
 });
