@@ -5686,3 +5686,20 @@ nix build --no-link --print-out-paths \
 # /nix/store/h7pwwvbnc55l0av7xra7fsjaymfcj2jr-fine-playground-wasm-pthreads-0.1.0
 # /nix/store/dpl3c4rnl3kh3l3kwm0fdrqpwhhjzxyg-fine-playground-0.1.0
 ```
+
+Deployment validation after restarting `fine-playground.service`:
+
+```text
+cmp fine/fixtures/playground-demo.fine \
+  <(curl -fsS http://127.0.0.1:4174/sample.fine)
+cmp fine/fixtures/playground-demo.fine \
+  <(curl -fsS https://fine.shit.yachts/sample.fine)
+# both exact; 2,112 bytes
+curl -fsSI https://fine.shit.yachts/
+# HTTP/2 200
+# cross-origin-opener-policy: same-origin
+# cross-origin-embedder-policy: require-corp
+systemctl is-active fine-playground.service rc-publish-fine.service
+# active
+# active
+```
