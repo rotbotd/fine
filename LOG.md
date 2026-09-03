@@ -4712,3 +4712,6 @@ check produced `/nix/store/419npzkn50bgga7gyzy0gz6masyg5szx-fine-0.1.0`.
 Arbitrary live interruption is intentionally not claimed: the remaining slice is
 a cooperative epoch driver which returns the last closed frontier and commits
 its concrete-range edits as one editor transaction.
+
+Clean native build for implementation commit `49ff762c6`, including the complete
+install-check suite: `/nix/store/j022fyfax59flncsjzgcxg959sw9yd1j-fine-0.1.0`.
