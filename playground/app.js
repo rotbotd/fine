@@ -2,10 +2,12 @@ import { basicSetup, EditorView } from "codemirror";
 import { defaultHighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { compressedWasm, createFine, ordinaryWasm } from "./generated-assets.js";
+import { replaceDocument } from "./atomic-edit.js";
 import { selectedProofHoles } from "./rainfall.js";
 
 const sourceHost = document.querySelector("#source");
 const run = document.querySelector("#run");
+const materialize = document.querySelector("#materialize");
 const status = document.querySelector("#status");
 const result = document.querySelector("#result");
 const rainfall = document.querySelector("#rainfall");
@@ -183,6 +185,7 @@ function showRainfall(lines) {
 
 async function execute() {
   run.disabled = true;
+  materialize.disabled = true;
   status.textContent = "running…";
   result.textContent = "";
   rainfall.textContent = "";
@@ -214,9 +217,54 @@ async function execute() {
   } finally {
     fine.FS.unlink(path);
     run.disabled = false;
+    materialize.disabled = false;
+  }
+}
+
+async function materializeSource() {
+  run.disabled = true;
+  materialize.disabled = true;
+  status.textContent = "materializing…";
+  result.textContent = "";
+  rainfall.textContent = "";
+
+  const inputPath = `/playground-${nextInput++}.fine`;
+  const outputPath = `/playground-${nextInput++}-materialized.fine`;
+  fine.FS.writeFile(inputPath, editor.state.doc.toString());
+  try {
+    const completed = invoke([
+      "materialize", "--proof-selector", "z3", "--output", outputPath, inputPath,
+    ]);
+    if (completed.code !== 0) {
+      result.textContent = [...completed.stdout, ...completed.stderr].join("\n")
+        || `(exit ${completed.code})`;
+      status.textContent = "failed";
+      return;
+    }
+
+    const source = fine.FS.readFile(outputPath, { encoding: "utf8" });
+    const changed = replaceDocument(editor, source);
+    result.textContent = changed
+      ? "materialized source\nall proof edits committed as one undoable editor transaction"
+      : "source already contains the selected proof terms";
+    status.textContent = changed ? "materialized" : "unchanged";
+  } catch (error) {
+    result.textContent = error?.stack ?? String(error);
+    status.textContent = "crashed";
+  } finally {
+    fine.FS.unlink(inputPath);
+    try {
+      fine.FS.unlink(outputPath);
+    } catch {
+      // A failed materialization does not create the output file.
+    }
+    run.disabled = false;
+    materialize.disabled = false;
   }
 }
 
 run.disabled = false;
+materialize.disabled = false;
 status.textContent = "ready";
 run.addEventListener("click", execute);
+materialize.addEventListener("click", materializeSource);

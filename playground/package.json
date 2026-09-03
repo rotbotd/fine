@@ -7,7 +7,9 @@
     "build": "node compress.mjs && vite build"
   },
   "dependencies": {
+    "@codemirror/commands": "6.11.0",
     "@codemirror/language": "6.11.3",
+    "@codemirror/state": "6.7.2",
     "@lezer/highlight": "1.2.1",
     "codemirror": "6.0.2"
   },

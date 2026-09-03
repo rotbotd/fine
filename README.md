@@ -29,6 +29,10 @@ partial trees, materializes checked subtrees around residual `?` leaves, and
 reparses without allowing an open proof to enter the solver context. Running it
 again resumes those nested holes.
 
+The browser playground's `materialize holes` action now performs the checked
+source rewrite as one CodeMirror transaction. Failed checks do not edit the
+document, and one undo restores the exact prior comments, spacing, and holes.
+
 See [`fine/README.md`](fine/README.md) to run it,
 [`fine/ARCHITECTURE.md`](fine/ARCHITECTURE.md) for the current boundary, and
 [`fine/ROADMAP.md`](fine/ROADMAP.md) for the ordered slices. The

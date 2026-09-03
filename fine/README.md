@@ -183,6 +183,13 @@ first in `run` mode and then in `rain` mode, and displays the ordinary result
 beside formatted Rainfall events. The sample uses the Z3 datatype-model proof
 selector.
 
+`materialize holes` runs the same checked materializer, reads its exact bytes
+back from the in-memory filesystem, and replaces the CodeMirror document in one
+transaction. One undo therefore restores the entire pre-materialization source,
+including comments and whitespace. Failed materialization leaves the editor
+untouched. The CLI's `materialize --output file` form exists so the browser does
+not reconstruct source from line-oriented stdout callbacks.
+
 ```sh
 nix build --no-link --print-out-paths .#playground
 nix run .#playground-service
@@ -192,7 +199,9 @@ nix run .#playground-service
 `playground-wasm` is a separate flake package, so changing the HTML or browser
 JavaScript does not rebuild the 11 MiB solver module. `playground/smoke.mjs`
 runs the compiled module under Node and requires the grammar, model solve,
-structural lift, and closed-run Rainfall events. The production service is a
+structural lift, and closed-run Rainfall events. It also materializes the ugly
+CST fixture byte-for-byte, applies the result as one editor transaction, and
+requires one undo to recover the original bytes. The production service is a
 static file server: source and solver execution remain in the visitor's browser.
 
 The former Bool-predicate implementation remains runnable from tag

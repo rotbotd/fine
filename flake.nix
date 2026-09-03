@@ -73,9 +73,12 @@
 
           eof_source="$(mktemp)"
           eof_roundtrip="$(mktemp)"
+          eof_materialized="$(mktemp)"
           printf '%s' 'run eof_comment { assert true == true; } // no newline' > "$eof_source"
           $out/bin/fine roundtrip "$eof_source" > "$eof_roundtrip"
           cmp "$eof_source" "$eof_roundtrip"
+          $out/bin/fine materialize --output "$eof_materialized" "$eof_source"
+          cmp "$eof_source" "$eof_materialized"
 
           ugly_materialized="$(mktemp)"
           $out/bin/fine materialize "$src/fine/fixtures/cst-roundtrip-ugly.fine" > "$ugly_materialized"
@@ -733,7 +736,7 @@
         pname = "fine-playground";
         version = "0.1.0";
         src = ./playground;
-        npmDepsHash = "sha256-q0/aG3fAf1teDpTDSVqXxHqAJGzqZ+Lh2bg8o+3ll9M=";
+        npmDepsHash = "sha256-yIB1xGWSt4wUSE3WvUF2I7edLE2H6ZOlUbox1mvWgsU=";
         npmBuildScript = "build";
 
         preBuild = ''
@@ -747,7 +750,9 @@
         checkPhase = ''
           runHook preCheck
           node smoke.mjs ${self.packages.${system}.playground-wasm} \
-            ${./fine/fixtures/identity-transitivity.fine}
+            ${./fine/fixtures/identity-transitivity.fine} \
+            ${./fine/fixtures/cst-roundtrip-ugly.fine} \
+            ${./fine/fixtures/cst-roundtrip-ugly-materialized.fine}
           node serve-smoke.mjs
           runHook postCheck
         '';

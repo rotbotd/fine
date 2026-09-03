@@ -179,8 +179,10 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 - [x] Add proof-producing elimination over `proof inductive`, retaining exact
       constructor and proof-field identity before any solver projection.
 - [ ] Recover ordinary model/counterexample consumers one at a time.
-- [ ] Connect source proof materialization to the editor host's atomic revision
-      transaction.
+- [x] Connect completed source proof materialization to one atomic CodeMirror
+      transaction; require one undo to restore the exact source bytes.
+- [ ] Feed an interrupted partial checkpoint through that same editor
+      transaction only after cooperative search epochs exist.
 - [x] After the proof syntax, Rainfall schema, and materialization contract
       survive a two-child proof function and the bounded Z3 selector, build the
       first browser vertical slice: the real Fine core in WASM, CodeMirror 6,

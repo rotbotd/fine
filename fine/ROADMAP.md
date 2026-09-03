@@ -307,10 +307,12 @@ resumes the nested hole and can close the same document. `identity-checkpoint`
 forces one child of transitivity to close while the other remains open; at a
 shallower budget the unchanged root hole beats decorative unary structure.
 
-Still open here: cooperative bounded epochs, an interrupt signal which returns
-the last completed epoch, and one atomic editor transaction with undo. Those
-must reuse the checkpoint boundary rather than creating another proof-state
-format.
+The editor transaction primitive is closed for ordinary completed
+materialization: the Wasm CLI writes exact bytes to MEMFS and CodeMirror installs
+them as one undoable change. Still open here: cooperative bounded epochs, an
+interrupt signal which returns the last completed epoch, and connecting that
+partial checkpoint result to the same editor transaction. Those must reuse the
+checkpoint boundary rather than creating another proof-state format.
 
 This is where Rainfall becomes an editing instrument rather than a log viewer.
 The user should see which source hole and production Fine is working on, not a

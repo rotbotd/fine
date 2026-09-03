@@ -31,6 +31,15 @@ namespace {
         return contents.str();
     }
 
+    void write_file(char const *path, std::string const &contents) {
+        std::ofstream output(path, std::ios::binary);
+        if (!output)
+            throw std::runtime_error("cannot open `" + std::string(path) + "` for writing");
+        output.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+        if (!output)
+            throw std::runtime_error("failed while writing `" + std::string(path) + "`");
+    }
+
     bool parse_revision(std::string_view text, std::size_t &result) {
         auto parsed = std::from_chars(text.data(), text.data() + text.size(), result);
         return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
@@ -60,7 +69,8 @@ namespace {
         }
     }
 
-    int materialize_file(char const *path, fine::ExecutionOptions first_options = {}) {
+    int materialize_file(char const *path, fine::ExecutionOptions first_options = {},
+                         char const *output_path = nullptr) {
         std::string source = read_file(path);
         try {
             fine::syntax::ConcreteSyntaxTree tree = fine::syntax::parse_tree(source);
@@ -73,7 +83,10 @@ namespace {
             options.require_explicit_coeffects = true;
             options.require_materialized_proofs = true;
             fine::execute(reparsed.ast, check_output, nullptr, nullptr, {}, options);
-            std::cout << materialized;
+            if (output_path)
+                write_file(output_path, materialized);
+            else
+                std::cout << materialized;
             return EXIT_SUCCESS;
         } catch (fine::syntax::ParseError const &error) {
             std::cerr << error.format(path, source) << '\n';
@@ -126,6 +139,9 @@ int main(int argc, char **argv) try {
         return run_file(argv[2], true);
     if (argc == 3 && std::string_view(argv[1]) == "materialize")
         return materialize_file(argv[2]);
+    if (argc == 5 && std::string_view(argv[1]) == "materialize" &&
+        std::string_view(argv[2]) == "--output")
+        return materialize_file(argv[4], {}, argv[3]);
     if (argc == 3 && std::string_view(argv[1]) == "roundtrip") {
         std::string source = read_file(argv[2]);
         try {
@@ -168,6 +184,13 @@ int main(int argc, char **argv) try {
         if (std::string_view(argv[1]) == "materialize")
             return materialize_file(argv[4], options);
     }
+    if (argc == 7 && std::string_view(argv[1]) == "materialize" &&
+        std::string_view(argv[2]) == "--proof-selector" && std::string_view(argv[3]) == "z3" &&
+        std::string_view(argv[4]) == "--output") {
+        fine::ExecutionOptions options;
+        options.proof_selector = fine::ProofSelector::z3_model;
+        return materialize_file(argv[6], options, argv[5]);
+    }
     if (argc == 9 && std::string_view(argv[1]) == "rain" && std::string_view(argv[2]) == "--document" &&
         std::string_view(argv[4]) == "--revision" && std::string_view(argv[6]) == "--generation") {
         RainRequest request{argv[3], 0, argv[7]};
@@ -192,6 +215,7 @@ int main(int argc, char **argv) try {
     std::cerr << "usage: fine run <source.fine>\n"
                  "       fine rain <source.fine>\n"
                  "       fine materialize <source.fine>\n"
+                 "       fine materialize [--proof-selector z3] --output <output.fine> <source.fine>\n"
                  "       fine roundtrip <source.fine>\n"
                  "       fine checkpoint --proof-budget <n> <source.fine>\n"
                  "       fine rain --checkpoint --proof-budget <n> <source.fine>\n"

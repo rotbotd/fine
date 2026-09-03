@@ -4721,3 +4721,69 @@ The browser package for public head `ba7fde3d0` built as
 `fine-playground.service` was restarted onto the new package;
 `rc-publish-fine.service` remained active, and both the localhost response and
 `https://fine.shit.yachts/` contained the new partial-proof-checkpoint reference.
+
+## 2026-09-03 — one undoable browser materialization transaction
+
+The browser now owns a real source edit rather than merely printing selected
+holes beside the editor. A separate `materialize holes` action runs the same Z3
+model selector and checked materializer as the native CLI. On success it installs
+the returned source as one CodeMirror transaction; on failure it leaves the
+editor document untouched. `isolateHistory.of("full")` puts boundaries on both
+sides of the materialization event, so one undo restores the exact bytes present
+immediately before the action without swallowing an earlier typing edit.
+
+Line-oriented Emscripten `print` callbacks are not an exact source transport:
+they discard newline delimiters and cannot distinguish a final newline from an
+EOF without one. Fine therefore gained an explicit file protocol:
+
+```
+fine materialize [--proof-selector z3] --output output.fine input.fine
+```
+
+The executable reads and validates the source exactly as before, reparses and
+reruns with proof search forbidden, then writes the materialized byte string in
+binary mode. The browser gives it two unique MEMFS paths, reads the output path
+as UTF-8, and deletes both files after the action. It never reconstructs source
+from diagnostics.
+
+`playground/atomic-edit.js` contains the one-operation document replacement so
+the production UI and smoke exercise the same code. The Wasm smoke now runs the
+existing Z3 transitivity/Rainfall test, materializes
+`cst-roundtrip-ugly.fine` through the MEMFS output protocol, and compares every
+byte with `cst-roundtrip-ugly-materialized.fine`. Its headless EditorState then
+records an earlier unsaved edit, applies the materialized source, and checks:
+
+1. the document equals the exact materializer output;
+2. one undo restores the exact pre-materialization edit;
+3. a second undo reaches the original document; and
+4. no third history entry exists.
+
+The native install check also sends an EOF-comment source with no trailing
+newline through `materialize --output` and compares it byte-for-byte, closing the
+ambiguity that motivated the file protocol. The served-page smoke requires the
+new action to be present.
+
+Local validation:
+
+```
+cmake --build .build -j2
+.build/fine materialize --proof-selector z3 --output /tmp/ugly.fine \
+  fine/fixtures/cst-roundtrip-ugly.fine
+cmp fine/fixtures/cst-roundtrip-ugly-materialized.fine /tmp/ugly.fine
+node playground/smoke.mjs \
+  /nix/store/r4rv26nsf5cgq4krk1plnxylj4r1km4v-fine-playground-wasm-0.1.0 \
+  fine/fixtures/identity-transitivity.fine \
+  fine/fixtures/cst-roundtrip-ugly.fine \
+  fine/fixtures/cst-roundtrip-ugly-materialized.fine
+nix flake check
+nix build --no-link --print-out-paths .#playground
+```
+
+The direct CodeMirror state/commands dependencies changed the fixed npm closure
+to `sha256-yIB1xGWSt4wUSE3WvUF2I7edLE2H6ZOlUbox1mvWgsU=`. The dirty-tree
+playground build, including the Wasm materializer and history smoke, produced
+`/nix/store/n9vi91k1bbfp1y5wn33l02224ibz2al9-fine-playground-0.1.0`.
+This closes the atomic transaction for completed proofs. Feeding a partial
+checkpoint into it remains downstream of cooperative search epochs and an
+interrupt boundary; the UI does not pretend a synchronous completed
+materialization is live interruption.

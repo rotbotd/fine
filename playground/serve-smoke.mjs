@@ -63,6 +63,8 @@ try {
   if (explicit.headers["content-encoding"] !== "zstd" || !explicit.body.equals(expectedCompressed))
     throw new Error("explicit zstd Wasm response is not the precompressed module");
   const reference = page.body.toString("utf8");
+  if (!reference.includes('id="materialize"') || !reference.includes("materialize holes"))
+    throw new Error("served playground is missing the materialize action");
   for (const form of ["runtime enum", "runtime match", "indexed proof family", "indexed constructor evidence", "indexed proof match", "structural proof induction", "indexed proof hole", "partial proof checkpoint", "empty proof match"])
     if (!reference.includes(form))
       throw new Error(`language reference is missing current form: ${form}`);

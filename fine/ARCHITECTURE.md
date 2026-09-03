@@ -227,6 +227,13 @@ cancellable driver may retain the last completed epoch and invoke this same
 materializer; it must not scrape Z3's private learned clauses and call them proof
 structure.
 
+The browser now has the atomic edit half of this boundary for completed search.
+`materialize holes` asks the Wasm CLI to write exact materialized bytes to MEMFS,
+then replaces the CodeMirror document with one transaction. A failed check makes
+no edit, and one undo restores the exact prior bytes. This does not yet drive or
+interrupt checkpoint epochs; it is the transaction primitive those epochs must
+reuse.
+
 ## Rainfall boundary
 
 The existing manager-local term registry and `fine.generated-term.v1` renderer

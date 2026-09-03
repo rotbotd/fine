@@ -1,9 +1,15 @@
 import { pathToFileURL } from "node:url";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
+import { history, undo } from "@codemirror/commands";
+import { EditorState } from "@codemirror/state";
+import { replaceDocument } from "./atomic-edit.js";
 import { selectedProofHoles } from "./rainfall.js";
 
 const root = path.resolve(process.argv[2]);
 const samplePath = path.resolve(process.argv[3] ?? path.join(root, "sample.fine"));
+const materializePath = process.argv[4] ? path.resolve(process.argv[4]) : null;
+const expectedMaterializedPath = process.argv[5] ? path.resolve(process.argv[5]) : null;
 const createFine = (await import(pathToFileURL(path.join(root, "fine.mjs")))).default;
 const stdout = [];
 const stderr = [];
@@ -42,4 +48,46 @@ if (selections.length !== 1
     || selections[0].binding !== "composed"
     || selections[0].body !== "trans[left, middle, right](p, q)")
   throw new Error(`unexpected selected proof holes: ${JSON.stringify(selections)}`);
-console.log(`wasm smoke passed with ${events.length} Rainfall events`);
+
+if (materializePath && expectedMaterializedPath) {
+  stdout.length = 0;
+  stderr.length = 0;
+  const original = await readFile(materializePath, "utf8");
+  const expected = await readFile(expectedMaterializedPath, "utf8");
+  fine.FS.writeFile("/materialize.fine", original);
+  try {
+    code = fine.callMain([
+      "materialize", "--proof-selector", "z3", "--output", "/materialized.fine", "/materialize.fine",
+    ]) ?? 0;
+  } catch (error) {
+    if (typeof error?.status === "number")
+      code = error.status;
+    else
+      throw error;
+  }
+  if (code !== 0)
+    throw new Error(`Fine materialize exited ${code}: ${stderr.join("\n")}`);
+  const materialized = fine.FS.readFile("/materialized.fine", { encoding: "utf8" });
+  if (materialized !== expected)
+    throw new Error("Wasm materialization did not preserve the exact expected concrete source");
+
+  let state = EditorState.create({ doc: original, extensions: [history()] });
+  const view = {
+    get state() {
+      return state;
+    },
+    dispatch(...specs) {
+      state = state.update(...specs).state;
+    },
+  };
+  view.dispatch({ changes: { from: state.doc.length, insert: "// unsaved prior edit" } });
+  const beforeMaterialization = state.doc.toString();
+  if (!replaceDocument(view, materialized) || state.doc.toString() !== expected)
+    throw new Error("atomic editor replacement did not install the materialized source");
+  if (!undo(view) || state.doc.toString() !== beforeMaterialization)
+    throw new Error("one undo did not restore the exact pre-materialization bytes");
+  if (!undo(view) || state.doc.toString() !== original || undo(view))
+    throw new Error("materialization merged with prior editor history or created extra transactions");
+}
+
+console.log(`wasm smoke passed with ${events.length} Rainfall events and atomic materialization`);
