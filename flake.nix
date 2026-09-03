@@ -62,9 +62,23 @@
           grep -F "latest-observed: 11" <<<"$live_lift"
           grep -F "latest-published: 11" <<<"$live_lift"
 
+          ${pkgs.python3}/bin/python "$src/fine/check_readme_example.py" "$src"
+
+          demo_output="$($out/bin/fine run --proof-selector z3 \
+            "$src/fine/fixtures/playground-demo.fine")"
+          echo "$demo_output"
+          grep -F 'verified proof function: plus_shift' <<<"$demo_output"
+          grep -F 'filled proof hole: composed <- trans(left, middle, right) using [first = p, second = q] (Z3 datatype model)' \
+            <<<"$demo_output"
+          demo_materialized="$(mktemp)"
+          $out/bin/fine materialize --proof-selector z3 \
+            "$src/fine/fixtures/playground-demo.fine" > "$demo_materialized"
+          cmp "$src/fine/fixtures/playground-demo-materialized.fine" "$demo_materialized"
+
           for source in \
             "$src/fine/fixtures/cst-roundtrip-ugly.fine" \
             "$src/fine/fixtures/identity-coeffect.fine" \
+            "$src/fine/fixtures/playground-demo.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
             "$src/fine/fixtures/proof-inductive-match.fine" \
             "$src/fine/fixtures/proof-inductive-holes.fine" \
@@ -886,7 +900,7 @@
 
         preBuild = ''
           mkdir -p public
-          cp ${./fine/fixtures/identity-transitivity.fine} public/sample.fine
+          cp ${./fine/fixtures/playground-demo.fine} public/sample.fine
           cp ${self.packages.${system}.playground-wasm}/fine.mjs \
             ${self.packages.${system}.playground-wasm}/fine.wasm public/
           cp ${self.packages.${system}.playground-wasm-pthreads}/fine.mjs \
@@ -899,13 +913,14 @@
         checkPhase = ''
           runHook preCheck
           node smoke.mjs ${self.packages.${system}.playground-wasm} \
-            ${./fine/fixtures/identity-transitivity.fine} \
+            ${./fine/fixtures/playground-demo.fine} \
             ${./fine/fixtures/cst-roundtrip-ugly.fine} \
             ${./fine/fixtures/cst-roundtrip-ugly-materialized.fine} \
             ${./fine/fixtures/identity-checkpoint.fine} \
             ${./fine/fixtures/identity-checkpoint-materialized.fine} \
             ${./fine/fixtures/identity-checkpoint-complete.fine} \
             ${./fine/fixtures/top-level-declarations.fine}
+          cmp ${./fine/fixtures/playground-demo.fine} dist/sample.fine
           node pthread-smoke.mjs ${self.packages.${system}.playground-wasm-pthreads} \
             ${./fine/fixtures/identity-checkpoint.fine}
           node serve-smoke.mjs

@@ -1,5 +1,13 @@
 # Two-level proof core fixtures
 
+- `playground-demo.fine` is the checked public introduction shared by this
+  repository's primary README and the browser playground. It exercises a
+  runtime enum and match, indexed proof introduction and elimination,
+  structural proof induction, implicit constructor/function coeffects, and a
+  Z3-selected identity hole in one executable document.
+- `playground-demo-materialized.fine` is the exact explicit-coeffect and
+  explicit-proof output of materializing that introduction; install checks
+  require the generated source to match it byte-for-byte and rerun cleanly.
 - `runtime-enum.fine` declares recursive `Nat` as a runtime enum, constructs it,
   eliminates it with an exhaustive payload-binding match, verifies a symbolic
   reconstruction function, and uses `Nat` as the carrier of virtual identity

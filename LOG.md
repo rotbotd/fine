@@ -5614,3 +5614,75 @@ list now names the actual absences—runtime proof values and elimination, runti
 recursion and numeric measures, general dependency/universes, global search,
 constructor synthesis, multi-hole live episodes, and direct search before
 frontier enumeration. No implementation changed.
+
+## 2026-09-03 — made the public introduction executable and singular
+
+h found that the primary Fine README still described an earlier proof-term
+slice and that the browser opened the older identity-transitivity fixture. The
+README contained three concrete false surfaces: top-level proof bindings that
+the current grammar accepts only inside `run`, an identity-hole description
+that stopped at locals and `refl` despite proof-function applications now being
+implemented, and a structural-recursion fragment returning an undeclared
+`Rebuilt` family. The prose was therefore not merely incomplete; copied examples
+failed or described the wrong search grammar.
+
+I replaced those parallel introductions with one executable source of truth,
+`fine/fixtures/playground-demo.fine`. It deliberately crosses the current
+language boundary in one document:
+
+- native runtime `Nat` construction and elimination;
+- indexed `Even` introduction and proof-only elimination with a constructor
+  coeffect restored as the local handle `prior`;
+- indexed `Plus` structural induction through `inducts(evidence)`, including
+  proof-function and constructor coeffect resolution;
+- an identity hole whose only selected cost-three result is
+  `trans(left, middle, right) using [first = p, second = q]` under the Z3
+  datatype-model selector.
+
+`fine/fixtures/playground-demo-materialized.fine` records the exact source after
+all implicit coeffects and the proof hole are made explicit. The native install
+check now runs the demo, checks the selected source term, materializes it
+byte-for-byte against that companion, and includes the source in CST roundtrip
+coverage. `fine/check_readme_example.py` requires the marked primary README code
+block to equal the fixture exactly. The playground derivation copies that same
+tracked fixture to `public/sample.fine`; its package check compares the built
+`dist/sample.fine` bytes back to the fixture, while the existing Wasm smoke now
+runs this full introduction and retains the exact selected-hole assertion.
+
+The rewritten `fine/README.md` explains the currently accepted runtime/proof
+forms, exact proof grammars, checkpoint boundary, browser threading path, and
+remaining limits without speculative snippets. The root README and fixture
+index point to the same checked introduction. No parser, elaborator, solver, or
+runtime semantics changed in this slice.
+
+Local checks:
+
+```text
+python fine/check_readme_example.py .
+# README playground demo matches the executable fixture
+./build/proof-core/fine run --proof-selector z3 \
+  fine/fixtures/playground-demo.fine
+# verified run: playground
+# runtime-proof-values: 0 (unrepresentable)
+./build/proof-core/fine materialize --proof-selector z3 \
+  fine/fixtures/playground-demo.fine > /tmp/playground-demo-materialized.fine
+cmp fine/fixtures/playground-demo-materialized.fine \
+  /tmp/playground-demo-materialized.fine
+./build/proof-core/fine run /tmp/playground-demo-materialized.fine
+./build/proof-core/fine roundtrip fine/fixtures/playground-demo.fine \
+  | cmp fine/fixtures/playground-demo.fine -
+git diff --check
+# all passed
+```
+
+Clean staged-tree validation:
+
+```text
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths \
+  .#default .#playground-wasm-pthreads .#playground
+# /nix/store/rynqwz2yla3ghyfc6zcyk49qb97d1f23-fine-0.1.0
+# /nix/store/h7pwwvbnc55l0av7xra7fsjaymfcj2jr-fine-playground-wasm-pthreads-0.1.0
+# /nix/store/dpl3c4rnl3kh3l3kwm0fdrqpwhhjzxyg-fine-playground-0.1.0
+```

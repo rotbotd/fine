@@ -1,35 +1,18 @@
 # Fine proof-term branch
 
-This branch is the first executable cut of Fine's two-level core. Proof types
-are virtual by construction: source and elaborator types for proof evidence are
-disjoint from runtime values, so there is no runtime proof case to erase.
+Fine is a solver language developed inside a soft fork of Z3. Its active core is
+two-level by construction: runtime values and static proof evidence have separate
+syntax and separate C++ representations, so a proof cannot leak into executable
+data and there is no erasure pass that can forget to remove one.
 
+This is the checked program shipped as the browser playground's default:
+
+<!-- checked-example: playground-demo -->
 ```fine
-function replace(left: Int, right: Int) -> Int
-  takes [same: Id(Int, left, right)]
-  ensures { result == right; }
-{
-  left
+enum Nat {
+  zero,
+  succ(Nat),
 }
-
-run identity_coeffect {
-  let x: Int = 7;
-  let y: Int = x;
-  proof p: Id(Int, x, y) = refl(x);
-  let answer: Int = replace(x, y);
-  assert answer == y;
-}
-```
-
-The identity proof is retained as source evidence and automatically contributes
-`x == y` to checking. The function's coeffect asks the caller to supply such a
-proof. The first search rule selects an exact local proof; it does not perform
-global instance resolution.
-
-Ordinary runtime data uses Z3 native datatypes directly:
-
-```fine
-enum Nat { zero, succ(Nat) }
 
 function predecessor(value: Nat) -> Nat {
   match value {
@@ -37,173 +20,144 @@ function predecessor(value: Nat) -> Nat {
     succ(previous) => previous,
   }
 }
-```
 
-Constructors have typed payloads, recursive self fields are allowed, and every
-runtime match must cover each constructor once. Enum values may occur in an
-identity type such as `Id(Nat, one, one)`, but its inhabitant is still static
-proof evidence rather than a runtime datatype value.
-
-Static indexed families use a separate form:
-
-```fine
 proof inductive Even(value: Nat) {
   even_zero() -> Even(zero);
-  even_next(previous: Nat) takes [prior: Even(previous)]
+  even_next(previous: Nat)
+    takes [prior: Even(previous)]
     -> Even(succ(succ(previous)));
 }
 
-proof zero_even: Even(zero) = even_zero();
-proof two_even: Even(succ(succ(zero))) = even_next(zero);
-proof two_even_explicit: Even(succ(succ(zero)))
-  = even_next(zero) using [prior = zero_even];
-```
-
-Constructor actual parameters share one ordinary positional list. A proof-typed
-actual parameter is explicit and observable to proof construction; a `takes`
-parameter is instead a proof-irrelevant coeffect. Fine searches exact local
-evidence for an omitted constructor coeffect, while `using` chooses it explicitly.
-When matching, actual parameters receive positional binders and each constructor
-coeffect reappears as a branch-local handle under its declared name. Each arm
-refines the scrutinee index to its constructor result. Exhaustiveness ignores
-impossible constructors, so a zero-constructor family and an impossible concrete
-index both admit `match evidence {}`. The match cannot return runtime data.
-
-Structural proof recursion is explicit and proof-only:
-
-```fine
-proof function rebuild(value: Nat)
-  takes [evidence: Even(value)]
-  inducts(evidence)
-  -> Rebuilt(value) {
+proof function even_pred(value: Nat)
+  takes [evidence: Even(succ(succ(value)))]
+  -> Even(value) {
   match evidence {
-    even_zero() => rebuilt_zero(),
-    even_next(previous) =>
-      rebuilt_next(previous, rebuild(previous)),
+    even_next(previous) => prior,
   }
 }
+
+proof inductive Plus(a: Nat, b: Nat, c: Nat) {
+  plus_zero(base: Nat) -> Plus(zero, base, base);
+  plus_succ(a: Nat, b: Nat, c: Nat)
+    takes [rest: Plus(a, b, c)]
+    -> Plus(succ(a), b, succ(c));
+}
+
+proof function plus_shift(a: Nat, b: Nat, c: Nat)
+  takes [evidence: Plus(a, b, c)]
+  inducts(evidence)
+  -> Plus(a, succ(b), succ(c)) {
+  match evidence {
+    plus_zero(base) => plus_zero(succ(base)),
+    plus_succ(pa, pb, pc) =>
+      plus_succ(pa, succ(pb), succ(pc)) using [rest = plus_shift(pa, pb, pc)],
+  }
+}
+
+proof function bool_eta(value: Bool)
+  -> Id(Bool, value, value == true);
+
+proof function symm(left: Bool, right: Bool)
+  takes [given: Id(Bool, left, right)]
+  -> Id(Bool, right, left);
+
+proof function trans(left: Bool, middle: Bool, right: Bool)
+  takes [first: Id(Bool, left, middle), second: Id(Bool, middle, right)]
+  -> Id(Bool, left, right);
+
+run playground {
+  let one: Nat = succ(zero);
+  assert predecessor(one) == zero;
+
+  proof zero_even: Even(zero) = even_zero();
+  proof two_even: Even(succ(succ(zero))) = even_next(zero);
+  proof recovered: Even(zero) = even_pred(zero);
+  proof zero_plus_zero: Plus(zero, zero, zero) = plus_zero(zero);
+  proof shifted: Plus(zero, succ(zero), succ(zero)) = plus_shift(zero, zero, zero);
+
+  let right: Bool = true;
+  let middle: Bool = right == true;
+  let left: Bool = middle == true;
+  proof base_left: Id(Bool, middle, left) = bool_eta(middle);
+  proof p: Id(Bool, left, middle) = symm(middle, left);
+  proof base_right: Id(Bool, right, middle) = bool_eta(right);
+  proof q: Id(Bool, middle, right) = symm(right, middle);
+  proof composed: Id(Bool, left, right) = ?;
+}
+```
+<!-- /checked-example -->
+
+The program exercises the current boundary rather than an early identity-only
+slice. `Nat` is a native Z3 runtime datatype and `predecessor` eliminates it as
+ordinary data. `Even` and `Plus` are static indexed families: matching their
+evidence refines indices, and `plus_shift` may call itself only with the exact
+recursive field exposed beneath its `inducts(evidence)` root. Constructor and
+function parameters in `takes` are proof-irrelevant coeffects. Fine selects exact
+caller-local evidence when they are omitted; `using` records the same choice
+explicitly.
+
+The final identity hole has a finite typed grammar. Exact locals come first,
+then applicable `refl`, then backward result-directed proof-function applications
+up to the configured total cost. With `--proof-selector z3`, Fine compacts that
+same complete frontier into a ground recursive datatype, asks Z3 to select one
+term, lifts the model by constructor identity, and rejects it unless it exactly
+matches a source candidate. Here the selected source is:
+
+```text
+composed ← trans(left, middle, right) using [first = p, second = q]
 ```
 
-`inducts(evidence)` makes the function visible only as an induction hypothesis
-inside its own body. A recursive source application must receive an exact
-same-family proof field obtained by matching `evidence` (or one of its recursive
-fields). Passing `evidence` again is rejected. No runtime recursive function is
-created.
+`fine materialize` replaces the hole and every implicit coeffect choice through
+lossless concrete ranges, reparses the result, and reruns it with both searches
+forbidden. Comments, whitespace, line endings, and unrelated source bytes remain
+exact.
 
-Build and run:
+## Run it
+
+The repository flake owns the toolchain and the local Z3 fork:
 
 ```sh
-cmake -S . -B build/proof-core -G Ninja \
-  -DZ3_BUILD_LIBZ3_SHARED=OFF \
-  -DZ3_BUILD_EXECUTABLE=OFF \
-  -DZ3_BUILD_TEST_EXECUTABLES=OFF \
-  -DFINE_BUILD_EXECUTABLE=ON
-cmake --build build/proof-core --target fine-bin
-build/proof-core/fine run fine/fixtures/identity-coeffect.fine
-build/proof-core/fine rain fine/fixtures/identity-coeffect.fine > trace.jsonl
-python fine/rainfall_validate.py fine/fixtures/identity-coeffect.fine trace.jsonl
-build/proof-core/fine materialize fine/fixtures/identity-coeffect.fine > explicit.fine
-build/proof-core/fine run explicit.fine
-build/proof-core/fine roundtrip fine/fixtures/cst-roundtrip-ugly.fine > unchanged.fine
+nix run . -- run --proof-selector z3 fine/fixtures/playground-demo.fine
+nix run . -- rain --proof-selector z3 fine/fixtures/playground-demo.fine > trace.jsonl
+nix run . -- materialize --proof-selector z3 \
+  fine/fixtures/playground-demo.fine > explicit.fine
+nix run . -- run explicit.fine
 ```
 
-`roundtrip` parses through Fine's lossless concrete token tree and emits the
-owned bytes again. It preserves comments, tabs, line endings, blank lines, and
-all other trivia exactly; the semantic AST remains a separate view over the
-same source ranges.
+For an existing development build, replace `nix run . --` with
+`build/proof-core/fine`. `fine roundtrip file.fine` exposes the exact concrete
+parse/render identity check.
 
-`fine materialize` writes an explicit `using [same = p]` argument, reparses it,
-and rechecks it with implicit resolution disabled before returning source.
+## Search and checkpoints
 
-Typed identity holes use `?` at the proof level. Their finite grammar contains
-only exact local evidence and applicable reflexivity:
+An ordinary proof hole is closed only by a complete typed candidate. `fine
+checkpoint --proof-budget n` instead admits one typed open production lifting to
+`?`, prefers complete roots, and otherwise ranks partial trees by closed frontier
+before constructor cost. It materializes only the checked source tree. An open
+proof is never inserted into the proof environment or absorbed into SMT, so no
+later statement is checked under unfinished evidence. A later checkpoint pass
+resumes the residual holes from the emitted source.
 
-```fine
-proof self: Id(Int, x, x) = ?;   // materializes as refl(x)
-proof copied: Id(Int, x, x) = ?; // materializes as self
-```
-
-Ill-typed local proofs are excluded before enumeration. Rainfall records the
-opened hole, every typed candidate, the selected candidate, and the complete
-residual frontier. Materialization replaces each `?`, reparses, and reruns with
-both proof and coeffect search forbidden before returning source.
-
-An indexed proof hole uses a smaller exact grammar. Outside induction it can
-select exact local family evidence. Inside a function annotated with
-`inducts(evidence)`, it may also synthesize a self-application whose designated
-argument is an exact recursive field:
-
-```fine
-even_next(previous) => rebuilt_next(previous) using [prior = ?]
-// materializes the hole as rebuild(previous) using [evidence = prior]
-```
-
-The mismatched `wrong: Rebuilt(succ(previous))` and the nondecreasing root are
-absent before enumeration. Constructor synthesis and the Z3 datatype-model
-selector do not yet cover indexed holes; requesting that selector fails rather
-than silently changing the grammar.
-
-The optional Z3 proof selector compacts that same finite frontier into a
-recursive datatype grammar. It asks Z3 for a bounded ground constructor tree,
-lifts the model value back to Fine proof syntax, and rejects it unless it is an
-exact member of the deterministic reference frontier:
-
-```sh
-build/proof-core/fine run --proof-selector z3 \
-  fine/fixtures/identity-transitivity.fine
-build/proof-core/fine rain --proof-selector z3 \
-  fine/fixtures/identity-transitivity.fine > trace.jsonl
-build/proof-core/fine materialize --proof-selector z3 \
-  fine/fixtures/identity-transitivity.fine > explicit.fine
-```
-
-The final command reparses and rechecks `explicit.fine` with proof search
-forbidden. The default remains deterministic enumeration so the complete
-frontier stays a stable reference rather than an accidental solver model.
-
-An intentionally bounded checkpoint writes the best partial proof as ordinary
-Fine with typed holes:
-
-```sh
-build/proof-core/fine checkpoint --proof-budget 2 \
-  fine/fixtures/identity-checkpoint.fine > partial.fine
-# partial.fine contains trans(left, middle, right) using [first = p, second = ?]
-
-build/proof-core/fine checkpoint --proof-budget 2 partial.fine > complete.fine
-build/proof-core/fine run complete.fine
-```
-
-The first pass prefers one closed child over decorative applications around
-only open leaves. It reparses the emitted source and type-checks the fixed tree
-without treating `?` as evidence. The second pass resumes at that nested hole.
-Use `fine rain --checkpoint --proof-budget 2 ...` to retain the typed partial
-frontier and lifted model in Rainfall without emitting source.
+Indexed-family holes have a deliberately smaller grammar: exact local evidence
+and structurally admitted induction-hypothesis applications. Wrong indices and
+nondecreasing roots are absent before enumeration. Constructor synthesis and the
+Z3 model selector do not yet apply to indexed holes.
 
 ## Browser playground
 
-The browser build compiles the ordinary Fine executable and this repository's
-Z3 fork to WebAssembly. A bundled CodeMirror editor with a Fine-specific lexical
-mode writes source into Emscripten's in-memory filesystem, invokes the same CLI
-first in `run` mode and then in `rain` mode, and displays the ordinary result
-beside formatted Rainfall events. The sample uses the Z3 datatype-model proof
-selector.
+`https://fine.shit.yachts` runs the same C++ executable and local Z3 fork as an
+11 MiB WebAssembly module. CodeMirror is only an editor and lexical highlighter;
+it is not a second parser. `materialize holes` installs the CLI's exact source as
+one transaction, so one undo restores the pre-action document.
 
-`materialize holes` runs the same checked materializer, reads its exact bytes
-back from the in-memory filesystem, and replaces the CodeMirror document in one
-transaction. One undo therefore restores the entire pre-materialization source,
-including comments and whitespace. Failed materialization leaves the editor
-untouched. The CLI's `materialize --output file` form exists so the browser does
-not reconstruct source from line-oriented stdout callbacks.
-
-`search checkpoints` creates a separate Web Worker with its own Wasm runtime and
-repeatedly applies the selected proof budget to the last completed source. Each
-epoch writes, reparses, and validates an exact MEMFS checkpoint before posting it
-to the main thread. The same elaboration writes a Rainfall sidecar, so the trace
-pane changes only when its corresponding validated source snapshot is published;
-an epoch is never rerun merely to obtain presentation data. The editor remains
-unchanged and read-only while search is active. `stop and materialize` terminates the worker immediately, discards the
-in-flight epoch, and installs only the last posted source through the same one-
-transaction edit. A settled search installs its last source automatically.
+Checkpoint search uses a dedicated Web Worker. On cross-origin-isolated clients,
+a pthread producer runs open-ended iterative deepening while a separate Fine
+module drains translated terms from a bounded shared-memory ring, reparses and
+rechecks each full-source view, and retains only validated snapshots. Stop kills
+the producer before installing the last validated source. The ordinary
+single-threaded module remains the fallback. Current live scope is one identity
+hole per source episode, and each bounded frontier is still enumerated before Z3
+compaction.
 
 ```sh
 nix build --no-link --print-out-paths .#playground
@@ -211,22 +165,19 @@ nix run .#playground-service
 # open http://127.0.0.1:4174
 ```
 
-`playground-wasm` is a separate flake package, so changing the HTML or browser
-JavaScript does not rebuild the 11 MiB solver module. `playground/smoke.mjs`
-runs the compiled module under Node and requires the grammar, model solve,
-structural lift, and closed-run Rainfall events. It also materializes the ugly
-CST fixture byte-for-byte, applies the result as one editor transaction, and
-requires one undo to recover the original bytes. Three checkpoint epochs must
-produce the exact partial fixture, exact complete fixture, and then no change;
-their paired traces must respectively close as checkpointed, verified, and
-verified, with model lifts exactly in the two epochs which still contain holes.
-The termination helper is required to kill its worker before dispatching the
-editor transaction. The production service is a
-static file server: source and solver execution remain in the visitor's browser.
+The playground package is separate from the Wasm packages, so frontend-only edits
+do not rebuild Z3. Its smoke test runs the shipped sample through the Z3 selector,
+checks the chosen source term, and separately covers exact CST materialization,
+undo, partial/complete/settled checkpoint epochs, pthread shared memory, and the
+COOP/COEP response headers.
 
-The former Bool-predicate implementation remains runnable from tag
-`pre-pat-1d7222a23`. The exact survival and deletion map is in
-[`PROOF_TERMS.md`](PROOF_TERMS.md); current invariants are in
-[`ARCHITECTURE.md`](ARCHITECTURE.md); the ordered executable slices are in
-[`ROADMAP.md`](ROADMAP.md); experiments and closed decisions remain in the
-append-only root [`LOG.md`](../LOG.md).
+## Boundaries and records
+
+[`ARCHITECTURE.md`](ARCHITECTURE.md) states the current semantic ownership and
+runtime/proof boundary. [`PROOF_TERMS.md`](PROOF_TERMS.md) explains the design
+cut from Bool predicates to proof evidence. [`ROADMAP.md`](ROADMAP.md) records the
+ordered executable slices. Failed routes, exact commands, and closed decisions
+remain in the append-only root [`LOG.md`](../LOG.md).
+
+The former Bool-predicate, fixedpoint, and locally nameless implementation remains
+at tag `pre-pat-1d7222a23`; it is evidence, not compatibility surface.

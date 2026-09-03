@@ -5,6 +5,12 @@ Fine is a solver language developed inside a soft fork of Z3. The active
 virtual by construction: proof and value syntax are separate, and the runtime
 value representation has no proof case.
 
+The checked current program is
+[`fine/fixtures/playground-demo.fine`](fine/fixtures/playground-demo.fine). The
+same source appears as the primary example in [`fine/README.md`](fine/README.md)
+and is copied byte-for-byte into the browser playground's default; the build
+fails if those surfaces drift apart.
+
 The executable core also declares recursive runtime enums and eliminates them
 with exhaustive typed matches. Separate `proof inductive` declarations form
 static indexed constructor evidence without creating runtime proof datatypes. It

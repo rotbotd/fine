@@ -1,0 +1,75 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function predecessor(value: Nat) -> Nat {
+  match value {
+    zero => zero,
+    succ(previous) => previous,
+  }
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat)
+    takes [prior: Even(previous)]
+    -> Even(succ(succ(previous)));
+}
+
+proof function even_pred(value: Nat)
+  takes [evidence: Even(succ(succ(value)))]
+  -> Even(value) {
+  match evidence {
+    even_next(previous) => prior,
+  }
+}
+
+proof inductive Plus(a: Nat, b: Nat, c: Nat) {
+  plus_zero(base: Nat) -> Plus(zero, base, base);
+  plus_succ(a: Nat, b: Nat, c: Nat)
+    takes [rest: Plus(a, b, c)]
+    -> Plus(succ(a), b, succ(c));
+}
+
+proof function plus_shift(a: Nat, b: Nat, c: Nat)
+  takes [evidence: Plus(a, b, c)]
+  inducts(evidence)
+  -> Plus(a, succ(b), succ(c)) {
+  match evidence {
+    plus_zero(base) => plus_zero(succ(base)),
+    plus_succ(pa, pb, pc) =>
+      plus_succ(pa, succ(pb), succ(pc)) using [rest = plus_shift(pa, pb, pc) using [evidence = rest]],
+  }
+}
+
+proof function bool_eta(value: Bool)
+  -> Id(Bool, value, value == true);
+
+proof function symm(left: Bool, right: Bool)
+  takes [given: Id(Bool, left, right)]
+  -> Id(Bool, right, left);
+
+proof function trans(left: Bool, middle: Bool, right: Bool)
+  takes [first: Id(Bool, left, middle), second: Id(Bool, middle, right)]
+  -> Id(Bool, left, right);
+
+run playground {
+  let one: Nat = succ(zero);
+  assert predecessor(one) == zero;
+
+  proof zero_even: Even(zero) = even_zero();
+  proof two_even: Even(succ(succ(zero))) = even_next(zero) using [prior = zero_even];
+  proof recovered: Even(zero) = even_pred(zero) using [evidence = two_even];
+  proof zero_plus_zero: Plus(zero, zero, zero) = plus_zero(zero);
+  proof shifted: Plus(zero, succ(zero), succ(zero)) = plus_shift(zero, zero, zero) using [evidence = zero_plus_zero];
+
+  let right: Bool = true;
+  let middle: Bool = right == true;
+  let left: Bool = middle == true;
+  proof base_left: Id(Bool, middle, left) = bool_eta(middle);
+  proof p: Id(Bool, left, middle) = symm(middle, left) using [given = base_left];
+  proof base_right: Id(Bool, right, middle) = bool_eta(right);
+  proof q: Id(Bool, middle, right) = symm(right, middle) using [given = base_right];
+  proof composed: Id(Bool, left, right) = trans(left, middle, right) using [first = p, second = q];
+}
