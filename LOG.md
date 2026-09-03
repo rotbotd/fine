@@ -4792,3 +4792,7 @@ Clean native build for implementation commit `fbfb391ae`, including the complete
 install-check suite: `/nix/store/qx43d33978dgnbchs42zwnmnh1b16dm8-fine-0.1.0`.
 The clean playground package is
 `/nix/store/n9vi91k1bbfp1y5wn33l02224ibz2al9-fine-playground-0.1.0`.
+
+`fine-playground.service` was restarted after public head `328092fd5` and both
+it and `rc-publish-fine.service` were active. Localhost and
+`https://fine.shit.yachts/` both served the new `materialize holes` action.
