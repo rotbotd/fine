@@ -4871,3 +4871,8 @@ The direct Wasm smoke reported 85 Rainfall events and passed atomic
 materialization plus all three checkpoint epochs. The dirty-tree package,
 including the worker build and served-page smoke, produced
 `/nix/store/3rb4sr5gw1mpqfnls11ffff60v5lihai-fine-playground-0.1.0`.
+
+Clean native build for implementation commit `bc1f068c1`, including the complete
+install-check suite: `/nix/store/l7ff7zsc60pabipm5l6z6v0f5m6cpcgc-fine-0.1.0`.
+The clean playground package is
+`/nix/store/3rb4sr5gw1mpqfnls11ffff60v5lihai-fine-playground-0.1.0`.
