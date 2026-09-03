@@ -43,10 +43,16 @@ try {
   const files = await readdir("dist");
   const wasmName = files.find((file) => /^fine-[0-9a-f]+\.wasm$/.test(file));
   const pthreadWasmName = files.find((file) => /^fine-pthreads-[0-9a-f]+\.wasm$/.test(file));
+  const pthreadModuleName = files.find((file) => /^fine-pthreads-[0-9a-f]+\.mjs$/.test(file));
   if (!wasmName)
     throw new Error("versioned Wasm asset is missing");
   if (!pthreadWasmName)
     throw new Error("versioned pthread Wasm asset is missing");
+  if (!pthreadModuleName)
+    throw new Error("versioned pthread JavaScript module is missing");
+  const pthreadGlue = await readFile(`dist/${pthreadModuleName}`, "utf8");
+  if (!pthreadGlue.includes(`new URL("${pthreadModuleName}",import.meta.url)`))
+    throw new Error("pthread worker does not reload the hashed pthread module");
   const wasmPath = `/${wasmName}`;
   const plain = await waitForServer(wasmPath);
   const compressed = await request(wasmPath, { "Accept-Encoding": "zstd" });

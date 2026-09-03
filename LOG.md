@@ -5075,3 +5075,39 @@ The two Wasm payloads remain distinct and independently cacheable: the ordinary
 module is 10,825,383 bytes (2,598,205 bytes Zstandard), while the pthread module
 is 11,147,585 bytes (2,660,817 bytes Zstandard). These figures measure encoded
 artifact sizes, not browser heap use or startup time.
+
+### Browser deployment validation and pthread worker self-entry repair
+
+The first real Chromium load found a deployment bug that the Node module smoke
+could not expose. The page fetched the pthread Wasm, but Emscripten's generated
+pool code started each worker from `new URL("fine.mjs", import.meta.url)`.
+The production site had renamed that module to its release name, so Vite's HTML
+fallback answered `/fine.mjs`; Chromium rejected it as a module because its MIME
+type was `text/html`, and the editor stayed at `loading Fine…`.
+
+`compress.mjs` now rewrites that exact generated worker entry to the pthread
+module's release filename before Vite copies it. The pthread release identity
+includes the original glue, Wasm bytes, and a named transformation version, so
+changing this transform cannot reuse the already gateway-cached broken URL.
+`serve-smoke.mjs` inspects the emitted pthread glue and requires the worker to
+reload that same release-named module.
+
+Validation after rebuilding and restarting `fine-playground.service`:
+
+```text
+nix flake check
+nix build --no-link --print-out-paths .#playground
+# /nix/store/1zv72qs64jwxbkzrw8anx54w42gvg49d-fine-playground-0.1.0
+nix shell nixpkgs#chromium --command chromium --headless=new --no-sandbox \
+  --disable-gpu --enable-logging=stderr --virtual-time-budget=60000 \
+  --dump-dom https://fine.shit.yachts/
+# <html lang="en" data-fine-runtime="pthreads">
+# <span id="status">ready</span>
+```
+
+The public bundle selected `fine-pthreads-eccf90e2d53b.mjs`; Chromium reported
+no console error. Live HTML and pthread-Wasm responses through Cloudflare retain
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`. This establishes actual browser
+selection and worker startup. It does not connect the visible checkpoint search
+to the native live-lift queue; that separate integration remains open.
