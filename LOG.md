@@ -4352,3 +4352,66 @@ Wasm execution smoke, and served-page smoke pass. Pre-commit artifacts:
 /nix/store/ahygax0jpfjlld2sbcni2vmzcnwdwbc1-fine-0.1.0
 /nix/store/r422nz7zfy8bwsag29acjgyjw8srym4p-fine-playground-0.1.0
 ```
+
+## 2026-09-03 — structural proof recursion is an induction-hypothesis edge (`6694f9aca`)
+
+The termination boundary is now executable for recursive indexed proof evidence.
+A body-bearing proof function may name one proof parameter with
+`inducts(evidence)`. Fine verifies that the name belongs to an indexed-family
+parameter, exposes the function to its own body, and treats a recursive spelling
+as an induction-hypothesis use rather than a runtime call.
+
+`ProofEvidence` now carries optional structural-root and immediate-parent names.
+When proof matching binds a same-family constructor field beneath the designated
+parameter, the field receives the root and exact scrutinee parent. Matching that
+field later propagates the original root to its own recursive fields. A self-call
+must pass an exact named field whose root is the declared induction parameter in
+the corresponding proof-argument position; the ordinary parameter/result checks
+then verify its instantiated indices and result. Passing the root evidence again,
+passing a constructed expression, or omitting `inducts` cannot enter recursion.
+This remains proof-family structural descent only: runtime recursion and numeric
+well-founded measures were not introduced.
+
+`proof-inductive-induction.fine` defines `Even` and a separate `Rebuilt` family.
+Its `rebuild` function matches an `Even(value)` derivation and recursively
+constructs `Rebuilt(value)` through the exact `prior: Even(previous)` field. The
+base and recursive result indices both check. The nondecreasing control calls
+`loop[value](evidence)` and fails specifically because `evidence` is the root,
+not a descendant. The unannotated `anything(n): Absurd()` control cannot resolve
+itself at all.
+
+Rainfall emits `proof.induction.hypothesis.use` before the enclosing proof
+function's verification event. It retains the function, declared root parameter,
+immediate parent evidence, recursive field, and source body separately, with
+`runtime_call_created: false`. Replay validates the early edge structurally and,
+after the complete stream is read, requires its function to have a body-checked
+verification event. Ordinary post-declaration proof applications retain their
+existing event and ordering.
+
+The parser, C++ elaborator, replay validator, fixture index, architecture,
+proof-term guide, roadmap, TODO, root README, playground reference, CodeMirror
+keyword table, and served-page smoke were updated together. The flake install
+check runs the positive fixture, validates its Rainfall, requires the new event,
+and asserts both rejecting diagnostics.
+
+Validation before the implementation commit:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/proof-inductive-induction.fine
+.build/fine rain fine/fixtures/proof-inductive-induction.fine > /tmp/fine-induction.rain
+python fine/rainfall_replay.py fine/fixtures/proof-inductive-induction.fine /tmp/fine-induction.rain
+.build/fine run fine/fixtures/reject-nondecreasing-proof-recursion.fine
+.build/fine run fine/fixtures/reject-recursion-without-inducts.fine
+nix flake check -L
+nix build --no-link --print-out-paths .#default .#playground
+```
+
+The combined pre-commit build passed native install checks, materialization and
+Rainfall replays, the Wasm CLI smoke, and the Vite served-page smoke. Its content
+paths were:
+
+```
+/nix/store/3lvnghirkrl8qs8ngy1fxhwvai7nsf6l-fine-0.1.0
+/nix/store/0qmxv9pimdqxmprqwlyfsn4idgh8ypfv-fine-playground-0.1.0
+```
