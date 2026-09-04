@@ -142,16 +142,16 @@ retains `p` and `q` distinctly in the single cost-three tree. Removing `q` leave
 only a cost-four reconstruction and fails, so search cannot accept marginal
 support from one premise. Both materialized fixtures rerun without search.
 
-The bounded model-selector follow-up is also closed. Fine compacts the exact
-deterministic candidate trees into bounded datatype states indexed by exact type,
-score, and cost, then lifts by datatype constructor identity. On the transitivity
-fixture the constructor tree lifts to
-`trans(left, middle, right) using [first = p, second = q]`, the sole reference candidate. Rainfall
-keeps grammar, model solve, lift, ordinary selection, and residual closure as
-separate events; materialization reparses and reruns without either search. The
-enumerator remains the reference and still computes the full frontier in this
-slice, so this closes the semantic integration boundary rather than a
-scalability claim.
+The bounded model-selector follow-up is also closed. Fine now discovers exact
+typed productions and builds bounded datatype states without enumerating the
+candidate trees first, then lifts by datatype constructor identity. On the
+transitivity fixture the constructor tree lifts to
+`trans(left, middle, right) using [first = p, second = q]`. Rainfall keeps the
+structured production/state graph, model solve, lift, ordinary selection, and
+compact residual closure as separate events; replay checks the graph's typing,
+cost decrease, score recurrence, and selected root. Materialization reparses and
+reruns without either search. The deterministic enumerator remains a separate
+oracle in bounded regression tests rather than a prerequisite of Z3 selection.
 
 ## Slice 3 — proof-only elimination
 

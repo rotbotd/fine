@@ -38,10 +38,26 @@ namespace fine::proof_model {
         std::size_t preferred_cost = 0;
         std::string preferred_source;
         bool rank_automatically = false;
+        bool retain_state_graph = false;
         std::vector<Production> productions;
     };
 
     enum class Status { sat, unsat, unknown };
+
+    struct TransitionSummary {
+        std::size_t production = 0;
+        std::vector<std::string> children;
+    };
+
+    struct StateSummary {
+        std::string id;
+        Type type;
+        std::size_t cost = 0;
+        bool complete = false;
+        std::size_t closed_frontier = 0;
+        std::size_t open_leaves = 0;
+        std::vector<TransitionSummary> transitions;
+    };
 
     struct Result {
         Status status = Status::unknown;
@@ -56,6 +72,10 @@ namespace fine::proof_model {
         std::size_t transition_count = 0;
         std::size_t reused_state_count = 0;
         bool state_grammar_reset = false;
+        std::size_t root_production = 0;
+        std::vector<std::string> root_children;
+        std::string root_state;
+        std::vector<StateSummary> state_graph;
     };
 
     using Observer = std::function<void(Grammar const &, z3::context &, z3::expr const &, Result const &)>;

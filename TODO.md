@@ -213,9 +213,10 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 - [ ] Avoid a full state-family reset when later discovery adds a production
       only if profiling justifies versioning the affected immutable datatype
       states and their transitive parents.
-- [ ] Replace the one-shot selector's enumerated reference frontier only after
-      Rainfall can retain a grammar-shaped residual without weakening its current
-      complete frontier claim.
+- [x] Replace the one-shot selector's enumerated reference frontier with direct
+      typed production discovery. Retain every structured state transition in
+      Rainfall, validate its type/cost/score recurrence during replay, and name
+      the graph minus the lifted tree as the compact complete residual.
 
 - [ ] Add proof-only elimination only when a proof consumer cannot be expressed
       by context absorption and a checked proof function; reject elimination

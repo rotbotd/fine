@@ -208,14 +208,16 @@ Hole replacements and implicit `using` insertions share one ordered source edit
 list. The resulting document is reparsed and rerun with both proof-hole search
 and implicit coeffect search forbidden before it is emitted.
 
-`--proof-selector z3` changes only selection. Fine still computes the complete
-typed deterministic frontier first. It compacts the ground productions found
-in those trees into finite datatype states indexed by carrier, exact endpoint
-AST IDs, total cost, completeness, closed frontier, and open leaves. Constructor
-fields point only to strictly cheaper state sorts. Z3 returns a ground constructor
-tree; Fine lifts it to source and requires the source and scores to name one exact
-reference candidate. The model cannot add a production, change a type, or define
-the residual frontier.
+`--proof-selector z3` uses the direct grammar path for one-shot search as well as
+live search. Fine visits exact requested identity types, discovers only applicable
+local, reflexivity, and instantiated proof-function productions, and constructs
+finite datatype states indexed by carrier, exact endpoint AST IDs, total cost,
+completeness, closed frontier, and open leaves. Constructor fields point only to
+strictly cheaper state sorts. Z3 returns a ground constructor tree and Fine lifts
+it to source. Rainfall retains every production and every typed state transition,
+so the complete bounded residual is inspectable without first constructing every
+candidate tree. The model cannot add a production, change a type, or escape the
+recorded state graph.
 
 ### Resumable partial proof checkpoints
 
@@ -375,17 +377,20 @@ context absorption, coeffect declaration, demand instantiation, caller
 resolution, and callee use are separate events. The run begins with an explicit
 `proof.erasure.boundary` event and closes with `runtime_proof_values: 0`.
 
-A proof hole separately records `proof.search.open`, every well-typed
-`proof.search.candidate`, the exact candidate selected, and the unchosen finite
-frontier at `proof.search.close`. Candidate event IDs, rather than callback
-order, connect the selection and close. Replay validation checks that the
-selected candidate plus the residual list exactly exhaust the enumerated
-frontier and that every opened proof hole closes.
+A deterministically searched proof hole records `proof.search.open`, every
+well-typed `proof.search.candidate`, the exact candidate selected, and the
+unchosen finite frontier at `proof.search.close`. Candidate event IDs, rather
+than callback order, connect the selection and close. Replay validation checks
+that the selected candidate plus the residual list exactly exhaust the enumerated
+frontier.
 
 Model selection adds `proof.model.grammar`, `proof.model.solve`, and
-`proof.model.lift` as separate events. Replay requires the grammar to cite the
-complete reference frontier, the solve to cite that grammar, the lift to cite a
-typed candidate, and the later selection to use exactly that candidate.
+`proof.model.lift` as separate events. The grammar contains structured typed
+productions and the complete bounded state graph. Replay checks canonical
+production numbering, every transition's result and child types, strict child
+cost decrease, the exact score recurrence, the root score, and the solve/lift/
+selection chain. `proof.search.close` retains that grammar as the compact
+residual with the lifted tree selected out; candidate trees were not enumerated.
 Checkpoint traces additionally retain `complete`, `closed_frontier`, and
 `open_leaves`; terminal status is `checkpointed`, and no later assertion may
 appear in the trace after an open proof.
@@ -420,7 +425,7 @@ a typed partial source tree with unresolved holes.
 There are no runtime proof values, proof elimination into runtime data, runtime
 recursion, numeric termination measures, general dependent types, universes,
 global theorem search, or proof-constructor synthesis. Live browser search is
-source-ordered rather than a joint optimization over several holes. One-shot
-search still enumerates a reference frontier so Rainfall can retain every residual
-candidate; live epochs retain the direct grammar's production, state, and
-transition counts instead.
+source-ordered rather than a joint optimization over several holes. Both one-shot
+Z3 selection and live epochs use direct production discovery. One-shot Rainfall
+retains the complete structured state graph; live Rainfall retains production,
+state, transition, reset, and reuse counts for each transient epoch.

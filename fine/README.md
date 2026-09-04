@@ -98,11 +98,12 @@ explicitly.
 
 The final identity hole has a finite typed grammar. Exact locals come first,
 then applicable `refl`, then backward result-directed proof-function applications
-up to the configured total cost. With `--proof-selector z3`, Fine compacts that
-same complete frontier into exact datatype states indexed by type, cost,
-completeness, and residual frontier, asks Z3 to select one term, lifts the model
-by constructor identity, and rejects it unless it exactly matches a source
-candidate. Here the selected source is:
+up to the configured total cost. With `--proof-selector z3`, Fine instead
+discovers the applicable typed productions directly and constructs exact
+datatype states indexed by type, cost, completeness, and residual frontier.
+The complete state graph—not a list of candidate trees—is retained in Rainfall.
+Z3 selects one term, Fine lifts it by constructor identity, then the materialized
+source is reparsed and checked normally. Here the selected source is:
 
 ```text
 composed ← trans(left, middle, right) using [first = p, second = q]

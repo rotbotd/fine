@@ -122,13 +122,13 @@ The narrow implementation worth testing has three owned parts:
    with Rainfall retaining the grammar, bound, chosen model value, and final
    check as separate events.
 
-The first vertical slice is the existing symmetry target: with
+The first vertical slice was the symmetry target: with
 `p : Id(Int, x, y)` in scope and a named proof function `symm`, a hole expecting
 `Id(Int, y, x)` should admit only `symm(p)`. This can be started after named
-proof functions exist. The current deterministic enumerator remains the
-reference semantics and the source of a complete residual frontier. A Z3 model
-backend may choose a candidate from that grammar, but it must not silently
-replace the grammar or claim a complete search frontier.
+proof functions exist. The deterministic enumerator remains the reference
+semantics. The shipped Z3 path now replaces its candidate-tree list with a
+complete typed production/state graph rather than silently weakening the
+residual claim.
 
 Spacer remains outside this path. A safe Spacer answer is a sufficient
 invariant and can project away constructor support; prior Fine experiments
@@ -138,27 +138,25 @@ materialization remain necessary for recursive propositions.
 ## Integrated result
 
 The first product slice now lives in `src/fine/proof_model_selector.cpp`. Rather
-than reimplementing Fine typing inside an unrelated solver grammar, it compacts
-the already enumerated typed candidate trees into exact bounded datatype states.
+than reimplementing Fine typing inside an unrelated solver grammar, it discovers
+applicable typed productions from the expected identity and constructs exact
+bounded datatype states without candidate-tree enumeration.
 Each state fixes carrier token, exact endpoint AST IDs, total cost, completeness,
 and residual frontier; constructor fields point only to strictly cheaper exact
-states. The returned constructor AST is
-lifted structurally and must match one exact source-and-cost pair in the
-deterministic frontier.
+states. The returned constructor AST is lifted structurally and then reparsed
+and checked through the ordinary Fine path.
 
 On `identity-transitivity.fine`, Z3 returns
 `(apply-trans local-p local-q)` and Fine lifts it to
 `trans(left, middle, right) using [first = p, second = q]`.
 `fine materialize --proof-selector z3`
 reparses and rechecks that complete source with search forbidden. Rainfall
-records the three boundary objects separately. This is a semantic integration
-result. One-shot materialization still retains complete deterministic enumeration
-as a reference frontier for Rainfall. Open-ended live search no longer does:
-each epoch discovers applicable instantiated productions from the expected type
-and lexical evidence, constructs the bounded state grammar without concrete
-trees, and is checked against the enumerated reference at budgets one through
-four. The live selector retains existing state datatypes across consecutive
+records the boundary objects separately. One-shot Rainfall now retains every
+structured production and state transition; replay checks the exact type edges,
+strict cost decrease, score recurrence, and selected root. The selected source
+is one model witness, while the graph minus that tree is the compact complete
+residual. Open-ended live search records counts for the same construction and is
+checked against the enumerated oracle at budgets one through four. The live
+selector retains existing state datatypes across consecutive
 costs once the canonical production vector stops growing; a changed production
 set resets it because Z3 datatype declarations cannot acquire alternatives.
-Removing the one-shot reference requires a grammar-shaped replacement for
-its explicit residual-candidate trace rather than silently dropping that claim.

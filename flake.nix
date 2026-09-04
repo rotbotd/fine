@@ -791,22 +791,53 @@
           solve = next(e for e in events if e["operation"] == "proof.model.solve")
           lifted = next(e for e in events if e["operation"] == "proof.model.lift")
           selected = next(e for e in events if e["operation"] == "proof.search.select")
+          close = next(e for e in events if e["operation"] == "proof.search.close")
+          candidates = [e for e in events if e["operation"] == "proof.search.candidate"]
           assert grammar["data"]["max_cost"] == 3
-          assert grammar["data"]["productions"] == [
-              "apply:trans(left, middle, right)/2", "local:p", "local:q"
-          ]
-          assert len(grammar["data"]["reference_candidates"]) == 1
-          assert grammar["data"]["states"] == 3
-          assert grammar["data"]["transitions"] == 3
+          productions = grammar["data"]["productions"]
+          assert grammar["data"]["candidate_trees_enumerated"] is False
+          assert len(productions) == 40
+          assert grammar["data"]["states"] == 23
+          assert grammar["data"]["transitions"] == 39
+          assert len(grammar["data"]["state_graph"]) == 23
+          root = next(s for s in grammar["data"]["state_graph"]
+                      if s["id"] == grammar["data"]["root_state"])
+          root_production = productions[grammar["data"]["selected_root_production"]]
+          assert root_production["kind"] == "proof-application"
+          assert root_production["function"] == "trans"
+          assert root_production["index_arguments"] == ["left", "middle", "right"]
+          assert len(root_production["arguments"]) == 2
+          assert any(edge["production"] == root_production["id"]
+                     for edge in root["alternatives"])
+          assert len(candidates) == 1
+          assert candidates[0]["data"]["origin"] == "model-lift"
           assert solve["data"]["grammar_event"] == grammar["event_id"]
           assert solve["data"]["model_value"].startswith("(FineProofStateConstructor-")
           assert solve["data"]["cost"] == 3
           assert lifted["data"]["solve_event"] == solve["event_id"]
           assert lifted["data"]["body"] == "trans(left, middle, right) using [first = p, second = q]"
-          assert lifted["data"]["in_reference_frontier"] is True
+          assert lifted["data"]["in_bounded_grammar"] is True
+          assert lifted["data"]["candidate_trees_enumerated"] is False
           assert lifted["data"]["reparse_required"] is True
           assert selected["data"]["candidate"] == lifted["data"]["candidate"]
+          assert close["data"]["residual_candidates"] == []
+          assert close["data"]["residual_grammar"] == grammar["data"]["grammar"]
+          assert close["data"]["candidate_trees_enumerated"] is False
           PY
+
+          bad_state_graph_rain="$(mktemp)"
+          ${pkgs.python3}/bin/python - "$z3_transitivity_rain" "$bad_state_graph_rain" <<'PY'
+          import json, pathlib, sys
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          grammar = next(e for e in events if e["operation"] == "proof.model.grammar")
+          grammar["data"]["productions"][0]["result"]["carrier"] += 1
+          pathlib.Path(sys.argv[2]).write_text("".join(json.dumps(e) + "\n" for e in events))
+          PY
+          if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/identity-transitivity.fine" "$bad_state_graph_rain" 2>/dev/null; then
+            echo "Rainfall replay accepted a proof grammar with a mistyped production" >&2
+            exit 1
+          fi
 
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/identity-checkpoint.fine" "$checkpoint_rain"
@@ -816,16 +847,20 @@
           candidates = [e for e in events if e["operation"] == "proof.search.candidate"]
           selected = next(e for e in events if e["operation"] == "proof.search.select")
           solve = next(e for e in events if e["operation"] == "proof.model.solve")
+          grammar = next(e for e in events if e["operation"] == "proof.model.grammar")
           close = next(e for e in events if e["operation"] == "proof.search.close")
           terminal = events[-1]
-          assert any(e["data"]["production"] == "open" and e["data"]["body"] == "?"
-                     for e in candidates)
+          assert len(candidates) == 1 and candidates[0]["data"]["origin"] == "model-lift"
+          assert any(p["kind"] == "open" and p["source"] == "?"
+                     for p in grammar["data"]["productions"])
+          assert grammar["data"]["candidate_trees_enumerated"] is False
           assert selected["data"]["body"] == "trans(left, middle, right) using [first = p, second = ?]"
           assert selected["data"]["complete"] is False
           assert solve["data"]["complete"] is False
           assert solve["data"]["closed_frontier"] == 1
           assert solve["data"]["open_leaves"] == 1
           assert close["data"]["status"] == "checkpointed"
+          assert close["data"]["residual_grammar"] == grammar["data"]["grammar"]
           assert not any(e["operation"] == "assert.verify" for e in events)
           assert terminal["operation"] == "proof-core.run.close"
           assert terminal["data"]["status"] == "checkpointed"

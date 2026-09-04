@@ -31,6 +31,103 @@ def load_events(lines: Iterable[str]) -> list[dict[str, Any]]:
     return events
 
 
+def _validate_proof_state_graph(data: dict[str, Any], sequence: int) -> None:
+    productions = data.get("productions")
+    states = data.get("state_graph")
+    _require(isinstance(productions, list) and productions and
+             all(isinstance(item, dict) for item in productions),
+             f"event {sequence}: malformed direct proof productions")
+    _require([item.get("id") for item in productions] == list(range(len(productions))),
+             f"event {sequence}: direct proof productions are not canonically numbered")
+
+    def valid_type(value: Any) -> bool:
+        return (isinstance(value, dict) and set(value) == {"carrier", "left", "right"} and
+                all(isinstance(value[key], int) and value[key] >= 0
+                    for key in ("carrier", "left", "right")))
+
+    for production in productions:
+        kind = production.get("kind")
+        arguments = production.get("arguments")
+        _require(kind in {"open", "local", "refl", "proof-application"} and
+                 isinstance(production.get("source"), str) and
+                 isinstance(production.get("function"), str) and
+                 isinstance(production.get("index_arguments"), list) and
+                 all(isinstance(item, str) and item for item in production["index_arguments"]) and
+                 isinstance(production.get("coeffects"), list) and
+                 all(isinstance(item, str) and item for item in production["coeffects"]) and
+                 valid_type(production.get("result")) and
+                 isinstance(arguments, list) and all(valid_type(item) for item in arguments) and
+                 ((kind == "proof-application" and not production["source"] and production["function"] and
+                   len(production["coeffects"]) == len(arguments)) or
+                  (kind != "proof-application" and production["source"] and not production["function"] and
+                   not production["index_arguments"] and not production["coeffects"] and not arguments)) and
+                 (kind != "open" or production["source"] == "?") and
+                 (kind != "refl" or (production["source"].startswith("refl(") and
+                                     production["source"].endswith(")"))),
+                 f"event {sequence}: malformed direct proof production")
+
+    _require(isinstance(states, list) and len(states) == data.get("states") and states,
+             f"event {sequence}: direct proof state graph has the wrong size")
+    by_id: dict[str, dict[str, Any]] = {}
+    transition_count = 0
+    for state in states:
+        state_id = state.get("id") if isinstance(state, dict) else None
+        alternatives = state.get("alternatives") if isinstance(state, dict) else None
+        _require(isinstance(state_id, str) and state_id and state_id not in by_id and
+                 valid_type(state.get("type")) and
+                 isinstance(state.get("cost"), int) and state["cost"] >= 0 and
+                 isinstance(state.get("complete"), bool) and
+                 isinstance(state.get("closed_frontier"), int) and state["closed_frontier"] >= 0 and
+                 isinstance(state.get("open_leaves"), int) and state["open_leaves"] >= 0 and
+                 state["complete"] == (state["open_leaves"] == 0) and
+                 isinstance(alternatives, list) and alternatives,
+                 f"event {sequence}: malformed direct proof state")
+        by_id[state_id] = state
+        transition_count += len(alternatives)
+    _require(transition_count == data.get("transitions"),
+             f"event {sequence}: direct proof transition count disagrees with its graph")
+
+    for state_id, state in by_id.items():
+        for alternative in state["alternatives"]:
+            production_id = alternative.get("production") if isinstance(alternative, dict) else None
+            children = alternative.get("children") if isinstance(alternative, dict) else None
+            _require(isinstance(production_id, int) and 0 <= production_id < len(productions) and
+                     isinstance(children, list) and
+                     all(isinstance(child, str) and child in by_id for child in children),
+                     f"event {sequence}: malformed direct proof transition")
+            production = productions[production_id]
+            child_states = [by_id[child] for child in children]
+            _require(production["result"] == state["type"] and
+                     len(children) == len(production["arguments"]) and
+                     all(child["type"] == expected and child["cost"] < state["cost"]
+                         for child, expected in zip(child_states, production["arguments"])),
+                     f"event {sequence}: direct proof transition violates its typed state boundary")
+            is_open = production["kind"] == "open"
+            expected_cost = (0 if is_open else 1) + sum(child["cost"] for child in child_states)
+            expected_complete = not is_open and all(child["complete"] for child in child_states)
+            expected_open = (1 if is_open else 0) + sum(child["open_leaves"] for child in child_states)
+            expected_frontier = (0 if is_open else 1)
+            expected_frontier += sum(1 if child["complete"] else child["closed_frontier"]
+                                     for child in child_states)
+            if child_states:
+                expected_frontier = 1 if expected_complete else expected_frontier - 1
+            _require((state["cost"], state["complete"], state["closed_frontier"],
+                      state["open_leaves"]) ==
+                     (expected_cost, expected_complete, expected_frontier, expected_open),
+                     f"event {sequence}: direct proof transition changes its score")
+
+    root = by_id.get(data.get("root_state"))
+    root_production = data.get("selected_root_production")
+    _require(valid_type(data.get("expected")) and root is not None and
+             root["type"] == data["expected"] and
+             (root["complete"], root["closed_frontier"], root["open_leaves"], root["cost"]) ==
+             (data.get("preferred_complete"), data.get("preferred_closed_frontier"),
+              data.get("preferred_open_leaves"), data.get("preferred_cost")) and
+             isinstance(root_production, int) and
+             any(edge.get("production") == root_production for edge in root["alternatives"]),
+             f"event {sequence}: direct proof root is absent or has the wrong score")
+
+
 def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     first = events[0]
     envelope = tuple(first.get(key) for key in ("run", "recorder", "manager"))
@@ -363,6 +460,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      type_shape_ok and
                      isinstance(data.get("max_cost"), int) and
                      data["max_cost"] > 0 and
+                     (not identity_hole or isinstance(data.get("candidate_trees_enumerated"), bool)) and
                      data.get("ill_typed_candidates_enumerated") is False,
                      f"event {sequence}: malformed typed proof hole")
             proof_holes[hole] = data
@@ -387,6 +485,10 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      isinstance(open_leaves, int) and open_leaves >= 0 and
                      complete == (open_leaves == 0),
                      f"event {sequence}: malformed or ill-typed proof candidate")
+            expected_origin = ("enumeration" if proof_holes[hole].get("candidate_trees_enumerated", True)
+                               else "model-lift")
+            _require(data.get("origin", "enumeration") == expected_origin,
+                     f"event {sequence}: proof candidate has the wrong construction origin")
             if production == "exact-local":
                 _require(data.get("proof") == data["body"],
                          f"event {sequence}: local proof candidate loses its source binding")
@@ -434,14 +536,13 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             hole = data.get("hole")
             grammar = data.get("grammar")
             productions = data.get("productions")
-            references = data.get("reference_candidates")
+            selected_candidate = data.get("selected_candidate")
             _require(hole in proof_holes and hole not in proof_holes_closed and
                      isinstance(grammar, str) and grammar and
                      grammar not in proof_model_grammars and
                      data.get("max_cost") == proof_holes[hole]["max_cost"] and
-                     isinstance(productions, list) and productions and
-                     all(isinstance(production, str) and production
-                         for production in productions) and
+                     proof_holes[hole].get("candidate_trees_enumerated") is False and
+                     data.get("candidate_trees_enumerated") is False and
                      isinstance(data.get("preferred_complete"), bool) and
                      isinstance(data.get("preferred_closed_frontier"), int) and
                      data["preferred_closed_frontier"] >= 0 and
@@ -453,8 +554,21 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      isinstance(data.get("states"), int) and data["states"] > 0 and
                      isinstance(data.get("transitions"), int) and
                      data["transitions"] >= data["states"] and
-                     references == proof_candidates_by_hole[hole],
+                     selected_candidate in proof_candidates and
+                     proof_candidates[selected_candidate].get("hole") == hole and
+                     proof_candidates_by_hole[hole] == [selected_candidate],
                      f"event {sequence}: malformed proof model grammar")
+            _validate_proof_state_graph(data, sequence)
+            root_production = productions[data["selected_root_production"]]
+            candidate = proof_candidates[selected_candidate]
+            _require(candidate.get("production") == root_production["kind"] and
+                     ((root_production["kind"] == "proof-application" and
+                       candidate.get("function") == root_production["function"] and
+                       candidate.get("index_arguments") == root_production["index_arguments"] and
+                       len(candidate.get("proof_arguments", [])) == len(root_production["arguments"])) or
+                      (root_production["kind"] != "proof-application" and
+                       candidate.get("body") == root_production["source"])),
+                     f"event {sequence}: lifted candidate disagrees with its root production")
             proof_model_grammars[grammar] = event
         elif operation == "proof.model.solve":
             hole = data.get("hole")
@@ -493,12 +607,12 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      solve_event["data"].get("complete") == candidate.get("complete") and
                      solve_event["data"].get("closed_frontier") == candidate.get("closed_frontier") and
                      solve_event["data"].get("open_leaves") == candidate.get("open_leaves") and
-                     (not proof_holes[hole].get("checkpoint_mode") or
-                      data.get("body") ==
-                      proof_model_grammars[solve_event["data"].get("grammar")]["data"].get("preferred_source")) and
-                     data.get("in_reference_frontier") is True and
+                     data.get("body") ==
+                     proof_model_grammars[solve_event["data"].get("grammar")]["data"].get("preferred_source") and
+                     data.get("in_bounded_grammar") is True and
+                     data.get("candidate_trees_enumerated") is False and
                      data.get("reparse_required") is True,
-                     f"event {sequence}: proof model lift escaped its Fine frontier")
+                     f"event {sequence}: proof model lift escaped its bounded Fine grammar")
             proof_model_lifts[hole] = event
         elif operation == "proof.search.select":
             hole = data.get("hole")
@@ -532,8 +646,19 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      f"event {sequence}: malformed residual proof frontier")
             expected_residual = [candidate for candidate in proof_candidates_by_hole[hole]
                                  if candidate != selected_candidate]
-            _require(selected_candidate not in residual and residual == expected_residual,
-                     f"event {sequence}: proof search close loses or reorders its finite frontier")
+            direct_model = proof_holes[hole].get("candidate_trees_enumerated") is False
+            if direct_model:
+                grammar = data.get("residual_grammar")
+                _require(residual == [] and isinstance(grammar, str) and
+                         grammar in proof_model_grammars and
+                         proof_model_grammars[grammar]["data"].get("hole") == hole and
+                         data.get("candidate_trees_enumerated") is False,
+                         f"event {sequence}: proof search close loses its compact residual grammar")
+            else:
+                _require(selected_candidate not in residual and residual == expected_residual and
+                         data.get("residual_grammar", "") == "" and
+                         data.get("candidate_trees_enumerated", True) is True,
+                         f"event {sequence}: proof search close loses or reorders its finite frontier")
             expected_status = "selected" if proof_candidates[selected_candidate].get("complete") else "checkpointed"
             _require(data.get("status") == expected_status and
                      data.get("materialization_requested") is True,

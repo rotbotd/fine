@@ -551,10 +551,6 @@ namespace fine::elaboration {
                                                                           InductiveType const &expected);
         proof_model::Type proof_model_type(IdentityType const &type);
         std::string proof_model_type_key(proof_model::Type const &type);
-        void collect_proof_model_production(ProofCandidate const &candidate, proof_model::Grammar &grammar,
-                                            std::set<std::string> &seen);
-        proof_model::Grammar make_proof_model_grammar(std::vector<ProofCandidate> const &candidates,
-                                                      IdentityType const &expected);
         proof_model::Grammar
         make_direct_proof_model_grammar(std::string const &grammar_id, IdentityType const &expected,
                                         std::string const &left_source, std::string const &right_source,

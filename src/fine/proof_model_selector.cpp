@@ -117,6 +117,13 @@ namespace fine::proof_model {
             return result.str();
         }
 
+        std::string state_id(StateKey const &key) {
+            std::ostringstream result;
+            result << key.type.carrier << ':' << key.type.left << ':' << key.type.right << '@' << key.score.cost << ':'
+                   << key.score.complete << ':' << key.score.closed_frontier << ':' << key.score.open_leaves;
+            return result.str();
+        }
+
         std::string constructor_prefix(Grammar const &grammar, std::size_t generation) {
             return "FineProofStateConstructor-" + symbol_part(grammar.id) + "-g" + std::to_string(generation) + "-p";
         }
@@ -286,6 +293,32 @@ namespace fine::proof_model {
                 return result;
             }
 
+            std::vector<StateSummary> summaries() const {
+                std::vector<StateSummary> result;
+                result.reserve(states_.size());
+                for (auto const &[key, state] : states_) {
+                    StateSummary summary{
+                        state_id(key),         key.type, key.score.cost, key.score.complete, key.score.closed_frontier,
+                        key.score.open_leaves, {}};
+                    for (Transition const &transition : state.transitions) {
+                        TransitionSummary edge;
+                        edge.production = transition.production;
+                        for (StateKey const &child : transition.children)
+                            edge.children.push_back(state_id(child));
+                        summary.transitions.push_back(std::move(edge));
+                    }
+                    result.push_back(std::move(summary));
+                }
+                return result;
+            }
+
+            std::size_t first_production(StateKey const &key) const {
+                State const &state = states_.at(key);
+                if (state.transitions.empty())
+                    throw std::logic_error("bounded proof root has no transition");
+                return state.transitions[0].production;
+            }
+
             void constrain_first(z3::solver &solver, z3::expr const &value, StateKey const &key) const {
                 State const &state = states_.at(key);
                 if (state.constructors.empty())
@@ -412,6 +445,9 @@ namespace fine::proof_model {
 
         z3::model model = solver.get_model();
         z3::expr value = model.eval(hole, true);
+        std::vector<std::string> root_children;
+        for (unsigned i = 0; i < value.num_args(); ++i)
+            root_children.push_back(render(value.arg(i), grammar));
         Result result{Status::sat,
                       {},
                       value.to_string(),
@@ -423,7 +459,11 @@ namespace fine::proof_model {
                       states.state_count(),
                       states.transition_count(),
                       reused_states,
-                      reset};
+                      reset,
+                      states.first_production(*preferred),
+                      std::move(root_children),
+                      state_id(*preferred),
+                      grammar.retain_state_graph ? states.summaries() : std::vector<StateSummary>{}};
         if (observer)
             observer(grammar, context, value, result);
         return result;

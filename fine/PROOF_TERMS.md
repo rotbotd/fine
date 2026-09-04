@@ -124,40 +124,34 @@ mining an SMT proof or guessing a semantically equal pretty-printing.
 
 ## Bounded datatype-model selector
 
-`--proof-selector z3` uses Z3 only after deterministic enumeration has produced
-the complete typed frontier. Fine walks those candidate trees and compacts their
-distinct ground productions into exact bounded datatype states. Local evidence
-and reflexivity become nullary constructors; each ground named proof-function
+`--proof-selector z3` does not construct the deterministic candidate-tree
+frontier. Starting from the requested identity type, Fine discovers applicable
+local evidence, reflexivity, and instantiated proof-function productions, then
+constructs exact bounded datatype states directly. Local evidence and
+reflexivity become nullary constructors; each ground named proof-function
 application becomes a constructor whose fields have the exact strictly cheaper
 state sorts required by its proof arguments. The state sort itself fixes carrier,
 endpoint AST IDs, cost, completeness, closed frontier, and open leaves; no
 recursive scoring or typing function remains for Z3 to unfold.
 
-For `identity-transitivity.fine`, the compact grammar is precisely:
-
-```text
-apply:trans(left, middle, right)/2
-local:p
-local:q
-```
-
-Z3 assigns the hole `(apply-trans local-p local-q)`. `ProofLift` maps constructor
-identities—not printed guesses—to
+For `identity-transitivity.fine`, the complete bounded grammar contains every
+applicable production reachable within cost three, including irrelevant routes.
+Its preferred root nevertheless assigns the hole `(apply-trans local-p local-q)`.
+`ProofLift` maps constructor identities—not printed guesses—to
 `trans(left, middle, right) using [first = p, second = q]`. Fine then
-requires that source and cost to match an exact deterministic candidate before
-requesting materialization. `fine materialize --proof-selector z3` replaces the
-hole, reparses the complete document, and reruns with search forbidden.
+replaces the hole, reparses the complete document, and reruns with search
+forbidden.
 
-One-shot materialization deliberately retains deterministic enumeration as its
-reference grammar and residual list. Live iterative search uses the same state
-selector without that prerequisite: it discovers instantiated productions
-directly from the expected type and lexical evidence, then records its production,
-state, and transition counts. Budgets one through four are checked byte-for-byte
-against the enumerated path. Its context-bound selector canonically orders that
-production set. When the set is unchanged at the next cost, existing state sorts
-remain live and only newly reachable higher-cost states are declared; production
-growth resets the state family rather than pretending an immutable datatype can
-gain alternatives.
+One-shot Rainfall retains the complete direct grammar as structured productions
+and typed state transitions. Replay checks every transition's types, strict cost
+decrease, score recurrence, and selected root; its residual is the state graph
+with the lifted tree selected out. Live iterative search uses the same state
+constructor but records counts rather than every transient graph. Budgets one
+through four remain checked byte-for-byte against the separate enumerated oracle.
+Its context-bound selector canonically orders the production set. When the set is
+unchanged at the next cost, existing state sorts remain live and only newly
+reachable higher-cost states are declared; production growth resets the state
+family rather than pretending an immutable datatype can gain alternatives.
 
 Several identity holes are searched in source order rather than as one joint
 grammar. Each queued live model carries the completed concrete edits preceding

@@ -6030,3 +6030,72 @@ nix build --no-link --print-out-paths .#default .#playground-wasm-pthreads .#pla
 # /nix/store/s6gd2ip84gidwvga1nmlp1snrf6y9094-fine-playground-wasm-pthreads-0.1.0
 # /nix/store/gbpnykaaf7xsyd3979jq1y66aq78dy9h-fine-playground-0.1.0
 ```
+
+## 2026-09-04 — one-shot Z3 selection owns a compact complete residual
+
+Closed the remaining candidate-tree enumeration dependency in the ordinary
+`--proof-selector z3` and checkpoint paths. The earlier path first called
+`enumerate_proof_candidates`, kept every ground `ProofCandidate`, compacted the
+productions found in those trees, and only then asked Z3 to select. That made the
+"Z3 selector" consume exactly the scalability cost it was meant to avoid, solely
+because Rainfall's residual contract was a flat list of candidate event IDs.
+
+The one-shot path now calls `make_direct_proof_model_grammar` from the requested
+identity type and lexical proof environment, exactly as live epochs do. It visits
+only typed result/child identities within the cost bound, discovers exact locals,
+applicable reflexivity, and instantiated proof functions, and constructs the
+acyclic scored datatype states without constructing candidate trees. The old
+candidate-compaction functions and declarations were deleted. Z3's selected root
+is the sole `ProofCandidate` constructed on this path, after model lifting; its
+root production and rendered child sources are returned by the selector so the
+ordinary source event and materialization machinery remain shared.
+
+The important trace replacement is not a count. `proof.model.grammar` now stores
+structured productions (kind, source/function, indices, coeffects, exact result
+and child types) and every bounded state with all production/child-state
+transitions. `proof.search.close` names that graph as its compact residual with
+the lifted tree selected out and explicitly records
+`candidate_trees_enumerated: false`. Rainfall replay checks canonical production
+IDs, unique state IDs, transition count, exact result and child types, strict
+child-cost decrease, completeness/open-leaf equivalence, the full score
+recurrence, the selected root's score, and the solve/lift/selection chain. A
+negative install check mutates one production's carrier and requires replay to
+reject the graph. State summaries are copied out only when Rainfall is active;
+ordinary and live selection do not pay to serialize an unused graph.
+
+The transitivity discriminator now records 40 reachable typed productions, 23
+scored states, and 39 transitions at cost three; the earlier three-production
+trace described only the already-enumerated winning frontier and therefore was
+not a complete grammar-shaped residual. Z3 still lifts exactly
+`trans(left, middle, right) using [first = p, second = q]`. The budget-two
+checkpoint graph has 28 states and 35 transitions and still lifts
+`trans(left, middle, right) using [first = p, second = ?]`. Deterministic search
+continues to enumerate and retain its explicit residual list, and live search
+continues to retain transient graph counts; the bounded budgets-one-through-four
+oracle comparison remains unchanged.
+
+Commands run before commit:
+
+- `cmake --build .build -j2`
+- deterministic Rainfall replay for identity symmetry, identity transitivity,
+  and indexed-inductive holes
+- Z3 Rainfall replay and materialization for transitivity and the public demo
+- checkpoint materialization and Rainfall replay at budget two
+- `python3 fine/check_document_examples.py .` (13 checked public examples)
+- `python3 -m py_compile fine/rainfall_replay.py`
+- `git diff --check`
+- `nix flake check --print-build-logs`
+- `nix build --no-link --print-out-paths .#default`
+- `nix build --no-link --print-out-paths .#playground-wasm-pthreads .#playground`
+
+The first dirty native build correctly failed because its old checkpoint test
+expected an explicit `open` candidate event. Under the new contract only the
+lifted root is constructed; the open leaf is present in the structured grammar.
+The check was corrected to require the open production, the complete state graph,
+and the compact residual reference. Subsequent full builds passed.
+
+Dirty-tree artifacts:
+
+- native: `/nix/store/k0davg9yxgpy58pdc4dnq9fksf39ff4w-fine-0.1.0`
+- pthread Wasm: `/nix/store/3dp9wqrn6m8mas7j4r9flg3iqy346vxs-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/7cnvd9s6fmpnj0hm3v0f563nf1j98mbp-fine-playground-0.1.0`
