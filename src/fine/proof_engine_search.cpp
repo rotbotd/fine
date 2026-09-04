@@ -683,9 +683,6 @@ namespace fine::elaboration {
             reject(expression.span, "proof hole remains after materialization");
 
         if (options_.live_iterative_proof_search) {
-            if (live_identity_holes_++ != 0)
-                reject(expression.span,
-                       "live iterative search currently supports one identity hole per source episode");
             ProofCandidate selected;
             std::size_t budget = options_.live_proof_search_start - 1;
             std::string last_observed_source;
@@ -705,10 +702,14 @@ namespace fine::elaboration {
                             std::ostringstream metadata;
                             metadata << expression.span.begin.offset << '\t' << expression.span.end.offset << '\t'
                                      << budget << '\t' << (result.complete ? 1 : 0) << '\t' << result.closed_frontier
-                                     << '\t' << result.open_leaves << '\t' << result.cost;
+                                     << '\t' << result.open_leaves << '\t' << result.cost << '\t' << name;
                             std::string expected_source = result.source;
+                            std::vector<LiveLiftEdit> prior_edits;
+                            for (Materialization const &materialization : materializations_.materializations_so_far())
+                                prior_edits.push_back(
+                                    {materialization.range.begin, materialization.range.end, materialization.text});
                             options_.live_lift->observe(
-                                metadata.str(), model_context, model,
+                                metadata.str(), model_context, model, std::move(prior_edits),
                                 [observed_grammar, expected_source](z3::context &copied_context,
                                                                     z3::expr const &copied_model) {
                                     std::string lifted =
@@ -747,7 +748,8 @@ namespace fine::elaboration {
                         "derive", "proof.search.live.model", {"run:" + run}, "fine.proof-model-selector",
                         "One directly constructed bounded grammar produced the next exact source checkpoint while "
                         "the following epoch may continue independently of presentation",
-                        {RainfallRecorder::string_field("body", selected.source),
+                        {RainfallRecorder::string_field("hole", name),
+                         RainfallRecorder::string_field("body", selected.source),
                          RainfallRecorder::number_field("budget", budget),
                          RainfallRecorder::number_field("cost", selected.cost),
                          RainfallRecorder::boolean_field("complete", selected.complete),

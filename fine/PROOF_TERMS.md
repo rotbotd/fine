@@ -159,6 +159,12 @@ remain live and only newly reachable higher-cost states are declared; production
 growth resets the state family rather than pretending an immutable datatype can
 gain alternatives.
 
+Several identity holes are searched in source order rather than as one joint
+grammar. Each queued live model carries the completed concrete edits preceding
+its hole. After lifting, Fine applies those edits and the current term to the
+original concrete tree and reparses that cumulative source. Thus a later partial
+view cannot silently restore an earlier hole.
+
 ## Static indexed-constructor admission
 
 Ordinary runtime `enum` and static `proof inductive` deliberately have different

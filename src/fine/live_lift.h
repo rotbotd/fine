@@ -13,13 +13,21 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace fine {
+
+    struct LiveLiftEdit {
+        std::size_t begin = 0;
+        std::size_t end = 0;
+        std::string text;
+    };
 
     struct LiveLiftView {
         std::string run;
         std::uint64_t sequence = 0;
         std::string text;
+        std::vector<LiveLiftEdit> prior_edits;
     };
 
     struct LiveLiftStats {
@@ -35,6 +43,8 @@ namespace fine {
     // active context. A bounded queue keeps the newest observations and may drop
     // intermediate presentation frames. Cancellation keeps the newest queued
     // snapshot so the last source view can still be validated and published.
+    // Each snapshot may also own completed concrete edits which the publisher
+    // must compose with the newly lifted term.
     class LiveLiftPipeline {
     public:
         using Lift = std::function<std::string(z3::context &, z3::expr const &)>;
@@ -48,6 +58,8 @@ namespace fine {
 
         std::uint64_t observe(std::string run, z3::context &source_context, z3::expr const &term);
         std::uint64_t observe(std::string run, z3::context &source_context, z3::expr const &term, Lift lift);
+        std::uint64_t observe(std::string run, z3::context &source_context, z3::expr const &term,
+                              std::vector<LiveLiftEdit> prior_edits, Lift lift);
 
         // close() drains every queued view. request_cancel() discards every
         // queued intermediate view except the newest one. join() waits for the

@@ -141,24 +141,28 @@ namespace {
             std::unique_ptr<fine::LiveLiftPipeline> live_lift;
             if (regular_search) {
                 fine::reset_browser_live_mailbox();
-                live_lift = std::make_unique<fine::LiveLiftPipeline>(
-                    8, [&](fine::LiveLiftView view) {
-                        std::istringstream metadata(view.run);
-                        std::size_t begin = 0, end = 0, search_budget = 0, complete = 0;
-                        std::size_t closed_frontier = 0, open_leaves = 0, cost = 0;
-                        if (!(metadata >> begin >> end >> search_budget >> complete >> closed_frontier >> open_leaves >> cost))
-                            throw std::runtime_error("invalid live proof metadata");
-                        std::string candidate = fine::apply_materializations(
-                            tree, {{fine::syntax::ConcreteRange{begin, end}, view.text}});
-                        std::ostringstream payload;
-                        payload << "{\"sequence\":" << view.sequence << ",\"budget\":" << search_budget
-                                << ",\"cost\":" << cost << ",\"complete\":"
-                                << (complete ? "true" : "false") << ",\"closed_frontier\":"
-                                << closed_frontier << ",\"open_leaves\":" << open_leaves
-                                << ",\"body\":" << json_quote(view.text)
-                                << ",\"source\":" << json_quote(candidate) << '}';
-                        fine::publish_browser_live_payload(static_cast<std::uint32_t>(view.sequence), payload.str());
-                    });
+                live_lift = std::make_unique<fine::LiveLiftPipeline>(8, [&](fine::LiveLiftView view) {
+                    std::istringstream metadata(view.run);
+                    std::size_t begin = 0, end = 0, search_budget = 0, complete = 0;
+                    std::size_t closed_frontier = 0, open_leaves = 0, cost = 0;
+                    std::string hole;
+                    if (!(metadata >> begin >> end >> search_budget >> complete >> closed_frontier >> open_leaves >>
+                          cost >> hole))
+                        throw std::runtime_error("invalid live proof metadata");
+                    std::vector<fine::Materialization> edits;
+                    edits.reserve(view.prior_edits.size() + 1);
+                    for (auto &edit : view.prior_edits)
+                        edits.push_back({{edit.begin, edit.end}, std::move(edit.text)});
+                    edits.push_back({{begin, end}, view.text});
+                    std::string candidate = fine::apply_materializations(tree, std::move(edits));
+                    std::ostringstream payload;
+                    payload << "{\"sequence\":" << view.sequence << ",\"budget\":" << search_budget
+                            << ",\"cost\":" << cost << ",\"complete\":" << (complete ? "true" : "false")
+                            << ",\"closed_frontier\":" << closed_frontier << ",\"open_leaves\":" << open_leaves
+                            << ",\"hole\":" << json_quote(hole) << ",\"body\":" << json_quote(view.text)
+                            << ",\"source\":" << json_quote(candidate) << '}';
+                    fine::publish_browser_live_payload(static_cast<std::uint32_t>(view.sequence), payload.str());
+                });
                 first_options.live_iterative_proof_search = true;
                 first_options.live_proof_search_start = regular_search_start;
                 first_options.live_proof_search_limit = regular_search_limit;
@@ -172,9 +176,9 @@ namespace {
             std::ostringstream first_output;
             std::ostringstream rainfall_output;
             fine::SourceSnapshot snapshot = fine::make_source_snapshot(path, source);
-            fine::ExecutionResult result = fine::execute(
-                tree.ast, first_output, rainfall_output_path ? &rainfall_output : nullptr,
-                rainfall_output_path ? &snapshot : nullptr, {}, first_options);
+            fine::ExecutionResult result =
+                fine::execute(tree.ast, first_output, rainfall_output_path ? &rainfall_output : nullptr,
+                              rainfall_output_path ? &snapshot : nullptr, {}, first_options);
 #ifdef FINE_HAS_LIVE_LIFT
             if (live_lift) {
                 live_lift->close();
@@ -214,12 +218,11 @@ int main(int argc, char **argv) try {
 #ifdef FINE_HAS_LIVE_LIFT
     if (argc == 2 && std::string_view(argv[1]) == "live-lift-probe")
         return fine::run_live_lift_probe(std::cout);
-    if (argc == 7 && std::string_view(argv[1]) == "live-checkpoint" &&
-        std::string_view(argv[2]) == "--output" && std::string_view(argv[4]) == "--rain-output")
+    if (argc == 7 && std::string_view(argv[1]) == "live-checkpoint" && std::string_view(argv[2]) == "--output" &&
+        std::string_view(argv[4]) == "--rain-output")
         return checkpoint_file(argv[6], 1, argv[3], argv[5], true);
-    if (argc == 9 && std::string_view(argv[1]) == "live-checkpoint" &&
-        std::string_view(argv[2]) == "--proof-start" && std::string_view(argv[4]) == "--output" &&
-        std::string_view(argv[6]) == "--rain-output") {
+    if (argc == 9 && std::string_view(argv[1]) == "live-checkpoint" && std::string_view(argv[2]) == "--proof-start" &&
+        std::string_view(argv[4]) == "--output" && std::string_view(argv[6]) == "--rain-output") {
         std::size_t start = 0;
         if (!parse_revision(argv[3], start) || start == 0) {
             std::cerr << "fine: proof start must be a positive integer\n";
@@ -227,8 +230,8 @@ int main(int argc, char **argv) try {
         }
         return checkpoint_file(argv[8], 1, argv[5], argv[7], true, 0, start);
     }
-    if (argc == 7 && std::string_view(argv[1]) == "live-checkpoint" &&
-        std::string_view(argv[2]) == "--proof-limit" && std::string_view(argv[4]) == "--output") {
+    if (argc == 7 && std::string_view(argv[1]) == "live-checkpoint" && std::string_view(argv[2]) == "--proof-limit" &&
+        std::string_view(argv[4]) == "--output") {
         std::size_t limit = 0;
         if (!parse_revision(argv[3], limit) || limit == 0) {
             std::cerr << "fine: proof limit must be a positive integer\n";
@@ -248,8 +251,7 @@ int main(int argc, char **argv) try {
         return run_file(argv[2], true);
     if (argc == 3 && std::string_view(argv[1]) == "materialize")
         return materialize_file(argv[2]);
-    if (argc == 5 && std::string_view(argv[1]) == "materialize" &&
-        std::string_view(argv[2]) == "--output")
+    if (argc == 5 && std::string_view(argv[1]) == "materialize" && std::string_view(argv[2]) == "--output")
         return materialize_file(argv[4], {}, argv[3]);
     if (argc == 3 && std::string_view(argv[1]) == "roundtrip") {
         std::string source = read_file(argv[2]);
@@ -261,8 +263,7 @@ int main(int argc, char **argv) try {
             return EXIT_FAILURE;
         }
     }
-    if (argc == 5 && std::string_view(argv[1]) == "checkpoint" &&
-        std::string_view(argv[2]) == "--proof-budget") {
+    if (argc == 5 && std::string_view(argv[1]) == "checkpoint" && std::string_view(argv[2]) == "--proof-budget") {
         std::size_t budget = 0;
         if (!parse_revision(argv[3], budget) || budget == 0) {
             std::cerr << "fine: proof budget must be a positive integer\n";
@@ -270,8 +271,8 @@ int main(int argc, char **argv) try {
         }
         return checkpoint_file(argv[4], budget);
     }
-    if (argc == 7 && std::string_view(argv[1]) == "checkpoint" &&
-        std::string_view(argv[2]) == "--proof-budget" && std::string_view(argv[4]) == "--output") {
+    if (argc == 7 && std::string_view(argv[1]) == "checkpoint" && std::string_view(argv[2]) == "--proof-budget" &&
+        std::string_view(argv[4]) == "--output") {
         std::size_t budget = 0;
         if (!parse_revision(argv[3], budget) || budget == 0) {
             std::cerr << "fine: proof budget must be a positive integer\n";
@@ -279,9 +280,8 @@ int main(int argc, char **argv) try {
         }
         return checkpoint_file(argv[6], budget, argv[5]);
     }
-    if (argc == 9 && std::string_view(argv[1]) == "checkpoint" &&
-        std::string_view(argv[2]) == "--proof-budget" && std::string_view(argv[4]) == "--output" &&
-        std::string_view(argv[6]) == "--rain-output") {
+    if (argc == 9 && std::string_view(argv[1]) == "checkpoint" && std::string_view(argv[2]) == "--proof-budget" &&
+        std::string_view(argv[4]) == "--output" && std::string_view(argv[6]) == "--rain-output") {
         std::size_t budget = 0;
         if (!parse_revision(argv[3], budget) || budget == 0) {
             std::cerr << "fine: proof budget must be a positive integer\n";
@@ -312,9 +312,8 @@ int main(int argc, char **argv) try {
         if (std::string_view(argv[1]) == "materialize")
             return materialize_file(argv[4], options);
     }
-    if (argc == 7 && std::string_view(argv[1]) == "materialize" &&
-        std::string_view(argv[2]) == "--proof-selector" && std::string_view(argv[3]) == "z3" &&
-        std::string_view(argv[4]) == "--output") {
+    if (argc == 7 && std::string_view(argv[1]) == "materialize" && std::string_view(argv[2]) == "--proof-selector" &&
+        std::string_view(argv[3]) == "z3" && std::string_view(argv[4]) == "--output") {
         fine::ExecutionOptions options;
         options.proof_selector = fine::ProofSelector::z3_model;
         return materialize_file(argv[6], options, argv[5]);

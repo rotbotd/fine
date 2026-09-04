@@ -22,6 +22,13 @@ namespace fine::elaboration {
         if (!inserted && found->second != text)
             reject(span, "two materializations disagree at one source range");
     }
+    std::vector<Materialization> DocumentRunner::materializations_so_far() const {
+        std::vector<Materialization> result;
+        result.reserve(materializations_.size());
+        for (auto const &[range, text] : materializations_)
+            result.push_back({{range.first, range.second}, text});
+        return result;
+    }
     ExecutionResult DocumentRunner::execute(syntax::Document const &document) {
         for (auto const &enumeration : document.enums)
             values_.declare_enum(enumeration);

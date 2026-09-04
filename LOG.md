@@ -5974,3 +5974,59 @@ nix build --no-link --print-out-paths .#default .#playground-wasm-pthreads .#pla
 # /nix/store/rdx5q7nlz7g7509c490fjky7lbgxdirj-fine-playground-wasm-pthreads-0.1.0
 # /nix/store/0h7rqv8cqxwwxq3k9klm1ciq1harxh5a-fine-playground-0.1.0
 ```
+
+## 2026-09-04 — live source views compose several holes without losing earlier edits
+
+The one-hole browser restriction was not a proof-search restriction. Each hole
+already had an independent exact grammar and materialized against a disjoint
+concrete range. The missing owner was the live view: the lifter callback applied
+only its current range to the original concrete tree, so a second hole's mailbox
+view would have silently restored the first hole to `?`.
+
+`MaterializationSink` now exposes a source-ordered copy of the concrete edits
+already accepted by `DocumentRunner`. Every model observation copies those edits
+into its owned `LiveLiftPipeline::Snapshot` beside the translated Z3 term. The
+consumer thread lifts the current term and publishes both objects in one
+`LiveLiftView`; `main.cpp` applies the prior edits plus the current range to the
+original CST before writing the mailbox payload. Queue pressure may discard a
+view, but it cannot separate a later proof term from the earlier completed edits
+needed to interpret its full source.
+
+The browser payload also names the active hole. Rainfall's live model event now
+has the same hole identity, and replay tracks increasing budgets per hole instead
+of incorrectly requiring one global budget sequence. The multi-hole trace is:
+
+```text
+first:   budget 1          -> refl(right)
+partial: budgets 1, 2, 3, 4 -> complete symm/trans/bool_eta tree
+```
+
+`identity-checkpoint-multi.fine` and its exact materialized fixture retain this
+boundary. The native result closes both source ranges and reruns normally. The
+pthread Wasm smoke runs the same file through the actual shared-memory mailbox,
+requires the final complete source byte-for-byte, then runs again with a
+budget-two stop during `partial`. That last mailbox source must equal the checked
+interrupted fixture, where `first = refl(right)` survives beside the later open
+leaf. The playground still searches holes in source order; this is not joint
+multi-hole optimization.
+
+Validation and artifacts before commit:
+
+```text
+cmake --build .build -j2
+out=$(mktemp); trace=$(mktemp)
+.build/fine live-checkpoint --output "$out" --rain-output "$trace" \
+  fine/fixtures/identity-checkpoint-multi.fine
+cmp fine/fixtures/identity-checkpoint-multi-materialized.fine "$out"
+python3 fine/rainfall_replay.py fine/fixtures/identity-checkpoint-multi.fine "$trace"
+.build/fine run "$out"
+# verified assertion: identity_checkpoint.0
+python3 fine/check_document_examples.py .
+# checked 13 public Fine examples against passing fixtures
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths .#default .#playground-wasm-pthreads .#playground
+# /nix/store/88avqgbxza13hdvkrq4bvhz34hd04780-fine-0.1.0
+# /nix/store/s6gd2ip84gidwvga1nmlp1snrf6y9094-fine-playground-wasm-pthreads-0.1.0
+# /nix/store/gbpnykaaf7xsyd3979jq1y66aq78dy9h-fine-playground-0.1.0
+```

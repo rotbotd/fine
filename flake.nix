@@ -515,17 +515,22 @@
             cmp "$reference_epoch" "$direct_epoch"
           done
 
-          two_live_holes="$(mktemp)"
-          sed '/proof partial:/a\  proof second: Id(Bool, right, right) = ?;' \
-            "$src/fine/fixtures/identity-checkpoint.fine" > "$two_live_holes"
-          two_live_holes_error="$(mktemp)"
-          if $out/bin/fine live-checkpoint --output /dev/null --rain-output /dev/null "$two_live_holes" \
-            > "$two_live_holes_error" 2>&1; then
-            echo "live proof search silently accepted independent multi-hole snapshots" >&2
-            exit 1
-          fi
-          grep -F 'live iterative search currently supports one identity hole per source episode' \
-            "$two_live_holes_error"
+          two_live_holes_output="$(mktemp)"
+          two_live_holes_rain="$(mktemp)"
+          $out/bin/fine live-checkpoint --output "$two_live_holes_output" \
+            --rain-output "$two_live_holes_rain" \
+            "$src/fine/fixtures/identity-checkpoint-multi.fine"
+          cmp "$src/fine/fixtures/identity-checkpoint-multi-materialized.fine" \
+            "$two_live_holes_output"
+          $out/bin/fine run "$two_live_holes_output" | grep -F \
+            'verified assertion: identity_checkpoint.0'
+          ${pkgs.python3}/bin/python ${./fine/rainfall_replay.py} \
+            "$src/fine/fixtures/identity-checkpoint-multi.fine" "$two_live_holes_rain"
+          two_live_holes_interrupted="$(mktemp)"
+          $out/bin/fine live-checkpoint --proof-limit 2 --output "$two_live_holes_interrupted" \
+            "$src/fine/fixtures/identity-checkpoint-multi.fine"
+          cmp "$src/fine/fixtures/identity-checkpoint-multi-interrupted.fine" \
+            "$two_live_holes_interrupted"
 
           open_checkpoint_run="$(mktemp)"
           if $out/bin/fine run "$checkpoint" > "$open_checkpoint_run" 2>&1; then
@@ -949,7 +954,10 @@
             ${./fine/fixtures/top-level-declarations.fine}
           cmp ${./fine/fixtures/playground-demo.fine} dist/sample.fine
           node pthread-smoke.mjs ${self.packages.${system}.playground-wasm-pthreads} \
-            ${./fine/fixtures/identity-checkpoint.fine}
+            ${./fine/fixtures/identity-checkpoint.fine} \
+            ${./fine/fixtures/identity-checkpoint-multi.fine} \
+            ${./fine/fixtures/identity-checkpoint-multi-materialized.fine} \
+            ${./fine/fixtures/identity-checkpoint-multi-interrupted.fine}
           node serve-smoke.mjs
           runHook postCheck
         '';

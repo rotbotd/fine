@@ -83,8 +83,9 @@ try {
   for (const control of ['id="checkpoint"', 'id="stop-checkpoint"', 'id="checkpoint-budget"'])
     if (!reference.includes(control))
       throw new Error(`served playground is missing checkpoint control: ${control}`);
-  if (!reference.includes("one identity hole inside Wasm") || !reference.includes("shared ring")
-      || !reference.includes("last validated source"))
+  if (!reference.includes("identity holes in source order inside Wasm")
+      || !reference.includes("every view retains earlier completed holes")
+      || !reference.includes("shared ring") || !reference.includes("last validated source"))
     throw new Error("language reference does not state the checkpoint interruption boundary");
   for (const form of ["runtime enum", "runtime match", "indexed proof family", "indexed constructor evidence", "indexed proof match", "structural proof induction", "indexed proof hole", "partial proof checkpoint", "empty proof match"])
     if (!reference.includes(form))

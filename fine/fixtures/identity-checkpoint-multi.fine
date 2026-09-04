@@ -1,0 +1,22 @@
+proof function bool_eta(value: Bool)
+  -> Id(Bool, value, value == true);
+
+proof function symm(left: Bool, right: Bool)
+  takes [given: Id(Bool, left, right)]
+  -> Id(Bool, right, left);
+
+proof function trans(left: Bool, middle: Bool, right: Bool)
+  takes [first: Id(Bool, left, middle), second: Id(Bool, middle, right)]
+  -> Id(Bool, left, right);
+
+run identity_checkpoint {
+  let right: Bool = true;
+  let middle: Bool = right == true;
+  let left: Bool = middle == true;
+  proof base_left: Id(Bool, middle, left) = bool_eta(middle);
+  proof p: Id(Bool, left, middle) = symm(middle, left) using [given = base_left];
+  proof first: Id(Bool, right, right) = ?;
+  proof partial: Id(Bool, left, right) = ?;
+  // An open checkpoint must never absorb left == right to verify this.
+  assert left == right;
+}

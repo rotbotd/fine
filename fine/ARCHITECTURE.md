@@ -329,10 +329,11 @@ and cost, and gives those finite datatypes to Z3 without constructing candidate
 trees. Budgets one through four remain byte-identical to the enumerated oracle.
 The discriminator's production vector grows through budget three, then budget
 four reuses all 120 earlier state sorts and adds 79 rather than rebuilding them.
-One live source episode owns exactly one identity hole. Supporting several
-requires a producer-owned cumulative concrete edit set; publishing each hole
-against the original source would silently discard earlier replacements, so Fine
-rejects that shape rather than displaying a plausible but incomplete checkpoint.
+Each hole owns its live selector and is searched in source order. Every queued
+model snapshot also owns the already completed concrete edits that preceded that
+hole. The lifter composes those edits with its current lifted term against the
+original concrete tree before publishing, so a dropped intermediate frame or a
+retained later-hole frame cannot erase an earlier completed replacement.
 
 ## Elaboration ownership
 
@@ -419,7 +420,7 @@ a typed partial source tree with unresolved holes.
 There are no runtime proof values, proof elimination into runtime data, runtime
 recursion, numeric termination measures, general dependent types, universes,
 global theorem search, or proof-constructor synthesis. Live browser search is
-currently limited to one identity hole per source episode. One-shot search still
-enumerates a reference frontier so Rainfall can retain every residual candidate;
-live epochs retain the direct grammar's production, state, and transition counts
-instead.
+source-ordered rather than a joint optimization over several holes. One-shot
+search still enumerates a reference frontier so Rainfall can retain every residual
+candidate; live epochs retain the direct grammar's production, state, and
+transition counts instead.

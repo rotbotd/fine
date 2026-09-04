@@ -354,9 +354,11 @@ The same context-bound selector survives across epochs. It resets while new
 instantiated productions appear, then reuses every earlier state sort once the
 canonical production vector stabilizes; the cost-three to cost-four epoch reuses
 120 states and declares 79 new ones.
-A live episode currently accepts one identity hole. Multi-hole search waits for a
-producer-owned cumulative source snapshot rather than composing independent edits
-in the page.
+Multiple holes now run in source order. Each translated model snapshot carries
+the exact completed concrete edits from earlier holes, and the lifter composes
+those with its current term before publishing the full source. The pthread smoke
+forces a second hole, requires the last mailbox source to retain the first
+replacement, and reparses the result.
 
 ## Slice 7 — recover value-language consumers when forced
 

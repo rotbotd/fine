@@ -21,6 +21,7 @@ let nextInput = 0;
 let checkpointWorker = null;
 let lastCheckpoint = null;
 let completedEpochs = 0;
+let completedHole = null;
 let liveMailbox = null;
 let liveNextSequence = 0;
 let livePoll = null;
@@ -295,6 +296,7 @@ function resetCheckpointControls() {
   checkpointWorker = null;
   lastCheckpoint = null;
   completedEpochs = 0;
+  completedHole = null;
   run.disabled = false;
   materialize.disabled = false;
   checkpoint.disabled = false;
@@ -321,6 +323,7 @@ function validateLiveCheckpoint(view) {
 
   lastCheckpoint = view.source;
   completedEpochs = view.budget;
+  completedHole = view.hole;
   document.documentElement.dataset.fineLiveSequence = String(view.sequence);
   document.documentElement.dataset.fineLiveBudget = String(view.budget);
   document.documentElement.dataset.fineLiveComplete = String(view.complete);
@@ -338,6 +341,7 @@ function validateLiveCheckpoint(view) {
       coverage: "A translated model was lifted on the Fine pthread, then its source checkpoint reparsed and rechecked in an independent browser module",
     },
     data: {
+      hole: view.hole,
       body: view.body,
       budget: view.budget,
       cost: view.cost,
@@ -348,7 +352,7 @@ function validateLiveCheckpoint(view) {
     },
   };
   rainfall.textContent = showRainfall([JSON.stringify(event)]);
-  result.textContent = `validated live checkpoint at budget ${view.budget}\n`
+  result.textContent = `validated ${view.hole} at budget ${view.budget}\n`
     + `${view.body}\n\nthe editor is unchanged until stop`;
 }
 
@@ -397,11 +401,12 @@ function startLivePolling(mailbox) {
 function installLastCheckpoint(label) {
   const source = lastCheckpoint;
   const epochs = completedEpochs;
+  const hole = completedHole;
   const worker = checkpointWorker;
   const changed = terminateAndReplace(worker, editor, source);
   resetCheckpointControls();
   result.textContent = changed
-    ? `${label}\ninstalled epoch ${epochs} as one undoable editor transaction`
+    ? `${label}\ninstalled ${hole ? `${hole} at budget ${epochs}` : `epoch ${epochs}`} as one undoable editor transaction`
     : `${label}\nno completed epoch changed the source`;
   status.textContent = changed ? "checkpointed" : "unchanged";
 }
@@ -424,6 +429,7 @@ function beginCheckpointSearch() {
   rainfall.textContent = "";
   lastCheckpoint = editor.state.doc.toString();
   completedEpochs = 0;
+  completedHole = null;
   checkpointWorker = new Worker(new URL("./checkpoint-worker.js", import.meta.url), { type: "module" });
 
   checkpointWorker.addEventListener("message", ({ data }) => {

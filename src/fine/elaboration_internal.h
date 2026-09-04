@@ -370,6 +370,7 @@ namespace fine::elaboration {
         virtual ~MaterializationSink() = default;
         virtual void request_materialization(syntax::ConcreteRange range, std::string text,
                                              syntax::SourceSpan span) = 0;
+        virtual std::vector<Materialization> materializations_so_far() const = 0;
     };
 
     class ProofContext {
@@ -512,7 +513,6 @@ namespace fine::elaboration {
         std::vector<std::string> proof_function_order_;
         syntax::ProofFunctionDecl const *active_inductive_function_ = nullptr;
         std::size_t proof_model_index_ = 0;
-        std::size_t live_identity_holes_ = 0;
         std::size_t functions_verified_ = 0;
         std::size_t holes_filled_ = 0;
         std::size_t holes_checkpointed_ = 0;
@@ -614,6 +614,7 @@ namespace fine::elaboration {
         ProofEngine proofs_;
 
         void request_materialization(syntax::ConcreteRange range, std::string text, syntax::SourceSpan span) override;
+        std::vector<Materialization> materializations_so_far() const override;
         void execute_run(syntax::RunDecl const &run);
         void execute_statement(syntax::LetDecl const &declaration, std::string const &run, std::size_t &,
                                ValueEnvironment &values, ProofEnvironment &proofs,

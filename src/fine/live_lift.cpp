@@ -11,11 +11,13 @@ namespace fine {
         std::uint64_t sequence;
         std::unique_ptr<z3::context> context;
         z3::expr term;
+        std::vector<LiveLiftEdit> prior_edits;
         Lift lift;
 
-        Snapshot(std::string run, std::uint64_t sequence, std::unique_ptr<z3::context> context, Z3_ast term, Lift lift)
+        Snapshot(std::string run, std::uint64_t sequence, std::unique_ptr<z3::context> context, Z3_ast term,
+                 std::vector<LiveLiftEdit> prior_edits, Lift lift)
             : run(std::move(run)), sequence(sequence), context(std::move(context)), term(*this->context, term),
-              lift(std::move(lift)) {}
+              prior_edits(std::move(prior_edits)), lift(std::move(lift)) {}
     };
 
     LiveLiftPipeline::LiveLiftPipeline(std::size_t capacity, Publish publish, Lift lift)
@@ -42,11 +44,16 @@ namespace fine {
     }
 
     std::uint64_t LiveLiftPipeline::observe(std::string run, z3::context &source_context, z3::expr const &term) {
-        return observe(std::move(run), source_context, term, {});
+        return observe(std::move(run), source_context, term, {}, {});
     }
 
     std::uint64_t LiveLiftPipeline::observe(std::string run, z3::context &source_context, z3::expr const &term,
                                             Lift lift) {
+        return observe(std::move(run), source_context, term, {}, std::move(lift));
+    }
+
+    std::uint64_t LiveLiftPipeline::observe(std::string run, z3::context &source_context, z3::expr const &term,
+                                            std::vector<LiveLiftEdit> prior_edits, Lift lift) {
         std::uint64_t sequence;
         {
             std::lock_guard lock(mutex_);
@@ -65,8 +72,8 @@ namespace fine {
         snapshot_context->check_error();
         if (!copied)
             throw std::runtime_error("failed to copy live lifting observation");
-        auto snapshot =
-            std::make_unique<Snapshot>(std::move(run), sequence, std::move(snapshot_context), copied, std::move(lift));
+        auto snapshot = std::make_unique<Snapshot>(std::move(run), sequence, std::move(snapshot_context), copied,
+                                                   std::move(prior_edits), std::move(lift));
 
         {
             std::lock_guard lock(mutex_);
@@ -144,7 +151,8 @@ namespace fine {
 
                 std::string text = snapshot->lift ? snapshot->lift(*snapshot->context, snapshot->term)
                                                   : lift_(*snapshot->context, snapshot->term);
-                publish_({std::move(snapshot->run), snapshot->sequence, std::move(text)});
+                publish_(
+                    {std::move(snapshot->run), snapshot->sequence, std::move(text), std::move(snapshot->prior_edits)});
                 {
                     std::lock_guard lock(mutex_);
                     ++stats_.published;

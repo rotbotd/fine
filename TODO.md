@@ -233,6 +233,9 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       transaction; require one undo to restore the exact source bytes.
 - [x] Feed an interrupted partial checkpoint through the same editor transaction;
       never expose the in-flight worker's Z3 or MEMFS state.
+- [x] Preserve earlier completed concrete edits in every later-hole live snapshot.
+      Search holes in source order, reparse each cumulative source, and make the
+      pthread smoke reject a final mailbox view that drops the first replacement.
 - [x] After the proof syntax, Rainfall schema, and materialization contract
       survive a two-child proof function and the bounded Z3 selector, build the
       first browser vertical slice: the real Fine core in WASM, CodeMirror 6,

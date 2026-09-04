@@ -79,11 +79,19 @@
 - `identity-transitivity.fine` forces backward search to recover a middle index
   absent from the goal by matching exact local proof types. The only cost-three
   tree is `trans(left, middle, right) using [first = p, second = q]`; Rainfall retains the middle index
-  and the two child proofs separately. With `--proof-selector z3`, the compacted
-  recursive datatype model is `(apply-trans local-p local-q)` and lifts to that
-  same source tree.
+  and the two child proofs separately. With `--proof-selector z3`, an exact
+  bounded state-datatype model lifts to that same source tree.
 - `identity-transitivity-materialized.fine` is that exact two-child tree and
   reruns with proof search forbidden.
+- `identity-checkpoint.fine` forces four live costs from an unchanged root hole
+  through one partial transitivity tree to a complete proof.
+- `identity-checkpoint-multi.fine` puts a cheap reflexive hole before the deeper
+  original checkpoint hole, so live publication
+  must retain the first completed concrete edit while searching the second.
+- `identity-checkpoint-multi-materialized.fine` is the exact cumulative source
+  emitted after both source-ordered searches close.
+- `identity-checkpoint-multi-interrupted.fine` is the exact budget-two source:
+  the first hole is complete while the later hole still contains one open leaf.
 - `identity-congruence.fine` lifts a non-reflexive local identity through a
   nested Boolean expression. Result matching must recover both hidden indices
   from the proof parameter, and rendering must preserve the parentheses in the

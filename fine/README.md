@@ -156,12 +156,14 @@ a pthread producer runs open-ended iterative deepening while a separate Fine
 module drains translated terms from a bounded shared-memory ring, reparses and
 rechecks each full-source view, and retains only validated snapshots. Stop kills
 the producer before installing the last validated source. The ordinary
-single-threaded module remains the fallback. Current live scope is one identity
-hole per source episode. Each live epoch discovers its applicable instantiated
-productions directly and builds exact bounded datatype states; it does not
-enumerate concrete candidate trees before Z3 selection. Once that production
-set stops growing, the next epoch retains the existing state sorts and adds only
-new higher-cost states.
+single-threaded module remains the fallback. Multiple holes are searched in
+source order. Every published view carries the exact completed edits from earlier
+holes plus the current partial or complete term, so installing a later-hole view
+cannot discard an earlier result. Each live epoch discovers its applicable
+instantiated productions directly and builds exact bounded datatype states; it
+does not enumerate concrete candidate trees before Z3 selection. Once that
+production set stops growing, the next epoch retains the existing state sorts
+and adds only new higher-cost states.
 
 ```sh
 nix build --no-link --print-out-paths .#playground
