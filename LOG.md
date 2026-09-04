@@ -6223,3 +6223,22 @@ Dirty-tree artifacts for the reserved-result fix:
 - native: `/nix/store/yxsfa4rhj5y7q1n4ibxnk2w5vjrhc93l-fine-0.1.0`
 - pthread Wasm: `/nix/store/0igwhr3jk494864606k55d6ppl48x02a-fine-playground-wasm-pthreads-0.1.0`
 - playground: `/nix/store/74ggaffal34lr7i66pab0myr3kdaqi7c-fine-playground-0.1.0`
+
+## 2026-09-04 — post-`result` silent-insertion audit
+
+Audited every `std::map::emplace` in the active Fine implementation after the
+reserved-`result` bug showed that an ignored insertion result could change name
+resolution silently. The search command was:
+
+- `rg -n '\.emplace\(' src/fine`
+
+The remaining unchecked insertions are protected before insertion by one of
+three exact conditions: declaration-local name sets, an earlier registry
+membership check, or a refinement lookup which compares repeated occurrences by
+same-manager AST identity. Environment insertions whose returned iterator is
+immediately dereferenced are likewise preceded by those uniqueness checks.
+Constructor and family names which overlap across the runtime-value and static
+proof namespaces were retained deliberately: their syntax is resolved by the
+expected level, and neither map can overwrite the other. No second live silent
+collision was found, so this audit produced no code change rather than replacing
+the maps with a broad wrapper unsupported by a failing case.
