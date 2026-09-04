@@ -6242,3 +6242,37 @@ proof namespaces were retained deliberately: their syntax is resolved by the
 expected level, and neither map can overwrite the other. No second live silent
 collision was found, so this audit produced no code change rather than replacing
 the maps with a broad wrapper unsupported by a failing case.
+
+## 2026-09-04 — inferred staging design boundary
+
+The mixed compile-time/runtime discussion fixed the next analysis boundary
+without starting its implementation. Compile-time availability will be inferred
+by monotone dataflow rather than asserted by surface syntax. Each SSA-like value
+uses `bottom | comptime(value) | runtime`. The domain may contain infinitely many
+mathematical integer constants, but it has finite height: one binding can rise
+only from bottom to one constant and then to runtime. Conflicting live constants
+join immediately to runtime.
+
+The analysis must couple this value state to executable-edge discovery, as SCCP
+does. A compile-time condition can kill a runtime-containing branch; a join then
+uses only live predecessors. Named calls are exact in the current language, so
+mutually recursive functions need a direct call graph, strongly connected
+groups, and ordinary Kleene iteration with a worklist. Function summaries must
+be relational in their argument stages and effects: one runtime use of identity
+must not make a separate `identity(3)` call runtime. Proving that a recursive call
+is stageable is distinct from running it during compilation; actual evaluation
+still needs a structural termination argument or an explicit bound.
+
+This analysis is intended to decide when a static proof constructor may be
+inspected. A compile-time-known constructor can support proof-only elimination;
+a choice depending on runtime data remains opaque and can only be absorbed into
+the proof context. The exact rule remains an exit test for the future elimination
+slice rather than an implemented feature.
+
+0-CFA and first-class function values were explicitly cut from the current
+scope. Direct named calls already have singleton callee sets, so 0-CFA would make
+an exact fact approximate. If closures are ever required, the retained candidate
+is the existential package `exists capture. (capture, (Input, capture) ->
+Output)`, which hides heterogeneous environment products without presenting the
+whole closure as an arrow type. That decision is dormant and imposes no current
+interface or implementation requirement.

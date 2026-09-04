@@ -18,6 +18,42 @@ retains its source term while automatically absorbing its equality proposition
 into the lexical solver context. Functions declare contextual proof demands;
 callers synthesize or supply the evidence.
 
+## Planned: infer staging before mixed compile-time/runtime elimination
+
+- [ ] Infer availability rather than asking for a trusted `comptime` annotation.
+      Use the finite-height abstract value shape `bottom | comptime(value) |
+      runtime`; different constants join to `runtime` rather than changing from
+      one constant to another.
+- [ ] Track executable control-flow edges together with values, as in SCCP, so a
+      dead runtime arm cannot contaminate a compile-time result and phi-like
+      joins inspect only live predecessors.
+- [ ] For the current named-call language, build the exact direct call graph,
+      solve mutually recursive strongly connected groups with a conventional
+      monotone worklist, and retain relational argument-dependency plus effect
+      summaries. Do not collapse a function such as identity to one global
+      compile-time/runtime bit.
+- [ ] Keep “stageable from these inputs” separate from “safe for the compiler to
+      execute now.” Recursive compile-time evaluation still requires Fine's
+      structural termination evidence or an explicit bounded policy.
+- [ ] Use the inferred constructor availability when proof-only elimination
+      begins: constructor inspection is admissible only when the constructor
+      choice is compile-time-known; runtime-dependent proof evidence remains
+      opaque and may only contribute through the existing proof context.
+
+Exit test: one dead runtime branch preserves a compile-time value, one live join
+of distinct constants becomes runtime, a mutually recursive named-function group
+stabilizes, and the same identity function yields a compile-time result for a
+known argument and a runtime result for a runtime argument. A separate proof
+fixture must reject elimination when its constructor choice depends on runtime
+data.
+
+Do not add 0-CFA, first-class function types, closures, or existential closure
+packages for this slice. If closures are ever demanded by a concrete program,
+the considered representation is an existential package
+`exists capture. (capture, (Input, capture) -> Output)`: the closure as a whole
+is not presented as a function type. Only then revisit how indirect callee sets
+are discovered.
+
 ## Closed: honest top-level declaration surface
 
 - [x] Parse enums, proof families, value functions, and proof functions in any
