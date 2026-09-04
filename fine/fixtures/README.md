@@ -63,7 +63,14 @@
   cannot silently retain both names for one static-input mechanism.
 - `reject-proof-as-value.fine` tries to put proof evidence in an `Int` binding.
 - `reject-unjustified-function.fine` removes the identity coeffect from the
-  function whose guarantee needs it.
+  function whose guarantee needs it. Its satisfiable negated guarantee returns
+  exact-roundtripped integer inputs and result rather than only a generic error.
+- `reject-enum-function-counterexample.fine` forces a recursive `Nat` model
+  value to lift as `succ(zero)` and checks the returned source witness in
+  Rainfall.
+- `reject-negative-function-counterexample.fine` forces `-1` through a declared
+  identity coeffect, covering negative integer source syntax and retaining the
+  coeffect name as the counterexample's assumed domain.
 - `identity-holes.fine` gives a typed identity hole a bounded finite
   grammar. The first hole forms `refl(x)`; the second selects exact local proof
   `self`; an earlier proof of `Id(Int, y, y)` is excluded before enumeration.

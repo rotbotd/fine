@@ -454,6 +454,12 @@ namespace fine::elaboration {
                                  std::vector<z3::expr> const &caller_absorbed);
         bool contains_parameter(syntax::ValueExpr const &expression, std::map<std::string, ValueKind> const &parameters,
                                 ValueEnvironment const &bindings);
+        syntax::ValueExpr lift_model_value(z3::expr const &expression, ValueKind const &kind) const;
+        [[noreturn]] void reject_with_counterexample(syntax::FunctionDecl const &declaration,
+                                                     ValueEnvironment const &values,
+                                                     std::vector<z3::expr> const &absorbed,
+                                                     ValueTerm const &body, z3::expr const &guarantee,
+                                                     z3::model const &model);
     };
 
     class ProofEngine final : public ProofContext {

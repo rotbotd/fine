@@ -6136,3 +6136,65 @@ was used instead.
 
 The native install check now regenerates four Rainfall grammars, runs the profile,
 and compares it byte-for-byte with the committed JSON report.
+
+## 2026-09-04 — first recovered value consumer: typed function counterexamples
+
+Recovered one ordinary model consumer because the current value-function surface
+already produced a concrete failure with no explanation. A satisfiable negated
+`ensures` query no longer collapses into the generic “does not satisfy” error.
+`ValueElaborator` now delegates that case to the separate
+`value_counterexample.cpp` consumer. The consumer completes every declared input
+and the function result in Z3's model, lifts `Bool`, arbitrary integer numerals,
+and recursive native-enum constructor trees to Fine value syntax, prints a
+returned `counterexample` witness, parses it through a dedicated non-executable
+witness grammar, and reifies every assignment to exact same-manager AST identity.
+
+The returned witness records contextual proof demands as `takes [name, ...]`
+without manufacturing proof evidence. After source roundtrip, a fresh solver
+restores the declared coeffect propositions, fixes every symbolic input to the
+lifted values, asserts the original positive guarantee, and must obtain `unsat`.
+Thus the display is not accepted merely because it came from `model.eval`; the
+source values are checked to refute the function contract. `unknown` is now
+reported separately and never mislabeled as a counterexample.
+
+Negative integer literals were added because a complete integer model can choose
+one; the browser lexer treats the sign and digits as one number token, and the
+open reference now names this syntax. `reject-enum-function-counterexample.fine`
+forces `succ(zero)` rather than a scalar-only witness.
+`reject-negative-function-counterexample.fine` forces `-1` through an identity
+coeffect and checks that the returned witness retains the coeffect's domain name.
+The pre-existing unjustified-function control now checks its input/result witness
+and exact-roundtrip line.
+
+Rainfall records each completed term/value pair, the ordered source witness, the
+fresh guarantee refutation, and `function.counterexample.close` as a distinct
+terminal status. Replay requires the assignment order, exact-witness flag, fresh
+`unsat` verification, and terminal chain. A checked mutation clears
+`original_guarantee_rechecked`; replay must reject it. The old general `check`,
+model hole, and bisimulation consumers remain quarantined.
+
+Implementation was kept out of the already broad value elaborator: ordinary
+verification only distinguishes `unsat`, `sat`, and `unknown`, then hands a model
+to the separate consumer. An initial monolithic draft put roughly 180 lines in
+`value_elaborator.cpp`; it compiled and produced the intended witness, but was
+split before the slice closed.
+
+Commands and discriminators:
+
+- `cmake --build .build -j2`
+- native `run` over the scalar, recursive-enum, and negative/coeffect rejecting
+  fixtures, all exiting one only after printing checked witnesses
+- native `rain` plus `fine/rainfall_replay.py` over the enum counterexample
+- byte-for-byte `roundtrip` of the negative-literal fixture
+- `python3 fine/check_document_examples.py .` (13 public examples)
+- `python3 -m py_compile fine/rainfall_replay.py`
+- `git diff --check`
+- `nix flake check --print-build-logs`
+- `nix build --no-link --print-out-paths .#default`
+- `nix build --no-link --print-out-paths .#playground-wasm-pthreads .#playground`
+
+Dirty-tree artifacts:
+
+- native: `/nix/store/69szyplqk8rr9f6mqyagz2z9h6vhkcg1-fine-0.1.0`
+- pthread Wasm: `/nix/store/ka9z1pdckfglyylabrybpkhmxw4i4n6l-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/dkirc5lcf0h57jwb9cglmmdsrl875iyg-fine-playground-0.1.0`

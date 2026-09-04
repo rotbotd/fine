@@ -162,6 +162,9 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     match_run = False
     match_witness_count = 0
     live_proof_epochs: dict[str, tuple[int, int, int]] = {}
+    counterexample_assignments: dict[str, list[str]] = {}
+    counterexample_witnesses: set[str] = set()
+    counterexamples_verified: set[str] = set()
 
     for sequence, event in enumerate(events):
         _require(event.get("schema") == "fine.rainfall.v2",
@@ -763,13 +766,58 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                          "accepted-instance-became-admitted-clause",
                          f"event {sequence}: inst clause has an unknown relation")
 
+        elif operation == "model.eval-assignment":
+            function = data.get("function")
+            assignment = data.get("assignment")
+            _require(isinstance(function, str) and function and
+                     isinstance(assignment, str) and assignment and
+                     isinstance(data.get("type"), str) and data["type"] and
+                     data.get("term") in terms and data.get("value") in terms and
+                     isinstance(data.get("source"), str) and data["source"] and
+                     data.get("model_completion") is True,
+                     f"event {sequence}: malformed typed counterexample assignment")
+            seen = counterexample_assignments.setdefault(function, [])
+            _require(assignment not in seen and function not in counterexample_witnesses,
+                     f"event {sequence}: repeated or late counterexample assignment")
+            seen.append(assignment)
+        elif operation == "fine.counterexample.witness":
+            function = data.get("function")
+            assignments = data.get("assignments")
+            _require(isinstance(function, str) and function in counterexample_assignments and
+                     assignments == counterexample_assignments[function] and
+                     isinstance(data.get("source"), str) and data["source"] and
+                     isinstance(data.get("assumed_coeffects"), list) and
+                     all(isinstance(name, str) and name for name in data["assumed_coeffects"]) and
+                     data.get("parse_reify_exact_identity") is True and
+                     function not in counterexample_witnesses,
+                     f"event {sequence}: malformed source counterexample witness")
+            counterexample_witnesses.add(function)
+        elif operation == "fine.counterexample.verify":
+            function = data.get("function")
+            _require(function in counterexample_witnesses and
+                     function not in counterexamples_verified and
+                     data.get("status") == "unsat" and
+                     data.get("original_guarantee_rechecked") is True,
+                     f"event {sequence}: counterexample was not rechecked against its guarantee")
+            counterexamples_verified.add(function)
+        elif operation == "function.counterexample.close":
+            function = data.get("function")
+            _require(function in counterexamples_verified and
+                     data.get("status") == "counterexample-witness",
+                     f"event {sequence}: counterexample close has no checked witness")
+        elif operation == "function.guarantee.unknown.close":
+            _require(data.get("status") == "unknown" and
+                     isinstance(data.get("reason"), str),
+                     f"event {sequence}: malformed unknown guarantee close")
+
         if operation == "proof-core.document.close":
             _require(within == [],
                      f"event {sequence}: definition-only document close has a run scope")
             _require(data.get("status") in {"verified", "checkpointed"},
                      f"event {sequence}: definition-only document close has an invalid status")
         if operation in {"check.run.close", "synth.run.close", "bisim.run.close", "predicate-check.run.close",
-                         "predicate-induction.run.close", "proof-core.run.close", "proof-core.document.close"}:
+                         "predicate-induction.run.close", "proof-core.run.close", "proof-core.document.close",
+                         "function.counterexample.close", "function.guarantee.unknown.close"}:
             terminal_sequence = sequence
         if operation == "proof.run.close" and data.get("status") != "verified":
             terminal_sequence = sequence

@@ -64,7 +64,7 @@ namespace fine::syntax {
                         emit(result, Token::Kind::symbol, ConcreteTokenKind::symbol, begin.offset, begin);
                         continue;
                     }
-                    if (std::string_view("(){}[],:;=?").find(static_cast<char>(c)) != std::string_view::npos) {
+                    if (std::string_view("(){}[],:;=?-").find(static_cast<char>(c)) != std::string_view::npos) {
                         advance();
                         emit(result, Token::Kind::symbol, ConcreteTokenKind::symbol, begin.offset, begin);
                         continue;
@@ -176,6 +176,42 @@ namespace fine::syntax {
                     }
                     fail(peek(), "expected `enum`, `proof inductive`, `function`, `proof function`, or `run`");
                 }
+                return result;
+            }
+
+            CounterexampleWitness counterexample_witness() {
+                Token begin = expect("counterexample");
+                Token function = identifier("counterexample function name");
+                CounterexampleWitness result;
+                result.function = function.text;
+                if (at("takes")) {
+                    take();
+                    expect("[");
+                    if (!at("]")) {
+                        while (true) {
+                            result.assumed_coeffects.push_back(identifier("assumed coeffect name").text);
+                            if (!at(","))
+                                break;
+                            take();
+                        }
+                    }
+                    expect("]");
+                }
+                expect("{");
+                while (!at("}")) {
+                    Token name = identifier("counterexample assignment name");
+                    expect(":");
+                    ValueType type = value_type();
+                    expect("=");
+                    ValueExpr value = value_expression();
+                    Token end = expect(";");
+                    result.entries.push_back(
+                        {{name.span.begin, end.span.end}, name.text, std::move(type), std::move(value)});
+                }
+                Token end = expect("}");
+                if (peek().kind != Token::Kind::end)
+                    fail(peek(), "expected end of counterexample witness");
+                result.span = {begin.span.begin, end.span.end};
                 return result;
             }
 
@@ -463,6 +499,18 @@ namespace fine::syntax {
                     ValueExpr result = value_expression();
                     Token end = expect(")");
                     result.span = {begin.span.begin, end.span.end};
+                    return result;
+                }
+                if (at("-")) {
+                    Token begin = take();
+                    if (peek().kind != Token::Kind::integer)
+                        fail(peek(), "expected digits after `-`");
+                    Token numeral = take();
+                    ValueExpr result;
+                    result.kind = ValueExpr::Kind::integer;
+                    result.span = {begin.span.begin, numeral.span.end};
+                    result.node_id = next_node_id_++;
+                    result.integer_text = "-" + numeral.text;
                     return result;
                 }
                 Token token = take();
@@ -838,6 +886,11 @@ namespace fine::syntax {
 
     Document parse(std::string_view source) {
         return std::move(parse_tree(source).ast);
+    }
+
+    CounterexampleWitness parse_counterexample_witness(std::string_view source) {
+        LexedSource lexed = Lexer(source).lex();
+        return Parser(std::move(lexed.semantic)).counterexample_witness();
     }
 
 }  // namespace fine::syntax

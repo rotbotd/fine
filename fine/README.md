@@ -130,6 +130,31 @@ For an existing development build, replace `nix run . --` with
 `build/proof-core/fine`. `fine roundtrip file.fine` exposes the exact concrete
 parse/render identity check.
 
+## Typed counterexamples
+
+A value function is checked by asking whether its guarantees can be false under
+its declared coeffects. When that query is satisfiable, Fine now completes every
+input and the result in the model, lifts those values to ordinary Fine literals
+or enum constructors, prints and reparses them, and requires exact same-manager
+AST identity. It then fixes the lifted inputs in a fresh query and checks that
+the original guarantee is impossible. Only after both checks does it print a
+returned witness such as:
+
+```text
+counterexample erase {
+  value: Nat = succ(zero);
+  result: Nat = zero;
+}
+parse(print(lift(values))): exact ast identity
+```
+
+`counterexample` is deliberately not an executable declaration. It reports the
+model of a failed function check; it does not add an assumption to a later run.
+The returned grammar admits `Bool`, arbitrary integer numerals including
+negative literals, and recursively constructed values of every declared runtime
+enum. Rainfall retains each model evaluation, the checked source witness, the
+fresh refutation check, and a distinct counterexample terminal event.
+
 ## Search and checkpoints
 
 An ordinary proof hole is closed only by a complete typed candidate. `fine

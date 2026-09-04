@@ -40,13 +40,18 @@
                 <td><code>let one: Nat = succ(zero);</code></td>
               </tr>
               <tr>
+                <td>integer literal</td>
+                <td>Integers include negative numerals, so a completed integer model value always has source syntax.</td>
+                <td><code>let debt: Int = -3;</code></td>
+              </tr>
+              <tr>
                 <td>runtime match</td>
                 <td>Every constructor appears exactly once, pattern arities agree, and all arms return one runtime type.</td>
                 <td><code>match n {<br>&nbsp;&nbsp;zero =&gt; zero,<br>&nbsp;&nbsp;succ(previous) =&gt; previous,<br>}</code></td>
               </tr>
               <tr>
                 <td>value function</td>
-                <td>The body has the result type and satisfies every <code>ensures</code> clause.</td>
+                <td>The body has the result type and satisfies every <code>ensures</code> clause. A failure returns typed input/result values only after source roundtrip and a fresh refutation check.</td>
                 <td><code>function keep(x: Int) -&gt; Int<br>ensures { result == x; }<br>{ x }</code></td>
               </tr>
               <tr>

@@ -624,6 +624,62 @@
             exit 1
           fi
           grep -F 'does not satisfy its guarantees under declared coeffects' "$unjustified"
+          grep -F 'counterexample replace {' "$unjustified"
+          grep -F '  left: Int = ' "$unjustified"
+          grep -F '  right: Int = ' "$unjustified"
+          grep -F '  result: Int = ' "$unjustified"
+          grep -F 'parse(print(lift(values))): exact ast identity' "$unjustified"
+
+          enum_counterexample="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-enum-function-counterexample.fine" \
+              >"$enum_counterexample" 2>&1; then
+            echo "invalid enum function unexpectedly verified" >&2
+            exit 1
+          fi
+          grep -F 'counterexample erase {' "$enum_counterexample"
+          grep -F '  value: Nat = succ(zero);' "$enum_counterexample"
+          grep -F '  result: Nat = zero;' "$enum_counterexample"
+          grep -F 'parse(print(lift(values))): exact ast identity' "$enum_counterexample"
+
+          negative_counterexample="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-negative-function-counterexample.fine" \
+              >"$negative_counterexample" 2>&1; then
+            echo "invalid negative-input function unexpectedly verified" >&2
+            exit 1
+          fi
+          grep -F 'counterexample negative_is_zero takes [negative] {' "$negative_counterexample"
+          grep -F '  value: Int = -1;' "$negative_counterexample"
+          grep -F '  result: Int = -1;' "$negative_counterexample"
+
+          counterexample_rain="$(mktemp)"
+          if $out/bin/fine rain "$src/fine/fixtures/reject-enum-function-counterexample.fine" \
+              >"$counterexample_rain" 2>/dev/null; then
+            echo "Rainfall enum counterexample unexpectedly verified" >&2
+            exit 1
+          fi
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/reject-enum-function-counterexample.fine" "$counterexample_rain"
+          grep -F '"operation":"fine.counterexample.witness"' "$counterexample_rain"
+          grep -F '"operation":"function.counterexample.close"' "$counterexample_rain"
+          counterexample_mutated="$(mktemp)"
+          ${pkgs.python3}/bin/python - "$counterexample_rain" "$counterexample_mutated" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source, \
+               open(sys.argv[2], "w", encoding="utf-8") as target:
+              for line in source:
+                  event = json.loads(line)
+                  if event["operation"] == "fine.counterexample.verify":
+                      event["data"]["original_guarantee_rechecked"] = False
+                  target.write(json.dumps(event, separators=(",", ":")) + "\n")
+          PY
+          if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+              "$src/fine/fixtures/reject-enum-function-counterexample.fine" \
+              "$counterexample_mutated" >/dev/null 2>&1; then
+            echo "mutated counterexample verification unexpectedly replayed" >&2
+            exit 1
+          fi
 
           rain="$(mktemp)"
           $out/bin/fine rain "$src/fine/fixtures/identity-coeffect.fine" > "$rain"

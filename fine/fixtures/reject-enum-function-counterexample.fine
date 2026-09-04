@@ -1,0 +1,12 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function erase(value: Nat) -> Nat
+  ensures {
+    result == value;
+  }
+{
+  zero
+}

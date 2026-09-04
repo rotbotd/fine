@@ -232,6 +232,23 @@ namespace fine::syntax {
         ValueExpr proposition;
     };
 
+    // Returned evidence rather than an executable source declaration. Model
+    // values deliberately reuse ordinary Fine value syntax so their producer
+    // can parse and reify them before displaying the witness.
+    struct CounterexampleEntry {
+        SourceSpan span;
+        std::string name;
+        ValueType type;
+        ValueExpr value;
+    };
+
+    struct CounterexampleWitness {
+        SourceSpan span;
+        std::string function;
+        std::vector<std::string> assumed_coeffects;
+        std::vector<CounterexampleEntry> entries;
+    };
+
     using RunStatement = std::variant<LetDecl, ProofDecl, AssertDecl>;
 
     struct RunDecl {
@@ -283,5 +300,6 @@ namespace fine::syntax {
 
     ConcreteSyntaxTree parse_tree(std::string_view source);
     Document parse(std::string_view source);
+    CounterexampleWitness parse_counterexample_witness(std::string_view source);
 
 }  // namespace fine::syntax

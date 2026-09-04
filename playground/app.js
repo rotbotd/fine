@@ -59,7 +59,7 @@ const fineLanguage = StreamLanguage.define({
       stream.skipToEnd();
       return "lineComment";
     }
-    if (stream.match(/^[0-9]+/))
+    if (stream.match(/^-?[0-9]+/))
       return "number";
     if (stream.match(/^(?:==|!=|<=|>=|->|=>|<-|&&|\|\||[=<>+*/!-])/))
       return "operator";

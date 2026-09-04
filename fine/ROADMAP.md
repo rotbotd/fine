@@ -368,6 +368,13 @@ the two-level boundary and exact generated-term validation. None is restored
 merely because it existed on the old branch. The STLC fixture decides the first
 required value features.
 
+The first consumer is now closed: a failed value-function guarantee returns
+completed inputs and its result as typed Fine value syntax. The witness is
+print/parse/reify exact and a fresh query proves that those fixed inputs, under
+the declared coeffects, refute the original guarantee. This is not the former
+general `check`, model-hole, or bisimulation surface; those remain absent until a
+separate concrete consumer forces each one.
+
 ## Explicit non-goals
 
 - no equality between proofs or higher identity types in this roadmap;

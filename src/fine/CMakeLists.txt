@@ -9,6 +9,7 @@ add_executable(fine-bin
   proof_engine_inductive.cpp
   proof_engine_search.cpp
   proof_engine_types.cpp
+  value_counterexample.cpp
   value_elaborator.cpp
   source.cpp
 )

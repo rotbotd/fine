@@ -407,12 +407,23 @@ this target. Their exact implementation and fixtures remain at the preserved
 tag. A future inductive proposition must introduce derivation inhabitants from
 birth and may only use an erased predicate relation as a backend shadow.
 
+The first recovered ordinary consumer is narrower: when a value function's
+negated guarantee is satisfiable, the value elaborator completes its inputs and
+result in that model. Each value is lifted into the existing value syntax,
+printed, parsed as a returned counterexample witness, and reified to exact
+same-manager AST identity. A fresh solver then fixes those inputs, restores the
+declared coeffect propositions, and requires the original guarantee to be
+unsatisfiable. This does not restore the old `check` declaration and does not
+make `counterexample` executable source.
+
 ## Current implemented boundary
 
 Runtime values include `Int`, `Bool`, and native Z3 enum datatypes with typed
 payloads, recursive self fields, construction, and exhaustive matching. Value
 functions are nonrecursive and may declare guarantees and lexical identity
-coeffects.
+coeffects. Failed guarantees return typed, exact-roundtripped counterexamples;
+negative integer literals are accepted so every completed integer numeral has a
+source form.
 
 Static evidence includes identity, reflexivity, named proof functions, indexed
 proof families, proof-only matching with index refinement and unreachable-arm

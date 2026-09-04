@@ -233,7 +233,12 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       reuse runtime enum matching or turn the family into a Bool predicate.
 - [x] Add proof-producing elimination over `proof inductive`, retaining exact
       constructor and proof-field identity before any solver projection.
-- [ ] Recover ordinary model/counterexample consumers one at a time.
+- [x] Recover the first ordinary consumer: typed value-function counterexamples
+      with completed inputs/result, source print/parse/reify identity, and a
+      fresh check against the original guarantee under declared coeffects.
+- [ ] Recover any further ordinary model/counterexample consumer only when a
+      concrete source program needs it; do not port old `check` or model holes
+      wholesale.
 - [x] Connect completed source proof materialization to one atomic CodeMirror
       transaction; require one undo to restore the exact source bytes.
 - [x] Feed an interrupted partial checkpoint through the same editor transaction;

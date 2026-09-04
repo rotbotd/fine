@@ -41,6 +41,13 @@ the new target. Their implementations remain inspectable at the preserved tag.
 A later inductive proposition must introduce derivation terms from birth; it
 must not reinterpret the old Bool relation as if it had always carried them.
 
+Value-function verification has regained one model consumer without weakening
+this quarantine. A satisfiable negated guarantee produces completed typed input
+and result values, not proof evidence. Fine lifts, prints, reparses, and exactly
+reifies those values, then reruns the original guarantee under the fixed inputs
+and declared coeffects before exposing the counterexample. No solver proof is
+turned into a Fine proof term.
+
 ## Admission test
 
 The first slice must:

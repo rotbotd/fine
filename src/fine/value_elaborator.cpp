@@ -268,6 +268,7 @@ namespace fine::elaboration {
         ValueTerm instantiated = elaborate_value(pattern, bindings, no_proofs, no_proof_order, no_absorbed);
         return same_ast(context_, instantiated.expression, target);
     }
+
     void ValueElaborator::declare_function(syntax::FunctionDecl const &declaration) {
         if (functions_.contains(declaration.name) || proofs_->has_function(declaration.name) ||
             constructors_.contains(declaration.name))
@@ -331,10 +332,25 @@ namespace fine::elaboration {
             z3::expr guarantee = ensures.front();
             for (std::size_t i = 1; i < ensures.size(); ++i)
                 guarantee = guarantee && ensures[i];
-            solver.add(!guarantee);
-            if (solver.check() != z3::unsat)
-                reject(declaration.span,
-                       "function `" + declaration.name + "` does not satisfy its guarantees under declared coeffects");
+            z3::expr counterexample_query = !guarantee;
+            solver.add(counterexample_query);
+            z3::check_result status = solver.check();
+            if (status == z3::unknown) {
+                if (rainfall_) {
+                    rainfall_->validate_terms();
+                    rainfall_->record(
+                        "scope", "function.guarantee.unknown.close", {"function:" + declaration.name},
+                        "fine.value-elaborator",
+                        "The counterexample query returned unknown; Fine does not manufacture a witness",
+                        {RainfallRecorder::string_field("function", declaration.name),
+                         RainfallRecorder::string_field("status", "unknown"),
+                         RainfallRecorder::string_field("reason", solver.reason_unknown())});
+                }
+                reject(declaration.span, "function `" + declaration.name + "` guarantee check was unknown: " +
+                                             solver.reason_unknown());
+            }
+            if (status == z3::sat)
+                reject_with_counterexample(declaration, values, absorbed, body, guarantee, solver.get_model());
         }
         functions_.emplace(declaration.name, &declaration);
         ++functions_verified_;
