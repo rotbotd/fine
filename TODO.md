@@ -205,6 +205,9 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
 - [ ] Replace per-cost frontier enumeration with a direct finite-state recursive
       proof grammar only when it reproduces complete/frontier/cost ranking and
       avoids the recursive-function timeout seen in the first discarded probe.
+      The isolated `spikes/direct-proof-grammar` state-indexed encoding now does
+      both on the budget-two discriminator; production discovery and equal-rank
+      deterministic selection remain before integration.
 
 - [ ] Add proof-only elimination only when a proof consumer cannot be expressed
       by context absorption and a checked proof function; reject elimination

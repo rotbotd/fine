@@ -5784,3 +5784,56 @@ nix build --no-link --print-out-paths .#default .#playground
 # /nix/store/f5b6p212r5y2118xvrihlxv1cx4xlxfs-fine-0.1.0
 # /nix/store/hs89zsfrrca3jkcvwcrgzpd860gi830d-fine-playground-0.1.0
 ```
+
+## 2026-09-04 — direct bounded grammar spike removes the recursive-function timeout
+
+I isolated the remaining proof-search scalability edge before changing the
+production selector. The failed checkpoint experiment recorded above gave Z3
+one recursive proof datatype and eight recursive functions for type, cost,
+completeness, frontier, open leaves, and well-formedness. Repeating that shape
+over the full three-endpoint identity production union still returns `unknown`
+at the native five-second timeout. This is not an Optimize-specific failure.
+
+The spike in `spikes/direct-proof-grammar` unfolds the bounded grammar into
+exact states keyed by `(proof type, constructor cost, completeness, closed
+frontier, open leaves)`. A non-open constructor contributes one cost, so every
+child belongs to a strictly cheaper state. Each state can therefore be one
+ordinary finite datatype whose fields point only to already-created datatype
+sorts. There are no recursive Z3 functions, no arithmetic constraints over a
+recursive value, and no concrete candidate tree is constructed while building
+the grammar. Z3's remaining job is real but narrow: select a constructor tree
+from the best exact root-state sort. Lifting follows constructor identity and
+the selected child-state keys.
+
+An independent concrete-tree oracle guards the spike. It enumerates all 305
+trees in the budget-two discriminator, while the direct grammar contains 61
+exact states. The state sets must agree, and the lifted Z3 model must occur in
+the oracle at the same exact state. The preferred root reproduces the checkpoint
+ranking `(incomplete, frontier 1, one open leaf, cost 2)` and lifts to:
+
+```fine
+trans(left, middle, right) using [first = p, second = ?]
+```
+
+Exact command and representative result:
+
+```text
+c++ -std=c++20 -O2 -Wall -Wextra -Werror \
+  -Isrc/fine -Isrc/api -Isrc -I.build/src \
+  spikes/direct-proof-grammar/main.cpp src/fine/proof_model_selector.cpp \
+  .build/libz3.a -pthread -o /tmp/direct-proof-grammar
+/tmp/direct-proof-grammar
+
+recursive-functions: unknown in 5058.66 ms (timeout)
+state-indexed: sat in 0.247338 ms after 0.461928 ms construction
+reference trees: 305, exact states: 61, root alternatives: 1
+score: complete=0 frontier=1 opens=1 cost=2
+lifted: trans(left, middle, right) using [first = p, second = ?]
+```
+
+This closes the representation experiment, not the production TODO. The current
+search still discovers instantiated productions by enumerating concrete proof
+candidates first. Production integration requires separating result-directed
+proof-function instantiation from child-tree enumeration, preserving the
+current deterministic tie-break among equal-ranked alternatives, and validating
+the lifted tree structurally instead of looking it up in an enumerated frontier.
