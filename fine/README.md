@@ -99,9 +99,10 @@ explicitly.
 The final identity hole has a finite typed grammar. Exact locals come first,
 then applicable `refl`, then backward result-directed proof-function applications
 up to the configured total cost. With `--proof-selector z3`, Fine compacts that
-same complete frontier into a ground recursive datatype, asks Z3 to select one
-term, lifts the model by constructor identity, and rejects it unless it exactly
-matches a source candidate. Here the selected source is:
+same complete frontier into exact datatype states indexed by type, cost,
+completeness, and residual frontier, asks Z3 to select one term, lifts the model
+by constructor identity, and rejects it unless it exactly matches a source
+candidate. Here the selected source is:
 
 ```text
 composed ← trans(left, middle, right) using [first = p, second = q]
@@ -156,8 +157,9 @@ module drains translated terms from a bounded shared-memory ring, reparses and
 rechecks each full-source view, and retains only validated snapshots. Stop kills
 the producer before installing the last validated source. The ordinary
 single-threaded module remains the fallback. Current live scope is one identity
-hole per source episode, and each bounded frontier is still enumerated before Z3
-compaction.
+hole per source episode. Each live epoch discovers its applicable instantiated
+productions directly and builds exact bounded datatype states; it does not
+enumerate concrete candidate trees before Z3 selection.
 
 ```sh
 nix build --no-link --print-out-paths .#playground

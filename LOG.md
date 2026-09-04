@@ -5837,3 +5837,80 @@ candidates first. Production integration requires separating result-directed
 proof-function instantiation from child-tree enumeration, preserving the
 current deterministic tie-break among equal-ranked alternatives, and validating
 the lifted tree structurally instead of looking it up in an enumerated frontier.
+
+## 2026-09-04 — live proof epochs no longer enumerate candidate trees
+
+The state-indexed spike is now the production model selector. A proof state is
+identified by exact carrier and endpoint AST IDs together with constructor cost,
+completeness, closed-frontier count, and open-leaf count. Every non-open
+production contributes one cost, so its fields have strictly cheaper state
+sorts. Fine creates these finite datatypes in ascending cost order. The old
+recursive datatype and its recursive `carrier`, endpoint, cost, completeness,
+frontier, open, and well-formedness functions are gone.
+
+The one-shot Z3 selector still computes its explicit deterministic candidate
+frontier first because Rainfall promises to retain every residual candidate. It
+now compacts all productions in that frontier, rather than only the preferred
+partial tree, into exact states. On the checkpoint discriminator this takes
+about 0.011 seconds where the earlier all-production recursive-function encoding
+timed out after five seconds. The selected model still has to lift to the exact
+preferred source-and-score candidate, and normal checkpoint Rainfall replay
+still validates the complete residual list.
+
+The open-ended live path removes the enumeration prerequisite. Starting from
+the requested identity type, it discovers exact local and reflexive leaves, then
+uses the existing result-directed index matcher to instantiate each applicable
+proof function. It records the application's exact result and child types and
+recurses into those child types with one less cost, but never forms Cartesian
+products of child proof trees. The model selector computes feasible exact states
+from those productions and ranks roots by complete first, then maximum closed
+frontier, then minimum cost. Its canonical constructor order preserves the old
+grammar-order tie-break.
+
+`identity-checkpoint.fine` is checked through both engines at budgets one, two,
+three, and four. Every materialized source is byte-identical. The live epochs
+retain these concrete boundaries in Rainfall:
+
+```text
+budget 1:  6 productions,   6 states,   6 transitions -> ?
+budget 2: 18 productions,  28 states,  35 transitions -> trans(left, middle, right) using [first = p, second = ?]
+budget 3: 32 productions, 120 states, 325 transitions -> same partial term
+budget 4: 32 productions, 199 states, 793 transitions -> complete symm/trans/bool_eta tree
+```
+
+Each event explicitly records `candidate_trees_enumerated: false`. The native
+live-lift pipeline translated the new state constructor tree into its private Z3
+context, lifted it on the consumer thread, produced the same source, and passed
+Rainfall replay. The completed source reparsed and verified normally. The
+separate pthread Wasm package also built with its shared-memory smoke, so this is
+not a native-only selector.
+
+The first clean native package attempt exposed one deliberately exact stale
+test: it still demanded the old readable recursive-datatype model value
+`(apply-trans local-p local-q)`. The new model value necessarily names exact
+state constructors. I replaced that presentation-dependent assertion with the
+constructor namespace plus exact state/transition counts; the separately lifted
+Fine source remains the readable contract.
+
+Validation and artifacts before commit:
+
+```text
+cmake --build .build -j2
+python3 fine/check_document_examples.py .
+# checked 13 public Fine examples against passing fixtures
+# local budgets 1, 2, 3, 4: direct live source == enumerated source
+# normal and live Rainfall replay passed
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths .#default
+# /nix/store/408sgk6ysi70vr205a19q4ng4r8bskrz-fine-0.1.0
+nix build --no-link --print-out-paths .#playground-wasm-pthreads .#playground
+# /nix/store/65svn8vpbhphwrq0kyx7z8bxpn82vivr-fine-playground-wasm-pthreads-0.1.0
+# /nix/store/7302y62bz5smm5qgjj1c4jvamjk7gknr-fine-playground-0.1.0
+```
+
+This closes direct bounded grammar construction for the one-hole live producer.
+One-shot search still enumerates its reference frontier, and live search still
+rebuilds the finite state family at each increasing budget. The next scaling
+question is incremental state extension across epochs, not recursive Z3
+functions or concrete proof-tree generation.

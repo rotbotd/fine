@@ -149,11 +149,116 @@ namespace fine::elaboration {
         grammar.preferred_cost = preferred->cost;
         grammar.preferred_source = preferred->source;
         std::set<std::string> seen;
-        if (options_.synthesize_partial_proofs)
-            collect_proof_model_production(*preferred, grammar, seen);
-        else
-            for (auto const &candidate : candidates)
-                collect_proof_model_production(candidate, grammar, seen);
+        for (auto const &candidate : candidates)
+            collect_proof_model_production(candidate, grammar, seen);
+        return grammar;
+    }
+    proof_model::Grammar ProofEngine::make_direct_proof_model_grammar(
+        syntax::ProofType const &expected_syntax, IdentityType const &expected, std::string const &left_source,
+        std::string const &right_source, ValueEnvironment const &values, ProofEnvironment const &proofs,
+        std::vector<std::string> const &proof_order, std::vector<z3::expr> const &absorbed, std::size_t budget) {
+        (void)expected_syntax;
+        (void)values;
+        (void)absorbed;
+        proof_model::Grammar grammar;
+        grammar.id = "direct-hole-" + std::to_string(proof_model_index_++);
+        grammar.expected = proof_model_type(expected);
+        grammar.max_cost = budget;
+        grammar.rank_automatically = true;
+
+        std::set<std::string> seen_productions;
+        auto add_production = [&](proof_model::Production production, std::string key) {
+            if (seen_productions.insert(std::move(key)).second)
+                grammar.productions.push_back(std::move(production));
+        };
+        std::set<std::string> visited;
+        std::function<void(IdentityType const &, std::string const &, std::string const &, std::size_t)> visit;
+        visit = [&](IdentityType const &wanted, std::string const &wanted_left, std::string const &wanted_right,
+                    std::size_t remaining) {
+            proof_model::Type wanted_model = proof_model_type(wanted);
+            std::string state_key = proof_model_type_key(wanted_model) + ":left:" + wanted_left +
+                                    ":right:" + wanted_right + ":budget:" + std::to_string(remaining);
+            if (!visited.insert(std::move(state_key)).second)
+                return;
+
+            if (remaining > 0) {
+                for (auto const &candidate_name : proof_order) {
+                    auto found = proofs.find(candidate_name);
+                    if (found == proofs.end())
+                        continue;
+                    auto identity = std::get_if<IdentityType>(&found->second.type);
+                    if (!identity || !same_type(values_.context(), *identity, wanted))
+                        continue;
+                    proof_model::Production production;
+                    production.kind = proof_model::ProductionKind::local;
+                    production.source = candidate_name;
+                    production.result = wanted_model;
+                    add_production(std::move(production),
+                                   "local:" + candidate_name + ":" + proof_model_type_key(wanted_model));
+                }
+                if (same_ast(values_.context(), wanted.left, wanted.right)) {
+                    proof_model::Production production;
+                    production.kind = proof_model::ProductionKind::reflexivity;
+                    production.source = "refl(" + wanted_left + ")";
+                    production.result = wanted_model;
+                    add_production(std::move(production),
+                                   "refl:" + wanted_left + ":" + proof_model_type_key(wanted_model));
+                }
+
+                for (auto const &function_name : proof_function_order_) {
+                    syntax::ProofFunctionDecl const &function = *proof_functions_.at(function_name);
+                    auto instantiations =
+                        infer_value_arguments(function, wanted, wanted_left, wanted_right, proofs, proof_order);
+                    for (auto const &instantiation : instantiations) {
+                        proof_model::Production production;
+                        production.kind = proof_model::ProductionKind::application;
+                        production.function = function.name;
+                        production.result = wanted_model;
+                        std::string production_key = "apply:" + function.name;
+                        for (auto const &parameter : function.parameters) {
+                            std::string const &source = instantiation.sources.at(parameter.name);
+                            production.index_arguments.push_back(source);
+                            production_key += ":index:" + source;
+                        }
+                        production_key += ":result:" + proof_model_type_key(wanted_model);
+
+                        ProofEnvironment no_proofs;
+                        std::vector<std::string> no_proof_order;
+                        std::vector<z3::expr> no_absorbed;
+                        struct Child {
+                            IdentityType type;
+                            std::string left;
+                            std::string right;
+                        };
+                        std::vector<Child> children;
+                        for (auto const &parameter : function.proof_parameters) {
+                            IdentityType child_type = elaborate_identity(parameter.type, instantiation.values,
+                                                                         no_proofs, no_proof_order, no_absorbed);
+                            std::string child_left =
+                                print_value_substituted(parameter.type.left, instantiation.sources);
+                            std::string child_right =
+                                print_value_substituted(parameter.type.right, instantiation.sources);
+                            production.coeffects.push_back(parameter.name);
+                            production.arguments.push_back(proof_model_type(child_type));
+                            production_key += ":argument:" + proof_model_type_key(production.arguments.back());
+                            children.push_back({std::move(child_type), std::move(child_left), std::move(child_right)});
+                        }
+                        add_production(std::move(production), std::move(production_key));
+                        for (auto const &child : children)
+                            visit(child.type, child.left, child.right, remaining - 1);
+                    }
+                }
+            }
+
+            if (options_.synthesize_partial_proofs) {
+                proof_model::Production production;
+                production.kind = proof_model::ProductionKind::open;
+                production.source = "?";
+                production.result = wanted_model;
+                add_production(std::move(production), "open:" + proof_model_type_key(wanted_model));
+            }
+        };
+        visit(expected, left_source, right_source, budget);
         return grammar;
     }
     ProofEvidence ProofEngine::elaborate_proof_application(
@@ -562,13 +667,9 @@ namespace fine::elaboration {
             std::string last_observed_source;
             for (;;) {
                 ++budget;
-                std::vector<ProofCandidate> frontier = enumerate_proof_candidates(
+                proof_model::Grammar grammar = make_direct_proof_model_grammar(
                     expected_syntax, expected, print_value(expected_syntax.left), print_value(expected_syntax.right),
                     values, proofs, proof_order, absorbed, budget);
-                if (frontier.empty())
-                    reject(expression.span, "live proof search produced an empty typed frontier");
-                proof_model::Grammar grammar = make_proof_model_grammar(frontier, expected);
-                grammar.max_cost = budget;
                 proof_model::Result model_selection = proof_model::select(
                     values_.context(), grammar,
                     [&](proof_model::Grammar const &observed_grammar, z3::context &model_context, z3::expr const &model,
@@ -602,27 +703,34 @@ namespace fine::elaboration {
                 if (model_selection.status != proof_model::Status::sat)
                     reject(expression.span,
                            "live Z3 proof selector failed for `" + name + "`: " + model_selection.reason);
-                if (model_selection.source != grammar.preferred_source)
-                    reject(expression.span, "live Z3 proof model did not reproduce Fine's preferred source tree");
-                auto found = std::find_if(frontier.begin(), frontier.end(), [&](ProofCandidate const &item) {
-                    return item.source == model_selection.source && item.cost == model_selection.cost &&
-                           item.complete == model_selection.complete &&
-                           item.closed_frontier == model_selection.closed_frontier &&
-                           item.open_leaves == model_selection.open_leaves;
-                });
-                if (found == frontier.end())
-                    reject(expression.span, "live Z3 proof model lifted outside its exact typed frontier");
-                selected = *found;
+                selected = {model_selection.source,
+                            "direct-proof-model",
+                            std::nullopt,
+                            std::nullopt,
+                            {},
+                            {},
+                            model_selection.cost,
+                            expected,
+                            {}};
+                selected.open = model_selection.source == "?";
+                selected.complete = model_selection.complete;
+                selected.closed_frontier = model_selection.closed_frontier;
+                selected.open_leaves = model_selection.open_leaves;
                 if (rainfall_)
-                    rainfall_->record("derive", "proof.search.live.model", {"run:" + run}, "fine.proof-model-selector",
-                                      "One bounded typed frontier produced the next exact source checkpoint while the "
-                                      "following frontier may continue independently of presentation",
-                                      {RainfallRecorder::string_field("body", selected.source),
-                                       RainfallRecorder::number_field("budget", budget),
-                                       RainfallRecorder::number_field("cost", selected.cost),
-                                       RainfallRecorder::boolean_field("complete", selected.complete),
-                                       RainfallRecorder::number_field("closed_frontier", selected.closed_frontier),
-                                       RainfallRecorder::number_field("open_leaves", selected.open_leaves)});
+                    rainfall_->record(
+                        "derive", "proof.search.live.model", {"run:" + run}, "fine.proof-model-selector",
+                        "One directly constructed bounded grammar produced the next exact source checkpoint while "
+                        "the following epoch may continue independently of presentation",
+                        {RainfallRecorder::string_field("body", selected.source),
+                         RainfallRecorder::number_field("budget", budget),
+                         RainfallRecorder::number_field("cost", selected.cost),
+                         RainfallRecorder::boolean_field("complete", selected.complete),
+                         RainfallRecorder::number_field("closed_frontier", selected.closed_frontier),
+                         RainfallRecorder::number_field("open_leaves", selected.open_leaves),
+                         RainfallRecorder::number_field("grammar_productions", grammar.productions.size()),
+                         RainfallRecorder::number_field("grammar_states", model_selection.state_count),
+                         RainfallRecorder::number_field("grammar_transitions", model_selection.transition_count),
+                         RainfallRecorder::boolean_field("candidate_trees_enumerated", false)});
                 if (selected.complete ||
                     (options_.live_proof_search_limit != 0 && budget >= options_.live_proof_search_limit))
                     break;
@@ -763,10 +871,10 @@ namespace fine::elaboration {
                 std::string grammar_event = rainfall_->record(
                     "object", "proof.model.grammar", {"run:" + run, hole}, "fine.proof-model-selector",
                     options_.synthesize_partial_proofs
-                        ? "Fine ranks the typed partial frontier, then compacts the preferred tree's productions into "
-                          "a ground recursive datatype"
-                        : "The exact deterministic Fine frontier is compacted into ground recursive datatype "
-                          "productions without changing its bound or source owners",
+                        ? "Fine ranks the typed partial frontier, then compacts all of its productions into exact "
+                          "bounded datatype states"
+                        : "The exact deterministic Fine frontier is compacted into exact bounded datatype states "
+                          "without changing its bound or source owners",
                     {RainfallRecorder::string_field("hole", hole),
                      RainfallRecorder::string_field("grammar", model_grammar->id),
                      RainfallRecorder::number_field("max_cost", model_grammar->max_cost),
@@ -776,6 +884,8 @@ namespace fine::elaboration {
                      RainfallRecorder::number_field("preferred_open_leaves", model_grammar->preferred_open_leaves),
                      RainfallRecorder::number_field("preferred_cost", model_grammar->preferred_cost),
                      RainfallRecorder::string_field("preferred_source", model_grammar->preferred_source),
+                     RainfallRecorder::number_field("states", model_selection->state_count),
+                     RainfallRecorder::number_field("transitions", model_selection->transition_count),
                      RainfallRecorder::raw_field("productions", RainfallRecorder::string_array(productions)),
                      RainfallRecorder::raw_field("reference_candidates",
                                                  RainfallRecorder::string_array(candidate_events))});

@@ -202,12 +202,13 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       memory while the worker event loop is inside Wasm, and retain a view only
       after a second Fine module reparses and rechecks its full source. Stop must
       kill the producer before installing that last validated view.
-- [ ] Replace per-cost frontier enumeration with a direct finite-state recursive
-      proof grammar only when it reproduces complete/frontier/cost ranking and
-      avoids the recursive-function timeout seen in the first discarded probe.
-      The isolated `spikes/direct-proof-grammar` state-indexed encoding now does
-      both on the budget-two discriminator; production discovery and equal-rank
-      deterministic selection remain before integration.
+- [x] Replace open-ended live search's per-cost candidate-tree enumeration with
+      direct instantiated-production discovery and exact finite-state datatype
+      grammars. Budgets one through four must remain byte-identical to the
+      enumerated oracle, including equal-rank deterministic selection.
+- [ ] Replace the one-shot selector's enumerated reference frontier only after
+      Rainfall can retain a grammar-shaped residual without weakening its current
+      complete frontier claim.
 
 - [ ] Add proof-only elimination only when a proof consumer cannot be expressed
       by context absorption and a checked proof function; reject elimination

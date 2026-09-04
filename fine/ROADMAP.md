@@ -143,10 +143,10 @@ only a cost-four reconstruction and fails, so search cannot accept marginal
 support from one premise. Both materialized fixtures rerun without search.
 
 The bounded model-selector follow-up is also closed. Fine compacts the exact
-deterministic candidate trees into ground recursive datatype productions, asks
-Z3 for a `well` tree at cost at most three, and lifts by datatype constructor
-identity. On the transitivity fixture the model is exactly
-`(apply-trans local-p local-q)`, lifting to the sole reference candidate. Rainfall
+deterministic candidate trees into bounded datatype states indexed by exact type,
+score, and cost, then lifts by datatype constructor identity. On the transitivity
+fixture the constructor tree lifts to
+`trans(left, middle, right) using [first = p, second = q]`, the sole reference candidate. Rainfall
 keeps grammar, model solve, lift, ordinary selection, and residual closure as
 separate events; materialization reparses and reruns without either search. The
 enumerator remains the reference and still computes the full frontier in this
@@ -347,10 +347,10 @@ must be safe while the lifter trails the solver. Before changing the playground,
 the native stress fixture shows that an artificially slow lifter does not
 lengthen solver time and that cancellation causes neither concurrent-manager
 access nor use-after-free. That same ownership code now runs in the isolated
-Emscripten pthread build. Its current producer still enumerates each bounded
-typed frontier before model selection; direct grammar search is a scaling
-change, not part of the browser ownership claim. A live episode currently
-accepts one identity hole. Multi-hole search waits for a producer-owned
+Emscripten pthread build. Its producer discovers instantiated productions and
+constructs exact bounded datatype states without enumerating candidate trees;
+budgets one through four remain byte-identical to the separate enumerated oracle.
+A live episode currently accepts one identity hole. Multi-hole search waits for a producer-owned
 cumulative source snapshot rather than composing independent edits in the page.
 
 ## Slice 7 — recover value-language consumers when forced

@@ -490,6 +490,16 @@
           $out/bin/fine run "$live_complete" | grep -F \
             'verified assertion: identity_checkpoint.0'
 
+          for direct_budget in 1 2 3 4; do
+            reference_epoch="$(mktemp)"
+            direct_epoch="$(mktemp)"
+            $out/bin/fine checkpoint --proof-budget "$direct_budget" \
+              --output "$reference_epoch" "$src/fine/fixtures/identity-checkpoint.fine"
+            $out/bin/fine live-checkpoint --proof-limit "$direct_budget" \
+              --output "$direct_epoch" "$src/fine/fixtures/identity-checkpoint.fine"
+            cmp "$reference_epoch" "$direct_epoch"
+          done
+
           two_live_holes="$(mktemp)"
           sed '/proof partial:/a\  proof second: Id(Bool, right, right) = ?;' \
             "$src/fine/fixtures/identity-checkpoint.fine" > "$two_live_holes"
@@ -766,8 +776,10 @@
               "apply:trans(left, middle, right)/2", "local:p", "local:q"
           ]
           assert len(grammar["data"]["reference_candidates"]) == 1
+          assert grammar["data"]["states"] == 3
+          assert grammar["data"]["transitions"] == 3
           assert solve["data"]["grammar_event"] == grammar["event_id"]
-          assert solve["data"]["model_value"] == "(apply-trans local-p local-q)"
+          assert solve["data"]["model_value"].startswith("(FineProofStateConstructor-")
           assert solve["data"]["cost"] == 3
           assert lifted["data"]["solve_event"] == solve["event_id"]
           assert lifted["data"]["body"] == "trans(left, middle, right) using [first = p, second = q]"

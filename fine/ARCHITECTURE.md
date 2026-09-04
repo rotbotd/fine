@@ -210,11 +210,12 @@ and implicit coeffect search forbidden before it is emitted.
 
 `--proof-selector z3` changes only selection. Fine still computes the complete
 typed deterministic frontier first. It compacts the ground productions found
-in those trees into a recursive datatype whose checking functions retain the
-carrier, exact endpoint AST IDs, child types, and total cost. Z3 returns a ground
-constructor tree; Fine lifts it to source and requires the source and cost to
-name one exact reference candidate. The model cannot add a production, change a
-type, or define the residual frontier.
+in those trees into finite datatype states indexed by carrier, exact endpoint
+AST IDs, total cost, completeness, closed frontier, and open leaves. Constructor
+fields point only to strictly cheaper state sorts. Z3 returns a ground constructor
+tree; Fine lifts it to source and requires the source and scores to name one exact
+reference candidate. The model cannot add a production, change a type, or define
+the residual frontier.
 
 ### Resumable partial proof checkpoints
 
@@ -229,9 +230,10 @@ obligations, then minimizes constructor cost, then keeps deterministic grammar
 order. A unary chain around an open leaf cannot beat the unchanged hole merely
 for being deeper.
 
-Fine compacts the productions of that preferred partial tree into the recursive
-Z3 datatype. The model must reproduce its completeness, closed-frontier count,
-open-leaf count, cost, and exact source tree before lifting. The checkpoint then
+Fine compacts the productions of the complete typed partial frontier into exact
+bounded datatype states. The model must reproduce its completeness,
+closed-frontier count, open-leaf count, cost, and exact source tree before
+lifting. The checkpoint then
 replaces the original hole through its concrete range and reparses. Validation
 checks every fixed proof application with synthesis disabled, never absorbs an
 open proof into the SMT context, and stops the run at the incomplete declaration.
@@ -253,13 +255,17 @@ in-flight state.
 Checkpoint interruption uses process ownership rather than solver-private
 state. On a pthread-capable client, the dedicated Web Worker runs one
 `live-checkpoint` command whose producer increases the exact bounded proof cost
-without a predeclared final cost. Each selected Z3 datatype model is translated
-into a private context and queued; the Fine pthread lifts it while the producer
-starts the next frontier. Its publisher writes full source plus score metadata
+without a predeclared final cost. Each epoch discovers applicable instantiated
+productions directly from the expected type and lexical evidence, constructs
+exact bounded datatype states without concrete candidate trees, and translates
+the selected Z3 model into a private context. The Fine pthread lifts it while the
+producer starts the next grammar. Its publisher writes full source plus score metadata
 to an eight-slot shared-memory ring. The page drains that ring while the
 worker's JavaScript event loop is blocked inside Wasm and uses its independent
 Fine module to reparse and recheck every retained source. Only then does a view
-enter the Rainfall pane or become the last installable checkpoint.
+enter the Rainfall pane or become the last installable checkpoint. Rainfall
+retains production, exact-state, and transition counts and records that no
+candidate-tree frontier was enumerated.
 
 On clients without cross-origin isolation, the same Web Worker retains the
 older cooperative protocol: it repeatedly runs `checkpoint --proof-budget n`
@@ -311,11 +317,12 @@ two-thread C++ probe. The served-response smoke separately requires both headers
 on HTML, ordinary Wasm, and pthread Wasm.
 
 The visible pthread path now uses this queue. Its producer is open-ended
-iterative deepening over Fine's existing exact typed frontiers: each individual
-frontier is still enumerated before Z3 compacts and selects it, so this closes
-browser concurrency and interruption, not proof-search scalability. A direct
-finite-state recursive grammar remains separate work and must preserve the
-current complete/frontier/cost ranking before replacing enumeration. One live
+iterative deepening over direct exact bounded grammars. Each epoch discovers
+applicable instantiated productions from the requested result and lexical proof
+types, constructs states indexed by exact type, completeness, frontier, holes,
+and cost, and gives those finite datatypes to Z3 without constructing candidate
+trees. Budgets one through four remain byte-identical to the enumerated oracle.
+One live
 source episode owns exactly one identity hole. Supporting several requires a
 producer-owned cumulative concrete edit set; publishing each hole against the
 original source would silently discard earlier replacements, so Fine rejects
@@ -406,5 +413,7 @@ a typed partial source tree with unresolved holes.
 There are no runtime proof values, proof elimination into runtime data, runtime
 recursion, numeric termination measures, general dependent types, universes,
 global theorem search, or proof-constructor synthesis. Live browser search is
-currently limited to one identity hole per source episode, and each bounded
-frontier is enumerated before Z3 compaction.
+currently limited to one identity hole per source episode. One-shot search still
+enumerates a reference frontier so Rainfall can retain every residual candidate;
+live epochs retain the direct grammar's production, state, and transition counts
+instead.

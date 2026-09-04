@@ -64,6 +64,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     terminal_sequence: int | None = None
     match_run = False
     match_witness_count = 0
+    live_proof_budgets: list[int] = []
 
     for sequence, event in enumerate(events):
         _require(event.get("schema") == "fine.rainfall.v2",
@@ -91,7 +92,30 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
         if operation == "synth.run.open" and "matched_parameter" in data:
             match_run = True
 
-        if operation == "source.document.declare":
+        if operation == "proof.search.live.model":
+            budget = data.get("budget")
+            cost = data.get("cost")
+            complete = data.get("complete")
+            closed_frontier = data.get("closed_frontier")
+            open_leaves = data.get("open_leaves")
+            _require(isinstance(data.get("body"), str) and data["body"] and
+                     isinstance(budget, int) and budget > 0 and
+                     (not live_proof_budgets or budget == live_proof_budgets[-1] + 1) and
+                     isinstance(cost, int) and 0 <= cost <= budget and
+                     isinstance(complete, bool) and
+                     isinstance(closed_frontier, int) and closed_frontier >= 0 and
+                     isinstance(open_leaves, int) and open_leaves >= 0 and
+                     complete == (open_leaves == 0) and
+                     isinstance(data.get("grammar_productions"), int) and
+                     data["grammar_productions"] > 0 and
+                     isinstance(data.get("grammar_states"), int) and
+                     data["grammar_states"] > 0 and
+                     isinstance(data.get("grammar_transitions"), int) and
+                     data["grammar_transitions"] >= data["grammar_states"] and
+                     data.get("candidate_trees_enumerated") is False,
+                     f"event {sequence}: malformed direct live proof grammar epoch")
+            live_proof_budgets.append(budget)
+        elif operation == "source.document.declare":
             document = data.get("id")
             _require(isinstance(document, str) and document not in documents,
                      f"event {sequence}: missing or reused document ID")
@@ -410,6 +434,9 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      isinstance(data.get("preferred_cost"), int) and
                      0 <= data["preferred_cost"] <= data["max_cost"] and
                      isinstance(data.get("preferred_source"), str) and data["preferred_source"] and
+                     isinstance(data.get("states"), int) and data["states"] > 0 and
+                     isinstance(data.get("transitions"), int) and
+                     data["transitions"] >= data["states"] and
                      references == proof_candidates_by_hole[hole],
                      f"event {sequence}: malformed proof model grammar")
             proof_model_grammars[grammar] = event

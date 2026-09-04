@@ -2,16 +2,17 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstdint>
-#include <functional>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 namespace fine::proof_model {
     namespace {
-
         std::string symbol_part(std::string_view value) {
             std::string result;
             for (char character : value) {
@@ -23,57 +24,103 @@ namespace fine::proof_model {
             return result;
         }
 
-        std::string constructor_base(Production const &production) {
-            switch (production.kind) {
-            case ProductionKind::open: return "open";
-            case ProductionKind::local: return "local-" + symbol_part(production.source);
-            case ProductionKind::reflexivity: return "refl-" + symbol_part(production.source);
-            case ProductionKind::application: return "apply-" + symbol_part(production.function);
-            }
-            return "proof";
+        bool same_type(Type const &left, Type const &right) {
+            return left.carrier == right.carrier && left.left == right.left && left.right == right.right;
         }
 
-        std::vector<std::string> constructor_names(Grammar const &grammar) {
-            std::vector<std::string> result;
-            std::map<std::string, std::size_t> used_names;
-            result.reserve(grammar.productions.size());
-            for (Production const &production : grammar.productions) {
-                std::string base = constructor_base(production);
-                std::size_t ordinal = used_names[base]++;
-                result.push_back(ordinal == 0 ? base : base + "-" + std::to_string(ordinal));
+        struct Score {
+            std::size_t cost = 0;
+            bool complete = false;
+            std::size_t closed_frontier = 0;
+            std::size_t open_leaves = 0;
+        };
+
+        struct StateKey {
+            Type type;
+            Score score;
+
+            auto tie() const {
+                return std::tie(type.carrier, type.left, type.right, score.cost, score.complete, score.closed_frontier,
+                                score.open_leaves);
             }
+            bool operator<(StateKey const &other) const {
+                return tie() < other.tie();
+            }
+        };
+
+        struct Transition {
+            std::size_t production = 0;
+            std::vector<StateKey> children;
+        };
+
+        struct State {
+            std::vector<Transition> transitions;
+            std::optional<z3::sort> sort;
+            std::vector<z3::func_decl> constructors;
+            std::vector<z3::func_decl> recognizers;
+            std::vector<z3::func_decl_vector> accessors;
+        };
+
+        Score production_score(Production const &production, std::vector<StateKey> const &children) {
+            bool is_open = production.kind == ProductionKind::open;
+            Score result{is_open ? 0u : 1u, !is_open, is_open ? 0u : 1u, is_open ? 1u : 0u};
+            for (StateKey const &child : children) {
+                result.cost += child.score.cost;
+                result.complete = result.complete && child.score.complete;
+                result.open_leaves += child.score.open_leaves;
+                result.closed_frontier += child.score.complete ? 1 : child.score.closed_frontier;
+            }
+            if (!children.empty())
+                result.closed_frontier = result.complete ? 1 : result.closed_frontier - 1;
             return result;
         }
 
-        z3::expr integer(z3::context &context, unsigned value) {
-            return context.int_val(static_cast<std::uint64_t>(value));
+        void child_state_products(std::vector<std::vector<StateKey>> const &choices, std::size_t index,
+                                  std::vector<StateKey> &current, std::vector<std::vector<StateKey>> &result) {
+            if (index == choices.size()) {
+                result.push_back(current);
+                return;
+            }
+            for (StateKey const &choice : choices[index]) {
+                current.push_back(choice);
+                child_state_products(choices, index + 1, current, result);
+                current.pop_back();
+            }
         }
 
-        struct Datatype {
-            z3::sort sort;
-            z3::func_decl_vector constructors;
-            z3::func_decl_vector recognizers;
+        std::string state_name(std::string const &suffix, StateKey const &key) {
+            std::ostringstream result;
+            result << "FineProofState-" << suffix << '-' << key.type.carrier << '-' << key.type.left << '-'
+                   << key.type.right << '-' << key.score.cost << '-' << key.score.complete << '-'
+                   << key.score.closed_frontier << '-' << key.score.open_leaves;
+            return result.str();
+        }
 
-            explicit Datatype(z3::sort value)
-                : sort(std::move(value)), constructors(sort.constructors()), recognizers(sort.recognizers()) {}
-        };
+        std::string constructor_prefix(Grammar const &grammar) {
+            return "FineProofStateConstructor-" + symbol_part(grammar.id) + "-p";
+        }
 
-        std::string lift(z3::expr const &value, Grammar const &grammar,
-                         std::vector<std::string> const &names) {
+        std::optional<std::size_t> constructor_production(std::string_view name, Grammar const &grammar) {
+            std::string prefix = constructor_prefix(grammar);
+            if (!name.starts_with(prefix))
+                return std::nullopt;
+            name.remove_prefix(prefix.size());
+            std::size_t result = 0;
+            auto parsed = std::from_chars(name.data(), name.data() + name.size(), result);
+            if (parsed.ec != std::errc{} || parsed.ptr == name.data() ||
+                !std::string_view(parsed.ptr, static_cast<std::size_t>(name.data() + name.size() - parsed.ptr))
+                     .starts_with("-a"))
+                return std::nullopt;
+            return result;
+        }
+
+        std::string render(z3::expr const &value, Grammar const &grammar) {
             if (!value.is_app())
                 throw std::runtime_error("proof model is not a constructor application");
-            std::size_t index = grammar.productions.size();
-            std::string declaration = value.decl().name().str();
-            for (std::size_t i = 0; i < grammar.productions.size(); ++i) {
-                if (declaration == names[i]) {
-                    index = i;
-                    break;
-                }
-            }
-            if (index == grammar.productions.size())
+            auto index = constructor_production(value.decl().name().str(), grammar);
+            if (!index || *index >= grammar.productions.size())
                 throw std::runtime_error("proof model uses a constructor outside the Fine grammar");
-
-            Production const &production = grammar.productions[index];
+            Production const &production = grammar.productions[*index];
             if (production.kind == ProductionKind::open) {
                 if (value.num_args() != 0)
                     throw std::runtime_error("open proof model has unexpected children");
@@ -102,172 +149,213 @@ namespace fine::proof_model {
             for (unsigned i = 0; i < value.num_args(); ++i) {
                 if (i)
                     source << ", ";
-                source << production.coeffects.at(i) << " = " << lift(value.arg(i), grammar, names);
+                source << production.coeffects.at(i) << " = " << render(value.arg(i), grammar);
             }
             if (!production.coeffects.empty())
                 source << ']';
             return source.str();
         }
 
+        class StateGrammar {
+        public:
+            explicit StateGrammar(Grammar const &grammar) : grammar_(grammar) {
+                construct_states();
+            }
+
+            std::optional<StateKey> preferred() const {
+                if (grammar_.rank_automatically) {
+                    std::optional<StateKey> best;
+                    for (auto const &[key, _] : states_) {
+                        if (!same_type(key.type, grammar_.expected) || key.score.cost > grammar_.max_cost)
+                            continue;
+                        if (!best || key.score.complete > best->score.complete ||
+                            (key.score.complete == best->score.complete &&
+                             key.score.closed_frontier > best->score.closed_frontier) ||
+                            (key.score.complete == best->score.complete &&
+                             key.score.closed_frontier == best->score.closed_frontier &&
+                             key.score.cost < best->score.cost))
+                            best = key;
+                    }
+                    return best;
+                }
+                StateKey key{grammar_.expected,
+                             {grammar_.preferred_cost, grammar_.preferred_complete, grammar_.preferred_closed_frontier,
+                              grammar_.preferred_open_leaves}};
+                if (!states_.contains(key))
+                    throw std::runtime_error("preferred proof score is absent from the bounded state grammar");
+                return key;
+            }
+
+            void make_sorts(z3::context &context) {
+                std::string suffix = symbol_part(grammar_.id);
+                std::size_t alternative_id = 0;
+                for (std::size_t cost = 0; cost <= grammar_.max_cost; ++cost) {
+                    for (auto &[key, state] : states_) {
+                        if (key.score.cost != cost)
+                            continue;
+                        std::string name = state_name(suffix, key);
+                        z3::constructors declarations(context);
+                        for (std::size_t alternative = 0; alternative < state.transitions.size(); ++alternative) {
+                            Transition const &transition = state.transitions[alternative];
+                            std::vector<z3::symbol> fields;
+                            std::vector<z3::sort> sorts;
+                            for (std::size_t child = 0; child < transition.children.size(); ++child) {
+                                fields.push_back(context.str_symbol(
+                                    (name + "-field-" + std::to_string(alternative) + '-' + std::to_string(child))
+                                        .c_str()));
+                                auto found = states_.find(transition.children[child]);
+                                if (found == states_.end() || !found->second.sort)
+                                    throw std::logic_error("bounded proof state referred to a non-earlier child sort");
+                                sorts.push_back(*found->second.sort);
+                            }
+                            std::string constructor = constructor_prefix(grammar_) +
+                                                      std::to_string(transition.production) + "-a" +
+                                                      std::to_string(alternative_id++);
+                            declarations.add(context.str_symbol(constructor.c_str()),
+                                             context.str_symbol(("is-" + constructor).c_str()),
+                                             static_cast<unsigned>(fields.size()), fields.data(), sorts.data());
+                        }
+                        state.sort.emplace(context.datatype(context.str_symbol(name.c_str()), declarations));
+                        z3::func_decl_vector constructors = state.sort->constructors();
+                        z3::func_decl_vector recognizers = state.sort->recognizers();
+                        for (unsigned i = 0; i < constructors.size(); ++i) {
+                            state.constructors.push_back(constructors[i]);
+                            state.recognizers.push_back(recognizers[i]);
+                            state.accessors.push_back(constructors[i].accessors());
+                        }
+                    }
+                }
+            }
+
+            z3::sort const &sort(StateKey const &key) const {
+                return *states_.at(key).sort;
+            }
+
+            std::size_t state_count() const {
+                return states_.size();
+            }
+
+            std::size_t transition_count() const {
+                std::size_t result = 0;
+                for (auto const &[_, state] : states_)
+                    result += state.transitions.size();
+                return result;
+            }
+
+            void constrain_first(z3::solver &solver, z3::expr const &value, StateKey const &key) const {
+                State const &state = states_.at(key);
+                if (state.constructors.empty())
+                    throw std::logic_error("bounded proof state has no constructors");
+                solver.add(state.recognizers[0](value));
+                Transition const &transition = state.transitions[0];
+                for (unsigned i = 0; i < transition.children.size(); ++i)
+                    constrain_first(solver, state.accessors[0][i](value), transition.children[i]);
+            }
+
+        private:
+            Grammar const &grammar_;
+            std::map<StateKey, State> states_;
+
+            void construct_states() {
+                for (std::size_t cost_limit = 0; cost_limit <= grammar_.max_cost; ++cost_limit) {
+                    std::vector<StateKey> cheaper;
+                    for (auto const &[key, _] : states_)
+                        if (key.score.cost < cost_limit)
+                            cheaper.push_back(key);
+
+                    for (std::size_t production_index = 0; production_index < grammar_.productions.size();
+                         ++production_index) {
+                        Production const &production = grammar_.productions[production_index];
+                        if (production.kind == ProductionKind::open && !production.arguments.empty())
+                            throw std::runtime_error("open proof production has children");
+                        std::size_t own_cost = production.kind == ProductionKind::open ? 0 : 1;
+                        if (own_cost > cost_limit)
+                            continue;
+
+                        if (production.arguments.empty()) {
+                            Score score = production_score(production, {});
+                            if (score.cost == cost_limit)
+                                states_[StateKey{production.result, score}].transitions.push_back(
+                                    Transition{production_index, {}});
+                            continue;
+                        }
+
+                        std::vector<std::vector<StateKey>> choices;
+                        bool possible = true;
+                        for (Type const &argument : production.arguments) {
+                            std::vector<StateKey> matching;
+                            for (StateKey const &key : cheaper)
+                                if (same_type(key.type, argument))
+                                    matching.push_back(key);
+                            if (matching.empty()) {
+                                possible = false;
+                                break;
+                            }
+                            choices.push_back(std::move(matching));
+                        }
+                        if (!possible)
+                            continue;
+
+                        std::vector<std::vector<StateKey>> combinations;
+                        std::vector<StateKey> current;
+                        child_state_products(choices, 0, current, combinations);
+                        for (auto &children : combinations) {
+                            Score score = production_score(production, children);
+                            if (score.cost == cost_limit)
+                                states_[StateKey{production.result, score}].transitions.push_back(
+                                    Transition{production_index, std::move(children)});
+                        }
+                    }
+                }
+            }
+        };
     }  // namespace
 
     std::string lift_model_term(z3::context &, z3::expr const &value, Grammar const &grammar) {
-        return lift(value, grammar, constructor_names(grammar));
+        return render(value, grammar);
     }
 
     Result select(z3::context &context, Grammar const &grammar, Observer observer) {
-        if (grammar.productions.empty() || grammar.max_cost == 0)
+        if (grammar.productions.empty())
             return {Status::unsat, "empty bounded Fine proof grammar", {}, {}, 0, false, 0, 0};
 
-        std::string suffix = symbol_part(grammar.id);
-        std::string sort_name = "FineProof-" + suffix;
-        z3::symbol sort_symbol = context.str_symbol(sort_name.c_str());
-        z3::sort recursive_sort = context.datatype_sort(sort_symbol);
-        z3::constructors declarations(context);
-        std::vector<std::string> names = constructor_names(grammar);
-        for (std::size_t i = 0; i < grammar.productions.size(); ++i) {
-            Production const &production = grammar.productions[i];
-            std::string const &name = names[i];
-            std::string recognizer = "is-" + name;
-            std::vector<z3::symbol> field_names;
-            std::vector<z3::sort> field_sorts;
-            for (std::size_t child = 0; child < production.arguments.size(); ++child) {
-                field_names.push_back(
-                    context.str_symbol(("child-" + std::to_string(i) + "-" + std::to_string(child)).c_str()));
-                field_sorts.push_back(recursive_sort);
-            }
-            declarations.add(context.str_symbol(name.c_str()), context.str_symbol(recognizer.c_str()),
-                             static_cast<unsigned>(field_names.size()), field_names.data(), field_sorts.data());
-        }
-        Datatype datatype(context.datatype(sort_symbol, declarations));
-
-        z3::func_decl source = context.recfun(("fine-proof-src-" + suffix).c_str(), datatype.sort, context.int_sort());
-        z3::func_decl destination =
-            context.recfun(("fine-proof-dst-" + suffix).c_str(), datatype.sort, context.int_sort());
-        z3::func_decl carrier =
-            context.recfun(("fine-proof-carrier-" + suffix).c_str(), datatype.sort, context.int_sort());
-        z3::func_decl cost = context.recfun(("fine-proof-cost-" + suffix).c_str(), datatype.sort, context.int_sort());
-        z3::func_decl complete =
-            context.recfun(("fine-proof-complete-" + suffix).c_str(), datatype.sort, context.bool_sort());
-        z3::func_decl frontier =
-            context.recfun(("fine-proof-frontier-" + suffix).c_str(), datatype.sort, context.int_sort());
-        z3::func_decl opens =
-            context.recfun(("fine-proof-opens-" + suffix).c_str(), datatype.sort, context.int_sort());
-        z3::func_decl well = context.recfun(("fine-proof-well-" + suffix).c_str(), datatype.sort, context.bool_sort());
-        z3::expr node = context.constant(("fine-proof-node-" + suffix).c_str(), datatype.sort);
-
-        std::vector<z3::expr> source_cases;
-        std::vector<z3::expr> destination_cases;
-        std::vector<z3::expr> carrier_cases;
-        std::vector<z3::expr> cost_cases;
-        std::vector<z3::expr> complete_cases;
-        std::vector<z3::expr> frontier_cases;
-        std::vector<z3::expr> open_cases;
-        std::vector<z3::expr> well_cases;
-        for (std::size_t i = 0; i < grammar.productions.size(); ++i) {
-            Production const &production = grammar.productions[i];
-            source_cases.push_back(integer(context, production.result.left));
-            destination_cases.push_back(integer(context, production.result.right));
-            carrier_cases.push_back(integer(context, production.result.carrier));
-            bool is_open = production.kind == ProductionKind::open;
-            z3::expr production_cost = context.int_val(is_open ? 0 : 1);
-            z3::expr production_complete = context.bool_val(!is_open);
-            z3::expr production_frontier = context.int_val(is_open ? 0 : 1);
-            z3::expr production_opens = context.int_val(is_open ? 1 : 0);
-            z3::expr production_well = context.bool_val(true);
-            z3::func_decl_vector accessors = datatype.constructors[static_cast<unsigned>(i)].accessors();
-            for (unsigned child_index = 0; child_index < accessors.size(); ++child_index) {
-                z3::expr child = accessors[child_index](node);
-                Type const &expected = production.arguments[child_index];
-                production_cost = production_cost + cost(child);
-                production_complete = production_complete && complete(child);
-                production_opens = production_opens + opens(child);
-                production_frontier = production_frontier +
-                                      z3::ite(complete(child), context.int_val(1), frontier(child));
-                production_well = production_well && well(child) &&
-                                  carrier(child) == integer(context, expected.carrier) &&
-                                  source(child) == integer(context, expected.left) &&
-                                  destination(child) == integer(context, expected.right);
-            }
-            cost_cases.push_back(std::move(production_cost));
-            complete_cases.push_back(production_complete);
-            frontier_cases.push_back(
-                production.arguments.empty() ? production_frontier
-                                             : z3::ite(production_complete, context.int_val(1), production_frontier - 1));
-            open_cases.push_back(std::move(production_opens));
-            well_cases.push_back(std::move(production_well));
-        }
-
-        auto cases = [&](std::vector<z3::expr> const &values) {
-            z3::expr body = values.back();
-            for (std::size_t i = values.size() - 1; i-- > 0;)
-                body = z3::ite(datatype.recognizers[static_cast<unsigned>(i)](node), values[i], body);
-            return body;
-        };
-        z3::expr_vector arguments(context);
-        arguments.push_back(node);
-        context.recdef(source, arguments, cases(source_cases));
-        context.recdef(destination, arguments, cases(destination_cases));
-        context.recdef(carrier, arguments, cases(carrier_cases));
-        context.recdef(cost, arguments, cases(cost_cases));
-        context.recdef(complete, arguments, cases(complete_cases));
-        context.recdef(frontier, arguments, cases(frontier_cases));
-        context.recdef(opens, arguments, cases(open_cases));
-        context.recdef(well, arguments, cases(well_cases));
-
-        z3::expr hole = context.constant(("fine-proof-hole-" + suffix).c_str(), datatype.sort);
+        StateGrammar states(grammar);
+        std::optional<StateKey> preferred = states.preferred();
+        if (!preferred)
+            return {Status::unsat, "bounded state grammar has no root production", {}, {}, 0, false, 0, 0};
+        states.make_sorts(context);
+        z3::expr hole =
+            context.constant(("fine-proof-hole-" + symbol_part(grammar.id)).c_str(), states.sort(*preferred));
         z3::solver solver(context);
         z3::params options(context);
 #ifdef __EMSCRIPTEN__
-        // Emscripten's single-threaded runtime cannot create the timer thread
-        // behind Z3's wall-clock timeout. A solver resource limit preserves a
-        // bounded browser call without pretending pthreads are available.
         options.set("rlimit", 5000000u);
 #else
         options.set("timeout", 5000u);
 #endif
         solver.set(options);
-        solver.add(well(hole));
-        solver.add(carrier(hole) == integer(context, grammar.expected.carrier));
-        solver.add(source(hole) == integer(context, grammar.expected.left));
-        solver.add(destination(hole) == integer(context, grammar.expected.right));
-        solver.add(cost(hole) <= context.int_val(static_cast<std::uint64_t>(grammar.max_cost)));
-        solver.add(complete(hole) == context.bool_val(grammar.preferred_complete));
-        solver.add(frontier(hole) ==
-                   context.int_val(static_cast<std::uint64_t>(grammar.preferred_closed_frontier)));
-        solver.add(opens(hole) == context.int_val(static_cast<std::uint64_t>(grammar.preferred_open_leaves)));
-        solver.add(cost(hole) == context.int_val(static_cast<std::uint64_t>(grammar.preferred_cost)));
+        states.constrain_first(solver, hole, *preferred);
 
         z3::check_result status = solver.check();
         if (status == z3::unsat)
-            return {Status::unsat, "bounded datatype grammar is unsatisfiable", {}, {}, 0, false, 0, 0};
+            return {Status::unsat, "bounded state grammar is unsatisfiable", {}, {}, 0, false, 0, 0};
         if (status == z3::unknown)
             return {Status::unknown, solver.reason_unknown(), {}, {}, 0, false, 0, 0};
 
         z3::model model = solver.get_model();
         z3::expr value = model.eval(hole, true);
-        z3::expr cost_value = model.eval(cost(value), true);
-        std::uint64_t selected_cost = 0;
-        if (!cost_value.is_numeral_u64(selected_cost))
-            throw std::runtime_error("proof model cost did not evaluate to a numeral");
-        z3::expr complete_value = model.eval(complete(value), true);
-        z3::expr frontier_value = model.eval(frontier(value), true);
-        z3::expr opens_value = model.eval(opens(value), true);
-        std::uint64_t selected_frontier = 0;
-        std::uint64_t selected_opens = 0;
-        if (!frontier_value.is_numeral_u64(selected_frontier) || !opens_value.is_numeral_u64(selected_opens))
-            throw std::runtime_error("partial proof model scores did not evaluate to numerals");
         Result result{Status::sat,
                       {},
                       value.to_string(),
-                      lift(value, grammar, names),
-                      static_cast<std::size_t>(selected_cost),
-                      complete_value.is_true(),
-                      static_cast<std::size_t>(selected_frontier),
-                      static_cast<std::size_t>(selected_opens)};
+                      render(value, grammar),
+                      preferred->score.cost,
+                      preferred->score.complete,
+                      preferred->score.closed_frontier,
+                      preferred->score.open_leaves,
+                      states.state_count(),
+                      states.transition_count()};
         if (observer)
             observer(grammar, context, value, result);
         return result;
     }
-
 }  // namespace fine::proof_model

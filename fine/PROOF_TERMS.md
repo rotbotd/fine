@@ -126,11 +126,12 @@ mining an SMT proof or guessing a semantically equal pretty-printing.
 
 `--proof-selector z3` uses Z3 only after deterministic enumeration has produced
 the complete typed frontier. Fine walks those candidate trees and compacts their
-distinct ground productions into one recursive datatype. Local evidence and
-reflexivity become nullary constructors; each ground named proof-function
-application becomes a constructor with one recursive field per proof argument.
-Recursive `carrier`, `src`, `dst`, `cost`, and `well` functions enforce the same
-exact child types and total cost bound as the enumerator.
+distinct ground productions into exact bounded datatype states. Local evidence
+and reflexivity become nullary constructors; each ground named proof-function
+application becomes a constructor whose fields have the exact strictly cheaper
+state sorts required by its proof arguments. The state sort itself fixes carrier,
+endpoint AST IDs, cost, completeness, closed frontier, and open leaves; no
+recursive scoring or typing function remains for Z3 to unfold.
 
 For `identity-transitivity.fine`, the compact grammar is precisely:
 
@@ -147,10 +148,12 @@ requires that source and cost to match an exact deterministic candidate before
 requesting materialization. `fine materialize --proof-selector z3` replaces the
 hole, reparses the complete document, and reruns with search forbidden.
 
-This is deliberately not yet a faster replacement for enumeration: the
-deterministic frontier still supplies the reference grammar and residual list.
-The slice establishes the ownership, model, lift, and recheck boundaries before
-any attempt to generate a larger grammar without enumerating all complete trees.
+One-shot materialization deliberately retains deterministic enumeration as its
+reference grammar and residual list. Live iterative search uses the same state
+selector without that prerequisite: it discovers instantiated productions
+directly from the expected type and lexical evidence, then records its production,
+state, and transition counts. Budgets one through four are checked byte-for-byte
+against the enumerated path.
 
 ## Static indexed-constructor admission
 

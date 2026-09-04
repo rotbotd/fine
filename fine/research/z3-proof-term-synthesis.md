@@ -7,10 +7,10 @@ Z3 can do two adjacent jobs, but only one is a promising Fine backend.
 - With proof production enabled, an unsatisfiable solver call returns a Z3
   proof object. This object explains solver inferences. It is not a term in
   Fine's proof language.
-- If Fine defines a recursive datatype whose constructors are exactly the
-  admitted source-proof grammar, plus an exact checking interpreter and a
-  finite cost bound, Z3 can return a ground inhabitant as a model value. Fine
-  can lift that constructor tree into source, reparse it, and check it normally.
+- If Fine defines finite datatype states whose constructors are exactly the
+  admitted bounded source-proof grammar, Z3 can return a ground inhabitant as a
+  model value. Fine can lift that constructor tree into source, reparse it, and
+  check it normally.
 - Plain Z3 does not provide a native SyGuS command or an induction method that
   turns arbitrary recursive propositions into source derivations. Universal
   proof-function synthesis crosses that boundary quickly.
@@ -139,9 +139,10 @@ materialization remain necessary for recursive propositions.
 
 The first product slice now lives in `src/fine/proof_model_selector.cpp`. Rather
 than reimplementing Fine typing inside an unrelated solver grammar, it compacts
-the already enumerated typed candidate trees into ground recursive productions.
-The datatype interpreter tracks carrier token, exact endpoint AST IDs, child
-requirements, well-formedness, and total cost. The returned constructor AST is
+the already enumerated typed candidate trees into exact bounded datatype states.
+Each state fixes carrier token, exact endpoint AST IDs, total cost, completeness,
+and residual frontier; constructor fields point only to strictly cheaper exact
+states. The returned constructor AST is
 lifted structurally and must match one exact source-and-cost pair in the
 deterministic frontier.
 
@@ -151,6 +152,10 @@ On `identity-transitivity.fine`, Z3 returns
 `fine materialize --proof-selector z3`
 reparses and rechecks that complete source with search forbidden. Rainfall
 records the three boundary objects separately. This is a semantic integration
-result, not yet a performance result: complete deterministic enumeration still
-precedes compaction, and future work may only remove that prerequisite if it
-preserves the same exact grammar and frontier claims.
+result. One-shot materialization still retains complete deterministic enumeration
+as a reference frontier for Rainfall. Open-ended live search no longer does:
+each epoch discovers applicable instantiated productions from the expected type
+and lexical evidence, constructs the bounded state grammar without concrete
+trees, and is checked against the enumerated reference at budgets one through
+four. Removing the one-shot reference requires a grammar-shaped replacement for
+its explicit residual-candidate trace rather than silently dropping that claim.
