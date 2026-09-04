@@ -5736,3 +5736,9 @@ nix flake check --print-build-logs
 nix build --no-link --print-out-paths .#playground
 # /nix/store/hs89zsfrrca3jkcvwcrgzpd860gi830d-fine-playground-0.1.0
 ```
+
+After restarting `fine-playground.service`, both the local and public HTML
+contained the three checked examples and no occurrence of the three stale
+identifiers. `https://fine.shit.yachts/` returned HTTP 200 with COOP
+`same-origin` and COEP `require-corp`; both the playground and publishing
+services remained active.
