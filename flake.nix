@@ -62,7 +62,7 @@
           grep -F "latest-observed: 11" <<<"$live_lift"
           grep -F "latest-published: 11" <<<"$live_lift"
 
-          ${pkgs.python3}/bin/python "$src/fine/check_readme_example.py" "$src"
+          ${pkgs.python3}/bin/python "$src/fine/check_document_examples.py" "$src"
 
           demo_output="$($out/bin/fine run --proof-selector z3 \
             "$src/fine/fixtures/playground-demo.fine")"

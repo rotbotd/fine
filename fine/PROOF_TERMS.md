@@ -187,20 +187,21 @@ list. Taken coeffects need no pattern slot and reappear under their declaration
 names:
 
 ```fine
-match evidence {
-  even_zero() => shape_zero(value) using [shape = refl(value)],
-  even_next(previous) =>
-    shape_next(value, previous)
-      using [shape = refl(value), recursive = prior],
+proof function even_pred(value: Nat)
+  takes [evidence: Even(succ(succ(value)))]
+  -> Even(value) {
+  match evidence {
+    even_next(previous) => prior,
+  }
 }
 ```
 
 Fine first unifies each constructor result with the scrutinee's indices. A
-symbolic proof-function index is refined to that result inside the arm. Thus the
-base arm checks `refl(value) : Id(Nat, value, zero)`, while the recursive arm
-checks `refl(value) : Id(Nat, value, succ(succ(previous)))`; `prior` is a usable
-local `Even(previous)` proof. The exact branch environment, not a solver lemma,
-owns these substitutions and binders.
+symbolic proof-function index is refined to that result inside the arm. In
+`even_pred`, only `even_next` can produce the scrutinee type; matching its result
+refines `previous` to `value`, so the local `prior : Even(previous)` has the
+required result type `Even(value)`. The exact branch environment, not a solver
+lemma, owns this substitution and binder.
 
 Only reachable constructors count toward exhaustiveness. `match impossible {}`
 eliminates evidence of a zero-constructor family into any proof type. The same
@@ -214,28 +215,32 @@ A body-bearing proof function may declare exactly which indexed proof parameter
 it structurally follows:
 
 ```fine
-proof function rebuild(value: Nat)
-  takes [evidence: Even(value)]
+proof inductive Plus(a: Nat, b: Nat, c: Nat) {
+  plus_zero(base: Nat) -> Plus(zero, base, base);
+  plus_succ(a: Nat, b: Nat, c: Nat)
+    takes [rest: Plus(a, b, c)]
+    -> Plus(succ(a), b, succ(c));
+}
+
+proof function plus_shift(a: Nat, b: Nat, c: Nat)
+  takes [evidence: Plus(a, b, c)]
   inducts(evidence)
-  -> Rebuilt(value) {
+  -> Plus(a, succ(b), succ(c)) {
   match evidence {
-    even_zero() => rebuilt_zero(),
-    even_next(previous) =>
-      rebuilt_next(previous, rebuild(previous)),
+    plus_zero(base) => plus_zero(succ(base)),
+    plus_succ(pa, pb, pc) =>
+      plus_succ(pa, succ(pb), succ(pc)) using [rest = plus_shift(pa, pb, pc)],
   }
 }
 ```
 
 The recursive spelling does not denote a runtime call. During the match, Fine's
-constructor table establishes that `prior` is a structurally smaller piece of
-`evidence`; the omitted coeffect in `rebuild(previous)` resolves to `prior`, so
-the call is an application of the checked induction hypothesis. Matching `prior`
-again propagates the same root to its own
-recursive proof fields. Materialization writes
-`rebuild(previous) using [evidence = prior]`. The selected evidence must be an
-exact named descendant. Neither
-an arbitrary proof expression nor the original `evidence` can pass the descent
-check.
+constructor table establishes that `rest` is a structurally smaller piece of
+`evidence`; the omitted coeffect in `plus_shift(pa, pb, pc)` resolves to `rest`,
+so the call is an application of the checked induction hypothesis.
+Materialization writes `plus_shift(pa, pb, pc) using [evidence = rest]`. The
+selected evidence must be an exact named descendant. Neither an arbitrary proof
+expression nor the original `evidence` can pass the descent check.
 
 The descent metadata is per field, not per constructor. A branching constructor
 with `left_grows` and `right_grows` yields two separate induction-hypothesis uses

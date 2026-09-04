@@ -5742,3 +5742,45 @@ contained the three checked examples and no occurrence of the three stale
 identifiers. `https://fine.shit.yachts/` returned HTTP 200 with COOP
 `same-origin` and COEP `require-corp`; both the playground and publishing
 services remained active.
+
+## 2026-09-04 — made every current documentation example fixture-owned
+
+Continuing the public-surface audit found the same placeholder failure in both
+`fine/ARCHITECTURE.md` and `fine/PROOF_TERMS.md`. Their indexed-elimination
+examples called undeclared `shape_zero` / `shape_next` constructors, and the
+structural-induction example returned an undeclared `Rebuilt` family. These
+names do exist in specialized fixtures when accompanied by their declarations,
+but the documents had copied only the consumers and thereby presented fragments
+that could not stand in their stated context. `fine/ROADMAP.md` also still
+labelled the completed named-proof-function slice “in progress.”
+
+I replaced the elimination examples with the exact checked `even_pred` excerpt
+from `playground-demo.fine`. Its recursive arm makes index refinement visible:
+the scrutinee type admits only `even_next`, unification identifies `previous`
+with `value`, and the branch-local `prior : Even(previous)` becomes the required
+`Even(value)`. The proof-term design's structural example is now the exact
+contiguous `Plus` / `plus_shift` excerpt from the same fixture, including the
+lexically resolved `rest` coeffect. The architecture and roadmap copies of
+`identity-coeffect.fine` now retain the fixture's multiline `ensures` syntax,
+and the runtime `Nat` example uses the fixture's exact formatting. The roadmap
+heading now records slice 2 as closed.
+
+The previous README-only checker is replaced by
+`fine/check_document_examples.py`. It still requires the primary README program
+to equal `playground-demo.fine`, then extracts every `fine` code fence from the
+current README, architecture, proof-term design, and roadmap. Each of the 13
+blocks must occur byte-for-byte in at least one non-rejecting checked `.fine`
+fixture. Historical spellings in append-only `LOG.md` are deliberately outside
+this rule; current public design documents are not.
+
+```text
+python fine/check_document_examples.py .
+# checked 13 public Fine examples against passing fixtures
+git diff --check
+# clean
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths .#default .#playground
+# /nix/store/f5b6p212r5y2118xvrihlxv1cx4xlxfs-fine-0.1.0
+# /nix/store/hs89zsfrrca3jkcvwcrgzpd860gi830d-fine-playground-0.1.0
+```

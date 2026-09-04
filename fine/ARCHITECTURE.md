@@ -59,7 +59,10 @@ A runtime `match` compiles to the native recognizers and accessors and must name
 every constructor exactly once. Its arms must agree on one runtime result type.
 
 ```fine
-enum Nat { zero, succ(Nat) }
+enum Nat {
+  zero,
+  succ(Nat),
+}
 
 function predecessor(value: Nat) -> Nat {
   match value {
@@ -103,27 +106,25 @@ proof-irrelevant coeffect: callers omit it for exact lexical search or choose it
 with `using`. A proof match binds only the actual parameters positionally; each
 coeffect becomes a branch-local handle under its declared name.
 
-Proof functions with bodies eliminate indexed evidence by proof-level matching:
+Proof functions with bodies eliminate indexed evidence by proof-level matching.
+This checked eliminator can return `prior` only because matching the recursive
+constructor refines `previous` to `value`:
 
 ```fine
-proof function expose_even(value: Nat)
-  takes [evidence: Even(value)]
-  -> EvenShape(value) {
+proof function even_pred(value: Nat)
+  takes [evidence: Even(succ(succ(value)))]
+  -> Even(value) {
   match evidence {
-    even_zero() => shape_zero(value) using [shape = refl(value)],
-    even_next(previous) =>
-      shape_next(value, previous)
-        using [shape = refl(value), recursive = prior],
+    even_next(previous) => prior,
   }
 }
 ```
 
-Constructor-result unification happens before an arm is checked. The first arm
-refines `value` to `zero`; the second refines it to
-`succ(succ(previous))` and introduces both `previous` and `prior`. The two
-`refl(value)` terms therefore check at different branch-local identity types.
-This is definitional index refinement, not an equality proposition guessed by
-Z3.
+Constructor-result unification happens before an arm is checked. Here the only
+reachable result equates `succ(succ(value))` with
+`succ(succ(previous))`, introduces `previous` and `prior`, and makes the local
+`prior : Even(previous)` inhabit the required `Even(value)`. This is
+definitional index refinement, not an equality proposition guessed by Z3.
 
 Exhaustiveness is computed after refinement. A family with zero constructors
 has a valid zero-arm match, and `Even(succ(zero))` likewise has no reachable
@@ -157,7 +158,9 @@ A function declares evidence required from its caller:
 ```fine
 function replace(left: Int, right: Int) -> Int
   takes [same: Id(Int, left, right)]
-  ensures { result == right; }
+  ensures {
+    result == right;
+  }
 {
   left
 }

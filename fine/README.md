@@ -179,5 +179,9 @@ cut from Bool predicates to proof evidence. [`ROADMAP.md`](ROADMAP.md) records t
 ordered executable slices. Failed routes, exact commands, and closed decisions
 remain in the append-only root [`LOG.md`](../LOG.md).
 
+Every `fine` code block in these four current documents must be a literal excerpt
+of a passing fixture. The install check rejects invented placeholder syntax even
+when it looks plausible enough to survive prose review.
+
 The former Bool-predicate, fixedpoint, and locally nameless implementation remains
 at tag `pre-pat-1d7222a23`; it is evidence, not compatibility surface.

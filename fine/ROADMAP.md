@@ -52,7 +52,9 @@ The current fixture is deliberately small:
 ```fine
 function replace(left: Int, right: Int) -> Int
   takes [same: Id(Int, left, right)]
-  ensures { result == right; }
+  ensures {
+    result == right;
+  }
 {
   left
 }
@@ -102,7 +104,7 @@ fails with no well-typed production.
 This slice tests the actual Fine gimmick without first inventing inductive
 propositions, tactics, or a large term language.
 
-## Slice 2 — named proof functions and composition (in progress)
+## Slice 2 — named proof functions and composition (closed)
 
 Identity search becomes useful when its grammar can apply declared proof-level
 functions such as symmetry and transitivity. These declarations live at the
