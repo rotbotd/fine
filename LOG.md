@@ -5703,3 +5703,36 @@ systemctl is-active fine-playground.service rc-publish-fine.service
 # active
 # active
 ```
+
+## 2026-09-04 — removed speculative syntax from the browser reference
+
+The README/default-program repair exposed one adjacent stale surface: the open
+language-reference table in `playground/index.html` still presented an
+`indexed proof match` over undeclared `shape_zero` / `shape_next` constructors
+and a structural `rebuild` function returning an undeclared `Rebuilt` family.
+The indexed-hole row repeated the same undeclared `rebuilt_next` vocabulary.
+These were fragments from an earlier design sketch, not accepted examples a
+reader could locate in the checked current language.
+
+I changed the table's third column from “smallest example” to “accepted example”
+and stated its provenance explicitly. The proof-match row now uses the exact
+`even_pred` declaration from `playground-demo.fine`; the induction row uses the
+exact `plus_shift` declaration from that fixture, including lexical constructor
+coeffect search through `using [rest = plus_shift(...)]`; and the indexed-hole
+row uses the exact local-selection pair from `proof-inductive-holes.fine`. The
+static-evidence description now covers checked functions and constructors rather
+than claiming that `takes` is identity-function-only.
+
+The served-page smoke requires all three current examples, rejects the stale
+`Rebuilt(value)`, `shape_zero`, and `rebuilt_next` identifiers, and requires the
+reference to state that its examples are checked fixture excerpts. This is a
+presentation correction only; no Fine syntax or semantics changed.
+
+```text
+git diff --check
+# clean
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths .#playground
+# /nix/store/hs89zsfrrca3jkcvwcrgzpd860gi830d-fine-playground-0.1.0
+```

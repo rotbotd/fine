@@ -91,6 +91,14 @@ try {
       throw new Error(`language reference is missing current form: ${form}`);
   if (!reference.includes("takes [") || reference.includes("<code>needs ["))
     throw new Error("language reference does not expose only the current static-input keyword");
+  for (const currentExample of ["proof function even_pred", "proof copied: Even(zero) = ?;", "proof function plus_shift"])
+    if (!reference.includes(currentExample))
+      throw new Error(`language reference omits checked current example: ${currentExample}`);
+  for (const staleExample of ["Rebuilt(value)", "shape_zero", "rebuilt_next"])
+    if (reference.includes(staleExample))
+      throw new Error(`language reference retains undeclared example vocabulary: ${staleExample}`);
+  if (!reference.includes("accepted excerpts from checked fixtures"))
+    throw new Error("language reference does not state the provenance of its examples");
   if (!reference.includes("Top-level declarations may be interleaved")
       || !reference.includes("definition-only document needs no <code>run</code>"))
     throw new Error("language reference still advertises phased declarations or a mandatory run");
