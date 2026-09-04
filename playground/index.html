@@ -51,7 +51,7 @@
               </tr>
               <tr>
                 <td>value function</td>
-                <td>The body has the result type and satisfies every <code>ensures</code> clause. A failure returns typed input/result values only after source roundtrip and a fresh refutation check.</td>
+                <td>The body has the result type and satisfies every <code>ensures</code> clause. <code>result</code> is reserved there for the body. A failure returns typed input/result values only after source roundtrip and a fresh refutation check.</td>
                 <td><code>function keep(x: Int) -&gt; Int<br>ensures { result == x; }<br>{ x }</code></td>
               </tr>
               <tr>

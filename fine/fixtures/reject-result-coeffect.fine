@@ -1,0 +1,8 @@
+function ambiguous(left: Int, right: Int) -> Int
+  takes [result: Id(Int, left, right)]
+  ensures {
+    result == right;
+  }
+{
+  left
+}

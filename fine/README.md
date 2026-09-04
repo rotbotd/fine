@@ -150,6 +150,9 @@ parse(print(lift(values))): exact ast identity
 
 `counterexample` is deliberately not an executable declaration. It reports the
 model of a failed function check; it does not add an assumption to a later run.
+`result` is reserved inside a value-function signature because every `ensures`
+clause uses it for the elaborated body; a value or coeffect parameter cannot
+silently shadow that binding.
 The returned grammar admits `Bool`, arbitrary integer numerals including
 negative literals, and recursively constructed values of every declared runtime
 enum. Rainfall retains each model evaluation, the checked source witness, the

@@ -651,6 +651,23 @@
           grep -F '  value: Int = -1;' "$negative_counterexample"
           grep -F '  result: Int = -1;' "$negative_counterexample"
 
+          result_parameter="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-result-parameter.fine" \
+              >"$result_parameter" 2>&1; then
+            echo "function parameter unexpectedly shadowed the reserved result binding" >&2
+            exit 1
+          fi
+          grep -F '`result` is reserved for the function body inside `ensures`' \
+            "$result_parameter"
+          result_coeffect="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-result-coeffect.fine" \
+              >"$result_coeffect" 2>&1; then
+            echo "function coeffect unexpectedly shadowed the reserved result binding" >&2
+            exit 1
+          fi
+          grep -F '`result` is reserved for the function body inside `ensures`' \
+            "$result_coeffect"
+
           counterexample_rain="$(mktemp)"
           if $out/bin/fine rain "$src/fine/fixtures/reject-enum-function-counterexample.fine" \
               >"$counterexample_rain" 2>/dev/null; then

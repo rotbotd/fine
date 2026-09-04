@@ -6198,3 +6198,28 @@ Dirty-tree artifacts:
 - native: `/nix/store/69szyplqk8rr9f6mqyagz2z9h6vhkcg1-fine-0.1.0`
 - pthread Wasm: `/nix/store/ka9z1pdckfglyylabrybpkhmxw4i4n6l-fine-playground-wasm-pthreads-0.1.0`
 - playground: `/nix/store/dkirc5lcf0h57jwb9cglmmdsrl875iyg-fine-playground-0.1.0`
+
+## 2026-09-04 — reserve the value-function `result` binding
+
+The new counterexample consumer made an older name-resolution bug observable.
+A value function could declare an input named `result`; the later
+`values.emplace("result", body)` then silently retained the input instead of the
+body, so every `ensures` clause referred to the wrong term. A counterexample also
+tried to return two assignments with the same name. Fine now rejects `result` as
+either a value parameter or a coeffect name before elaborating the function.
+`reject-result-parameter.fine` and `reject-result-coeffect.fine` distinguish both
+namespaces and pin the diagnostic to the offending binder. The README and live
+browser reference now state what the reserved name denotes.
+
+Commands before commit:
+
+- `cmake --build .build -j2`
+- both new rejecting fixtures, each exiting one at its binder
+- `python3 fine/check_document_examples.py .`
+- `git diff --check`
+
+Dirty-tree artifacts for the reserved-result fix:
+
+- native: `/nix/store/yxsfa4rhj5y7q1n4ibxnk2w5vjrhc93l-fine-0.1.0`
+- pthread Wasm: `/nix/store/0igwhr3jk494864606k55d6ppl48x02a-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/74ggaffal34lr7i66pab0myr3kdaqi7c-fine-playground-0.1.0`

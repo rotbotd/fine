@@ -279,6 +279,8 @@ namespace fine::elaboration {
         std::vector<z3::expr> absorbed;
         std::set<std::string> names;
         for (auto const &parameter : declaration.parameters) {
+            if (parameter.name == "result")
+                reject(parameter.span, "`result` is reserved for the function body inside `ensures`");
             if (!names.insert(parameter.name).second)
                 reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
             require_known_type(parameter.type);
@@ -287,6 +289,8 @@ namespace fine::elaboration {
             values.emplace(parameter.name, ValueTerm(kind, context_.constant(symbol.c_str(), sort(kind))));
         }
         for (auto const &coeffect : declaration.coeffects) {
+            if (coeffect.name == "result")
+                reject(coeffect.span, "`result` is reserved for the function body inside `ensures`");
             if (!names.insert(coeffect.name).second)
                 reject(coeffect.span, "duplicate parameter `" + coeffect.name + "`");
             IdentityType type = proofs_->elaborate_identity(coeffect.type, values, proofs, proof_order, absorbed);

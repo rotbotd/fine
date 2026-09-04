@@ -71,6 +71,10 @@
 - `reject-negative-function-counterexample.fine` forces `-1` through a declared
   identity coeffect, covering negative integer source syntax and retaining the
   coeffect name as the counterexample's assumed domain.
+- `reject-result-parameter.fine` prevents a value or coeffect parameter from
+  shadowing the function body's reserved `result` name inside `ensures`.
+- `reject-result-coeffect.fine` applies the same reservation across the static
+  coeffect namespace before proof absorption begins.
 - `identity-holes.fine` gives a typed identity hole a bounded finite
   grammar. The first hole forms `refl(x)`; the second selects exact local proof
   `self`; an earlier proof of `Id(Int, y, y)` is excluded before enumeration.
