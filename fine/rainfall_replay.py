@@ -65,6 +65,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     match_run = False
     match_witness_count = 0
     live_proof_budgets: list[int] = []
+    previous_live_productions: int | None = None
+    previous_live_states: int | None = None
 
     for sequence, event in enumerate(events):
         _require(event.get("schema") == "fine.rainfall.v2",
@@ -98,6 +100,17 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             complete = data.get("complete")
             closed_frontier = data.get("closed_frontier")
             open_leaves = data.get("open_leaves")
+            grammar_productions = data.get("grammar_productions")
+            grammar_states = data.get("grammar_states")
+            grammar_states_reused = data.get("grammar_states_reused")
+            grammar_reset = data.get("grammar_reset")
+            reset_shape = grammar_reset is True and grammar_states_reused == 0
+            reuse_shape = (bool(live_proof_budgets) and grammar_reset is False and
+                           grammar_productions == previous_live_productions and
+                           grammar_states_reused == previous_live_states and
+                           isinstance(grammar_states, int) and
+                           isinstance(grammar_states_reused, int) and
+                           grammar_states >= grammar_states_reused)
             _require(isinstance(data.get("body"), str) and data["body"] and
                      isinstance(budget, int) and budget > 0 and
                      (not live_proof_budgets or budget == live_proof_budgets[-1] + 1) and
@@ -106,15 +119,19 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      isinstance(closed_frontier, int) and closed_frontier >= 0 and
                      isinstance(open_leaves, int) and open_leaves >= 0 and
                      complete == (open_leaves == 0) and
-                     isinstance(data.get("grammar_productions"), int) and
-                     data["grammar_productions"] > 0 and
-                     isinstance(data.get("grammar_states"), int) and
-                     data["grammar_states"] > 0 and
+                     isinstance(grammar_productions, int) and grammar_productions > 0 and
+                     isinstance(grammar_states, int) and grammar_states > 0 and
                      isinstance(data.get("grammar_transitions"), int) and
-                     data["grammar_transitions"] >= data["grammar_states"] and
+                     data["grammar_transitions"] >= grammar_states and
+                     isinstance(grammar_states_reused, int) and 0 <= grammar_states_reused <= grammar_states and
+                     isinstance(grammar_reset, bool) and
+                     ((not live_proof_budgets and reset_shape) or
+                      (live_proof_budgets and (reset_shape or reuse_shape))) and
                      data.get("candidate_trees_enumerated") is False,
                      f"event {sequence}: malformed direct live proof grammar epoch")
             live_proof_budgets.append(budget)
+            previous_live_productions = grammar_productions
+            previous_live_states = grammar_states
         elif operation == "source.document.declare":
             document = data.get("id")
             _require(isinstance(document, str) and document not in documents,

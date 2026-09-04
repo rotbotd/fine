@@ -206,6 +206,13 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       direct instantiated-production discovery and exact finite-state datatype
       grammars. Budgets one through four must remain byte-identical to the
       enumerated oracle, including equal-rank deterministic selection.
+- [x] Keep one context-bound model selector across live costs. Canonically order
+      productions, retain all state sorts when that vector is unchanged, and
+      record resets and reused-state counts in Rainfall. The cost-four
+      discriminator must reuse its 120 cost-at-most-three states.
+- [ ] Avoid a full state-family reset when later discovery adds a production
+      only if profiling justifies versioning the affected immutable datatype
+      states and their transitive parents.
 - [ ] Replace the one-shot selector's enumerated reference frontier only after
       Rainfall can retain a grammar-shaped residual without weakening its current
       complete frontier claim.

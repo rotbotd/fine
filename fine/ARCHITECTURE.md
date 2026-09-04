@@ -265,7 +265,12 @@ worker's JavaScript event loop is blocked inside Wasm and uses its independent
 Fine module to reparse and recheck every retained source. Only then does a view
 enter the Rainfall pane or become the last installable checkpoint. Rainfall
 retains production, exact-state, and transition counts and records that no
-candidate-tree frontier was enumerated.
+candidate-tree frontier was enumerated. The producer owns one context-bound
+incremental selector. If two consecutive epochs have the same canonical
+production vector, it retains every earlier datatype sort and constructs only
+the newly reachable higher-cost states. A newly discovered production resets the
+state family because Z3 datatype alternatives are immutable; Rainfall records
+both resets and the exact number of states reused.
 
 On clients without cross-origin isolation, the same Web Worker retains the
 older cooperative protocol: it repeatedly runs `checkpoint --proof-budget n`
@@ -322,11 +327,12 @@ applicable instantiated productions from the requested result and lexical proof
 types, constructs states indexed by exact type, completeness, frontier, holes,
 and cost, and gives those finite datatypes to Z3 without constructing candidate
 trees. Budgets one through four remain byte-identical to the enumerated oracle.
-One live
-source episode owns exactly one identity hole. Supporting several requires a
-producer-owned cumulative concrete edit set; publishing each hole against the
-original source would silently discard earlier replacements, so Fine rejects
-that shape rather than displaying a plausible but incomplete checkpoint.
+The discriminator's production vector grows through budget three, then budget
+four reuses all 120 earlier state sorts and adds 79 rather than rebuilding them.
+One live source episode owns exactly one identity hole. Supporting several
+requires a producer-owned cumulative concrete edit set; publishing each hole
+against the original source would silently discard earlier replacements, so Fine
+rejects that shape rather than displaying a plausible but incomplete checkpoint.
 
 ## Elaboration ownership
 

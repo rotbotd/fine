@@ -28,6 +28,27 @@ namespace fine::proof_model {
             return left.carrier == right.carrier && left.left == right.left && left.right == right.right;
         }
 
+        bool same_production(Production const &left, Production const &right) {
+            if (left.kind != right.kind || left.source != right.source || left.function != right.function ||
+                left.index_arguments != right.index_arguments || left.coeffects != right.coeffects ||
+                !same_type(left.result, right.result) || left.arguments.size() != right.arguments.size())
+                return false;
+            for (std::size_t i = 0; i < left.arguments.size(); ++i)
+                if (!same_type(left.arguments[i], right.arguments[i]))
+                    return false;
+            return true;
+        }
+
+        bool same_productions(Grammar const &left, Grammar const &right) {
+            if (!same_type(left.expected, right.expected) || left.rank_automatically != right.rank_automatically ||
+                left.productions.size() != right.productions.size())
+                return false;
+            for (std::size_t i = 0; i < left.productions.size(); ++i)
+                if (!same_production(left.productions[i], right.productions[i]))
+                    return false;
+            return true;
+        }
+
         struct Score {
             std::size_t cost = 0;
             bool complete = false;
@@ -88,23 +109,31 @@ namespace fine::proof_model {
             }
         }
 
-        std::string state_name(std::string const &suffix, StateKey const &key) {
+        std::string state_name(std::string const &suffix, std::size_t generation, StateKey const &key) {
             std::ostringstream result;
-            result << "FineProofState-" << suffix << '-' << key.type.carrier << '-' << key.type.left << '-'
-                   << key.type.right << '-' << key.score.cost << '-' << key.score.complete << '-'
-                   << key.score.closed_frontier << '-' << key.score.open_leaves;
+            result << "FineProofState-" << suffix << "-g" << generation << '-' << key.type.carrier << '-'
+                   << key.type.left << '-' << key.type.right << '-' << key.score.cost << '-' << key.score.complete
+                   << '-' << key.score.closed_frontier << '-' << key.score.open_leaves;
             return result.str();
         }
 
-        std::string constructor_prefix(Grammar const &grammar) {
-            return "FineProofStateConstructor-" + symbol_part(grammar.id) + "-p";
+        std::string constructor_prefix(Grammar const &grammar, std::size_t generation) {
+            return "FineProofStateConstructor-" + symbol_part(grammar.id) + "-g" + std::to_string(generation) + "-p";
         }
 
         std::optional<std::size_t> constructor_production(std::string_view name, Grammar const &grammar) {
-            std::string prefix = constructor_prefix(grammar);
+            std::string prefix = "FineProofStateConstructor-" + symbol_part(grammar.id) + "-g";
             if (!name.starts_with(prefix))
                 return std::nullopt;
             name.remove_prefix(prefix.size());
+            std::size_t generation = 0;
+            auto parsed_generation = std::from_chars(name.data(), name.data() + name.size(), generation);
+            if (parsed_generation.ec != std::errc{} || parsed_generation.ptr == name.data())
+                return std::nullopt;
+            name.remove_prefix(static_cast<std::size_t>(parsed_generation.ptr - name.data()));
+            if (!name.starts_with("-p"))
+                return std::nullopt;
+            name.remove_prefix(2);
             std::size_t result = 0;
             auto parsed = std::from_chars(name.data(), name.data() + name.size(), result);
             if (parsed.ec != std::errc{} || parsed.ptr == name.data() ||
@@ -158,8 +187,24 @@ namespace fine::proof_model {
 
         class StateGrammar {
         public:
-            explicit StateGrammar(Grammar const &grammar) : grammar_(grammar) {
-                construct_states();
+            StateGrammar(Grammar const &grammar, std::size_t generation) : grammar_(grammar), generation_(generation) {
+                construct_states(0);
+                built_cost_ = grammar_.max_cost;
+            }
+
+            bool compatible(Grammar const &grammar) const {
+                return grammar.id == grammar_.id && grammar.max_cost >= built_cost_ &&
+                       same_productions(grammar_, grammar);
+            }
+
+            void extend(Grammar const &grammar) {
+                if (!compatible(grammar))
+                    throw std::logic_error("incompatible proof grammar supplied to incremental state extension");
+                grammar_ = grammar;
+                if (grammar_.max_cost > built_cost_) {
+                    construct_states(built_cost_ + 1);
+                    built_cost_ = grammar_.max_cost;
+                }
             }
 
             std::optional<StateKey> preferred() const {
@@ -188,12 +233,11 @@ namespace fine::proof_model {
 
             void make_sorts(z3::context &context) {
                 std::string suffix = symbol_part(grammar_.id);
-                std::size_t alternative_id = 0;
                 for (std::size_t cost = 0; cost <= grammar_.max_cost; ++cost) {
                     for (auto &[key, state] : states_) {
-                        if (key.score.cost != cost)
+                        if (key.score.cost != cost || state.sort)
                             continue;
-                        std::string name = state_name(suffix, key);
+                        std::string name = state_name(suffix, generation_, key);
                         z3::constructors declarations(context);
                         for (std::size_t alternative = 0; alternative < state.transitions.size(); ++alternative) {
                             Transition const &transition = state.transitions[alternative];
@@ -208,9 +252,9 @@ namespace fine::proof_model {
                                     throw std::logic_error("bounded proof state referred to a non-earlier child sort");
                                 sorts.push_back(*found->second.sort);
                             }
-                            std::string constructor = constructor_prefix(grammar_) +
+                            std::string constructor = constructor_prefix(grammar_, generation_) +
                                                       std::to_string(transition.production) + "-a" +
-                                                      std::to_string(alternative_id++);
+                                                      std::to_string(next_alternative_id_++);
                             declarations.add(context.str_symbol(constructor.c_str()),
                                              context.str_symbol(("is-" + constructor).c_str()),
                                              static_cast<unsigned>(fields.size()), fields.data(), sorts.data());
@@ -253,11 +297,14 @@ namespace fine::proof_model {
             }
 
         private:
-            Grammar const &grammar_;
+            Grammar grammar_;
+            std::size_t generation_ = 0;
+            std::size_t built_cost_ = 0;
+            std::size_t next_alternative_id_ = 0;
             std::map<StateKey, State> states_;
 
-            void construct_states() {
-                for (std::size_t cost_limit = 0; cost_limit <= grammar_.max_cost; ++cost_limit) {
+            void construct_states(std::size_t first_cost) {
+                for (std::size_t cost_limit = first_cost; cost_limit <= grammar_.max_cost; ++cost_limit) {
                     std::vector<StateKey> cheaper;
                     for (auto const &[key, _] : states_)
                         if (key.score.cost < cost_limit)
@@ -311,15 +358,36 @@ namespace fine::proof_model {
         };
     }  // namespace
 
+    struct IncrementalSelector::Impl {
+        std::unique_ptr<StateGrammar> states;
+        z3::context *context = nullptr;
+        std::size_t generation = 0;
+    };
+
+    IncrementalSelector::IncrementalSelector() : impl_(std::make_unique<Impl>()) {}
+    IncrementalSelector::~IncrementalSelector() = default;
+    IncrementalSelector::IncrementalSelector(IncrementalSelector &&) noexcept = default;
+    IncrementalSelector &IncrementalSelector::operator=(IncrementalSelector &&) noexcept = default;
+
     std::string lift_model_term(z3::context &, z3::expr const &value, Grammar const &grammar) {
         return render(value, grammar);
     }
 
-    Result select(z3::context &context, Grammar const &grammar, Observer observer) {
+    Result IncrementalSelector::select(z3::context &context, Grammar const &grammar, Observer observer) {
         if (grammar.productions.empty())
             return {Status::unsat, "empty bounded Fine proof grammar", {}, {}, 0, false, 0, 0};
 
-        StateGrammar states(grammar);
+        if (impl_->context && impl_->context != &context)
+            throw std::logic_error("incremental proof selector cannot cross Z3 contexts");
+        bool reset = !impl_->states || !impl_->states->compatible(grammar);
+        std::size_t reused_states = reset ? 0 : impl_->states->state_count();
+        if (reset) {
+            impl_->context = &context;
+            impl_->states = std::make_unique<StateGrammar>(grammar, impl_->generation++);
+        }
+        else
+            impl_->states->extend(grammar);
+        StateGrammar &states = *impl_->states;
         std::optional<StateKey> preferred = states.preferred();
         if (!preferred)
             return {Status::unsat, "bounded state grammar has no root production", {}, {}, 0, false, 0, 0};
@@ -353,9 +421,16 @@ namespace fine::proof_model {
                       preferred->score.closed_frontier,
                       preferred->score.open_leaves,
                       states.state_count(),
-                      states.transition_count()};
+                      states.transition_count(),
+                      reused_states,
+                      reset};
         if (observer)
             observer(grammar, context, value, result);
         return result;
+    }
+
+    Result select(z3::context &context, Grammar const &grammar, Observer observer) {
+        IncrementalSelector selector;
+        return selector.select(context, grammar, std::move(observer));
     }
 }  // namespace fine::proof_model

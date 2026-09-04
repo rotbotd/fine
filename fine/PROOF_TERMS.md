@@ -153,7 +153,11 @@ reference grammar and residual list. Live iterative search uses the same state
 selector without that prerequisite: it discovers instantiated productions
 directly from the expected type and lexical evidence, then records its production,
 state, and transition counts. Budgets one through four are checked byte-for-byte
-against the enumerated path.
+against the enumerated path. Its context-bound selector canonically orders that
+production set. When the set is unchanged at the next cost, existing state sorts
+remain live and only newly reachable higher-cost states are declared; production
+growth resets the state family rather than pretending an immutable datatype can
+gain alternatives.
 
 ## Static indexed-constructor admission
 

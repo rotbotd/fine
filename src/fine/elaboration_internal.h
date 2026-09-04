@@ -555,10 +555,11 @@ namespace fine::elaboration {
                                             std::set<std::string> &seen);
         proof_model::Grammar make_proof_model_grammar(std::vector<ProofCandidate> const &candidates,
                                                       IdentityType const &expected);
-        proof_model::Grammar make_direct_proof_model_grammar(
-            syntax::ProofType const &expected_syntax, IdentityType const &expected, std::string const &left_source,
-            std::string const &right_source, ValueEnvironment const &values, ProofEnvironment const &proofs,
-            std::vector<std::string> const &proof_order, std::vector<z3::expr> const &absorbed, std::size_t budget);
+        proof_model::Grammar
+        make_direct_proof_model_grammar(std::string const &grammar_id, IdentityType const &expected,
+                                        std::string const &left_source, std::string const &right_source,
+                                        ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
+                                        std::size_t budget);
         ProofEvidence elaborate_proof_application(syntax::ProofExpr const &expression,
                                                   syntax::ProofType const &expected_syntax, SemanticProofType expected,
                                                   ValueEnvironment const &values, ProofEnvironment const &proofs,

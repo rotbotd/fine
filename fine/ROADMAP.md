@@ -350,8 +350,13 @@ access nor use-after-free. That same ownership code now runs in the isolated
 Emscripten pthread build. Its producer discovers instantiated productions and
 constructs exact bounded datatype states without enumerating candidate trees;
 budgets one through four remain byte-identical to the separate enumerated oracle.
-A live episode currently accepts one identity hole. Multi-hole search waits for a producer-owned
-cumulative source snapshot rather than composing independent edits in the page.
+The same context-bound selector survives across epochs. It resets while new
+instantiated productions appear, then reuses every earlier state sort once the
+canonical production vector stabilizes; the cost-three to cost-four epoch reuses
+120 states and declares 79 new ones.
+A live episode currently accepts one identity hole. Multi-hole search waits for a
+producer-owned cumulative source snapshot rather than composing independent edits
+in the page.
 
 ## Slice 7 — recover value-language consumers when forced
 

@@ -157,5 +157,8 @@ as a reference frontier for Rainfall. Open-ended live search no longer does:
 each epoch discovers applicable instantiated productions from the expected type
 and lexical evidence, constructs the bounded state grammar without concrete
 trees, and is checked against the enumerated reference at budgets one through
-four. Removing the one-shot reference requires a grammar-shaped replacement for
+four. The live selector retains existing state datatypes across consecutive
+costs once the canonical production vector stops growing; a changed production
+set resets it because Z3 datatype declarations cannot acquire alternatives.
+Removing the one-shot reference requires a grammar-shaped replacement for
 its explicit residual-candidate trace rather than silently dropping that claim.

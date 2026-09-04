@@ -481,7 +481,8 @@
             "$src/fine/fixtures/identity-checkpoint.fine"
           cmp "$src/fine/fixtures/identity-checkpoint-materialized.fine" "$live_checkpoint"
           live_complete="$(mktemp)"
-          $out/bin/fine live-checkpoint --output "$live_complete" --rain-output /dev/null \
+          live_complete_rain="$(mktemp)"
+          $out/bin/fine live-checkpoint --output "$live_complete" --rain-output "$live_complete_rain" \
             "$src/fine/fixtures/identity-checkpoint.fine"
           if grep -F '= ?;' "$live_complete"; then
             echo "live proof search stopped before closing its source term" >&2
@@ -489,6 +490,20 @@
           fi
           $out/bin/fine run "$live_complete" | grep -F \
             'verified assertion: identity_checkpoint.0'
+          ${pkgs.python3}/bin/python ${./fine/rainfall_replay.py} \
+            "$src/fine/fixtures/identity-checkpoint.fine" "$live_complete_rain"
+          ${pkgs.python3}/bin/python - "$live_complete_rain" <<'PY'
+          import json
+          import sys
+
+          events = [json.loads(line) for line in open(sys.argv[1])]
+          epochs = [event["data"] for event in events
+                    if event["operation"] == "proof.search.live.model"]
+          assert [epoch["budget"] for epoch in epochs] == [1, 2, 3, 4]
+          assert [epoch["grammar_reset"] for epoch in epochs] == [True, True, True, False]
+          assert [epoch["grammar_states_reused"] for epoch in epochs] == [0, 0, 0, 120]
+          assert epochs[-1]["grammar_states"] == 199
+          PY
 
           for direct_budget in 1 2 3 4; do
             reference_epoch="$(mktemp)"

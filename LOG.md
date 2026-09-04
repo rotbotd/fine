@@ -5914,3 +5914,63 @@ One-shot search still enumerates its reference frontier, and live search still
 rebuilds the finite state family at each increasing budget. The next scaling
 question is incremental state extension across epochs, not recursive Z3
 functions or concrete proof-tree generation.
+
+## 2026-09-04 — live proof selector retains stable bounded states across costs
+
+The direct grammar removed concrete candidate-tree enumeration but still rebuilt
+all exact datatype states and their Z3 sorts at every live cost. I gave one live
+hole a context-bound `IncrementalSelector`. Its state automaton survives into the
+next epoch. When the canonical instantiated-production vector is unchanged, the
+selector extends state construction from the next cost only and declares sorts
+only for the new states; every cheaper child sort is already present. If a new
+production appears, the selector starts a new generation because Z3 datatype
+alternatives are immutable. Generation-qualified constructor names keep both
+families unambiguous in the same manager, and lifting deliberately ignores the
+generation while retaining the exact production index.
+
+The first integration exposed a subtle nonsemantic instability. Budgets three
+and four each contained 32 productions, but their vectors compared unequal: the
+result-directed traversal reached exact types at different remaining depths, so
+the same global production set was inserted in a different order. Treating the
+count as identity would have reused constructors with the wrong production
+indices. Fine now canonicalizes direct productions by exact result type and then
+by the established local, reflexivity, proof-function, and instantiation order.
+All four source epochs remain byte-identical to the separately enumerated oracle,
+so the stable ordering did not change the user-visible tie-break.
+
+Rainfall now retains `grammar_reset` and `grammar_states_reused` on every live
+model event, and replay validates the sequence. The checkpoint discriminator has
+this exact lifecycle:
+
+```text
+budget 1:  6 productions,   6 states,   6 transitions, reset
+budget 2: 18 productions,  28 states,  35 transitions, reset
+budget 3: 32 productions, 120 states, 325 transitions, reset
+budget 4: 32 productions, 199 states, 793 transitions, reuse 120 states
+```
+
+Thus the closing epoch declares only 79 new state sorts. The first three resets
+are deliberate production growth, not a hidden failure to cache. Avoiding them
+would require versioning every affected immutable state and its transitive
+parents; that remains contingent on profiling rather than being smuggled in as
+"incremental" bookkeeping.
+
+Validation and clean artifacts before commit:
+
+```text
+cmake --build .build -j2
+python3 fine/check_document_examples.py .
+# checked 13 public Fine examples against passing fixtures
+# checkpoint and live-checkpoint sources match exactly at budgets 1, 2, 3, 4
+out=$(mktemp); rain=$(mktemp)
+.build/fine live-checkpoint --output "$out" --rain-output "$rain" \
+  fine/fixtures/identity-checkpoint.fine
+python3 fine/rainfall_replay.py fine/fixtures/identity-checkpoint.fine "$rain"
+# passed; reset/reset/reset/reuse-120 sequence retained
+nix flake check --print-build-logs
+# all checks passed
+nix build --no-link --print-out-paths .#default .#playground-wasm-pthreads .#playground
+# /nix/store/cf1nsqw4xk4k9xwakxicw3a3qdfvb9fw-fine-0.1.0
+# /nix/store/rdx5q7nlz7g7509c490fjky7lbgxdirj-fine-playground-wasm-pthreads-0.1.0
+# /nix/store/0h7rqv8cqxwwxq3k9klm1ciq1harxh5a-fine-playground-0.1.0
+```

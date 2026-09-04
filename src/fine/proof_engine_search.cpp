@@ -1,5 +1,7 @@
 #include "elaboration_internal.h"
 
+#include <tuple>
+
 // Bounded proof search: surface argument classification, named proof-function
 // application, deterministic identity grammars, and Z3 model selection.
 namespace fine::elaboration {
@@ -153,23 +155,32 @@ namespace fine::elaboration {
             collect_proof_model_production(candidate, grammar, seen);
         return grammar;
     }
-    proof_model::Grammar ProofEngine::make_direct_proof_model_grammar(
-        syntax::ProofType const &expected_syntax, IdentityType const &expected, std::string const &left_source,
-        std::string const &right_source, ValueEnvironment const &values, ProofEnvironment const &proofs,
-        std::vector<std::string> const &proof_order, std::vector<z3::expr> const &absorbed, std::size_t budget) {
-        (void)expected_syntax;
-        (void)values;
-        (void)absorbed;
+    proof_model::Grammar
+    ProofEngine::make_direct_proof_model_grammar(std::string const &grammar_id, IdentityType const &expected,
+                                                 std::string const &left_source, std::string const &right_source,
+                                                 ProofEnvironment const &proofs,
+                                                 std::vector<std::string> const &proof_order, std::size_t budget) {
         proof_model::Grammar grammar;
-        grammar.id = "direct-hole-" + std::to_string(proof_model_index_++);
+        grammar.id = grammar_id;
         grammar.expected = proof_model_type(expected);
         grammar.max_cost = budget;
         grammar.rank_automatically = true;
 
+        struct RankedProduction {
+            std::string result_type;
+            std::size_t category = 0;
+            std::size_t primary_order = 0;
+            std::size_t secondary_order = 0;
+            std::string key;
+            proof_model::Production production;
+        };
+        std::vector<RankedProduction> ranked_productions;
         std::set<std::string> seen_productions;
-        auto add_production = [&](proof_model::Production production, std::string key) {
-            if (seen_productions.insert(std::move(key)).second)
-                grammar.productions.push_back(std::move(production));
+        auto add_production = [&](proof_model::Production production, std::string key, std::size_t category,
+                                  std::size_t primary_order = 0, std::size_t secondary_order = 0) {
+            if (seen_productions.insert(key).second)
+                ranked_productions.push_back({proof_model_type_key(production.result), category, primary_order,
+                                              secondary_order, std::move(key), std::move(production)});
         };
         std::set<std::string> visited;
         std::function<void(IdentityType const &, std::string const &, std::string const &, std::size_t)> visit;
@@ -182,7 +193,8 @@ namespace fine::elaboration {
                 return;
 
             if (remaining > 0) {
-                for (auto const &candidate_name : proof_order) {
+                for (std::size_t proof_index = 0; proof_index < proof_order.size(); ++proof_index) {
+                    std::string const &candidate_name = proof_order[proof_index];
                     auto found = proofs.find(candidate_name);
                     if (found == proofs.end())
                         continue;
@@ -194,7 +206,8 @@ namespace fine::elaboration {
                     production.source = candidate_name;
                     production.result = wanted_model;
                     add_production(std::move(production),
-                                   "local:" + candidate_name + ":" + proof_model_type_key(wanted_model));
+                                   "local:" + candidate_name + ":" + proof_model_type_key(wanted_model), 0,
+                                   proof_index);
                 }
                 if (same_ast(values_.context(), wanted.left, wanted.right)) {
                     proof_model::Production production;
@@ -202,14 +215,17 @@ namespace fine::elaboration {
                     production.source = "refl(" + wanted_left + ")";
                     production.result = wanted_model;
                     add_production(std::move(production),
-                                   "refl:" + wanted_left + ":" + proof_model_type_key(wanted_model));
+                                   "refl:" + wanted_left + ":" + proof_model_type_key(wanted_model), 1);
                 }
 
-                for (auto const &function_name : proof_function_order_) {
+                for (std::size_t function_index = 0; function_index < proof_function_order_.size(); ++function_index) {
+                    std::string const &function_name = proof_function_order_[function_index];
                     syntax::ProofFunctionDecl const &function = *proof_functions_.at(function_name);
                     auto instantiations =
                         infer_value_arguments(function, wanted, wanted_left, wanted_right, proofs, proof_order);
-                    for (auto const &instantiation : instantiations) {
+                    for (std::size_t instantiation_index = 0; instantiation_index < instantiations.size();
+                         ++instantiation_index) {
+                        auto const &instantiation = instantiations[instantiation_index];
                         proof_model::Production production;
                         production.kind = proof_model::ProductionKind::application;
                         production.function = function.name;
@@ -243,7 +259,8 @@ namespace fine::elaboration {
                             production_key += ":argument:" + proof_model_type_key(production.arguments.back());
                             children.push_back({std::move(child_type), std::move(child_left), std::move(child_right)});
                         }
-                        add_production(std::move(production), std::move(production_key));
+                        add_production(std::move(production), std::move(production_key), 2, function_index,
+                                       instantiation_index);
                         for (auto const &child : children)
                             visit(child.type, child.left, child.right, remaining - 1);
                     }
@@ -255,10 +272,17 @@ namespace fine::elaboration {
                 production.kind = proof_model::ProductionKind::open;
                 production.source = "?";
                 production.result = wanted_model;
-                add_production(std::move(production), "open:" + proof_model_type_key(wanted_model));
+                add_production(std::move(production), "open:" + proof_model_type_key(wanted_model), 3);
             }
         };
         visit(expected, left_source, right_source, budget);
+        std::sort(ranked_productions.begin(), ranked_productions.end(), [](auto const &left, auto const &right) {
+            return std::tie(left.result_type, left.category, left.primary_order, left.secondary_order, left.key) <
+                   std::tie(right.result_type, right.category, right.primary_order, right.secondary_order, right.key);
+        });
+        grammar.productions.reserve(ranked_productions.size());
+        for (auto &ranked : ranked_productions)
+            grammar.productions.push_back(std::move(ranked.production));
         return grammar;
     }
     ProofEvidence ProofEngine::elaborate_proof_application(
@@ -665,12 +689,14 @@ namespace fine::elaboration {
             ProofCandidate selected;
             std::size_t budget = options_.live_proof_search_start - 1;
             std::string last_observed_source;
+            std::string grammar_id = "direct-hole-" + std::to_string(proof_model_index_++);
+            proof_model::IncrementalSelector model_selector;
             for (;;) {
                 ++budget;
-                proof_model::Grammar grammar = make_direct_proof_model_grammar(
-                    expected_syntax, expected, print_value(expected_syntax.left), print_value(expected_syntax.right),
-                    values, proofs, proof_order, absorbed, budget);
-                proof_model::Result model_selection = proof_model::select(
+                proof_model::Grammar grammar =
+                    make_direct_proof_model_grammar(grammar_id, expected, print_value(expected_syntax.left),
+                                                    print_value(expected_syntax.right), proofs, proof_order, budget);
+                proof_model::Result model_selection = model_selector.select(
                     values_.context(), grammar,
                     [&](proof_model::Grammar const &observed_grammar, z3::context &model_context, z3::expr const &model,
                         proof_model::Result const &result) {
@@ -730,6 +756,8 @@ namespace fine::elaboration {
                          RainfallRecorder::number_field("grammar_productions", grammar.productions.size()),
                          RainfallRecorder::number_field("grammar_states", model_selection.state_count),
                          RainfallRecorder::number_field("grammar_transitions", model_selection.transition_count),
+                         RainfallRecorder::number_field("grammar_states_reused", model_selection.reused_state_count),
+                         RainfallRecorder::boolean_field("grammar_reset", model_selection.state_grammar_reset),
                          RainfallRecorder::boolean_field("candidate_trees_enumerated", false)});
                 if (selected.complete ||
                     (options_.live_proof_search_limit != 0 && budget >= options_.live_proof_search_limit))
