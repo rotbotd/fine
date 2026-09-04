@@ -1,0 +1,70 @@
+{
+  "epochs": [
+    {
+      "budget": 1,
+      "productions": 6,
+      "states": 6,
+      "transitions": 6
+    },
+    {
+      "budget": 2,
+      "productions": 18,
+      "states": 28,
+      "transitions": 35
+    },
+    {
+      "budget": 3,
+      "productions": 32,
+      "states": 120,
+      "transitions": 325
+    },
+    {
+      "budget": 4,
+      "productions": 32,
+      "states": 199,
+      "transitions": 793
+    }
+  ],
+  "growth": [
+    {
+      "affected_old_states": 0,
+      "directly_extended_states": 0,
+      "from_budget": 1,
+      "new_states": 22,
+      "productions_added": 12,
+      "productions_before": 6,
+      "safely_reusable_states": 6,
+      "shared_states": 6,
+      "states_after": 28,
+      "states_before": 6,
+      "to_budget": 2
+    },
+    {
+      "affected_old_states": 6,
+      "directly_extended_states": 6,
+      "from_budget": 2,
+      "new_states": 92,
+      "productions_added": 14,
+      "productions_before": 18,
+      "safely_reusable_states": 22,
+      "shared_states": 28,
+      "states_after": 120,
+      "states_before": 28,
+      "to_budget": 3
+    },
+    {
+      "affected_old_states": 0,
+      "directly_extended_states": 0,
+      "from_budget": 3,
+      "new_states": 79,
+      "productions_added": 0,
+      "productions_before": 32,
+      "safely_reusable_states": 120,
+      "shared_states": 120,
+      "states_after": 199,
+      "states_before": 120,
+      "to_budget": 4
+    }
+  ],
+  "schema": "fine.proof-state-growth-profile.v1"
+}

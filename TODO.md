@@ -210,9 +210,13 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       productions, retain all state sorts when that vector is unchanged, and
       record resets and reused-state counts in Rainfall. The cost-four
       discriminator must reuse its 120 cost-at-most-three states.
-- [ ] Avoid a full state-family reset when later discovery adds a production
-      only if profiling justifies versioning the affected immutable datatype
-      states and their transitive parents.
+- [x] Profile state-family resets before adding datatype versioning. On the
+      checkpoint discriminator, production growth could retain 6 prior states
+      while building the 28-state budget-two graph, then 22 prior states while
+      building the 120-state budget-three graph; once the expensive family
+      stabilizes, the existing path already reuses all 120 states. Keep
+      the reset until a large late-growing grammar or browser profile justifies
+      stable production IDs and transitive parent versioning.
 - [x] Replace the one-shot selector's enumerated reference frontier with direct
       typed production discovery. Retain every structured state transition in
       Rainfall, validate its type/cost/score recurrence during replay, and name

@@ -6099,3 +6099,40 @@ Dirty-tree artifacts:
 - native: `/nix/store/k0davg9yxgpy58pdc4dnq9fksf39ff4w-fine-0.1.0`
 - pthread Wasm: `/nix/store/3dp9wqrn6m8mas7j4r9flg3iqy346vxs-fine-playground-wasm-pthreads-0.1.0`
 - playground: `/nix/store/7cnvd9s6fmpnj0hm3v0f563nf1j98mbp-fine-playground-0.1.0`
+
+## 2026-09-04 — immutable state-reset profile; selective versioning rejected
+
+Closed the conditional TODO behind production-growth resets without adding the
+more elaborate mechanism. Added `fine/profile_proof_state_growth.py`, which reads
+source-ordered one-shot Rainfall grammars at increasing budgets, compares
+productions by structured content rather than reorderable numeric IDs, and
+partitions old states into directly extended states, their transitively affected
+immutable parents, and safely reusable states. The exact checked report is
+`fine/research/proof-state-growth-profile.json`; the interpretation and reopen
+condition are in `fine/research/proof-state-growth.md`.
+
+On `identity-checkpoint.fine`, budgets one through four contain respectively
+6/6/6, 18/28/35, 32/120/325, and 32/199/793
+productions/states/transitions. Growth from one to two could preserve all six old
+states while adding 22. Growth from two to three directly extends six old states
+and can safely preserve 22 while adding 92. At three to four the production set
+is stable, so the existing selector already preserves all 120 states and adds 79.
+Thus the expensive boundary already uses the simple reuse path; mixed-generation
+datatype versioning would primarily protect 28 small early states.
+
+The rejected implementation would need stable production identities across
+canonical-vector insertion, multiple datatype generations for one score/type
+key, and recursive parent retargeting whenever a child state gains an
+alternative. Preserve the full reset while productions grow. Reopen only for a
+large grammar whose production set continues growing late, or a browser profile
+which isolates datatype reconstruction as a material epoch cost.
+
+An illustrative native end-to-end probe ran 100 complete four-epoch live
+checkpoints in 2.781 seconds (`user=1.878`, `sys=1.009`). This is not treated as a
+datatype benchmark: it includes process startup, parsing, grammar discovery, Z3,
+lifting, Rainfall, and file writes. An initial attempt to use `/usr/bin/time`
+failed because that path does not exist on this NixOS system; Bash `TIMEFORMAT`
+was used instead.
+
+The native install check now regenerates four Rainfall grammars, runs the profile,
+and compares it byte-for-byte with the committed JSON report.

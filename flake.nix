@@ -867,6 +867,19 @@
           assert terminal["data"]["proof_holes_checkpointed"] == 1
           PY
 
+          state_profile_directory="$(mktemp -d)"
+          for budget in 1 2 3 4; do
+            $out/bin/fine rain --checkpoint --proof-budget "$budget" \
+              "$src/fine/fixtures/identity-checkpoint.fine" \
+              > "$state_profile_directory/$budget.rain"
+          done
+          ${pkgs.python3}/bin/python "$src/fine/profile_proof_state_growth.py" \
+            "$state_profile_directory/1.rain" "$state_profile_directory/2.rain" \
+            "$state_profile_directory/3.rain" "$state_profile_directory/4.rain" \
+            > "$state_profile_directory/profile.json"
+          cmp "$src/fine/research/proof-state-growth-profile.json" \
+            "$state_profile_directory/profile.json"
+
           resumed_rain="$(mktemp)"
           $out/bin/fine rain --checkpoint --proof-budget 2 \
             "$src/fine/fixtures/identity-checkpoint-materialized.fine" > "$resumed_rain"
