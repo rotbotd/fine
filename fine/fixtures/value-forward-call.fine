@@ -1,0 +1,20 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function twice_copy(value: Nat) -> Nat {
+  copy(copy(value))
+}
+
+function copy(value: Nat) -> Nat {
+  match value {
+    zero => zero,
+    succ(previous) => succ(copy(previous)),
+  }
+}
+
+run value_forward_call {
+  let two: Nat = succ(succ(zero));
+  assert twice_copy(two) == two;
+}

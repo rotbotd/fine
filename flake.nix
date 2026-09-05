@@ -121,6 +121,7 @@
             "$src/fine/fixtures/playground-demo.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
             "$src/fine/fixtures/value-structural-recursion.fine" \
+            "$src/fine/fixtures/value-forward-call.fine" \
             "$src/fine/fixtures/proof-inductive-match.fine" \
             "$src/fine/fixtures/staged-proof-elimination.fine" \
             "$src/fine/fixtures/proof-inductive-holes.fine" \
@@ -228,6 +229,24 @@
           fi
           grep -F 'does not structurally descend from parameter `right`' \
             "$cross_parameter_value_recursion"
+
+          value_forward_output="$($out/bin/fine run \
+            "$src/fine/fixtures/value-forward-call.fine")"
+          echo "$value_forward_output"
+          grep -F "verified function: copy" <<<"$value_forward_output"
+          grep -F "verified function: twice_copy" <<<"$value_forward_output"
+          grep -F "verified assertion: value_forward_call.0" \
+            <<<"$value_forward_output"
+
+          mutual_value_recursion="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-mutual-value-recursion.fine" \
+              >"$mutual_value_recursion" 2>&1; then
+            echo "mutual value recursion unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'cyclic value-function dependency requires a checked recursive definition group' \
+            "$mutual_value_recursion"
 
           nonexhaustive_enum="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-nonexhaustive-enum-match.fine" \

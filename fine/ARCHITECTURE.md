@@ -73,13 +73,14 @@ function predecessor(value: Nat) -> Nat {
 ```
 
 Every value-function name and native sort is registered before bodies are
-checked. A checked body becomes one native Z3 function definition; calls build
-applications of that declaration and never elaborate the source body again.
+checked. A dependency plan puts acyclic callees before callers regardless of
+source order. A checked body becomes one native Z3 function definition; calls
+build applications of that declaration and never elaborate the source body again.
 Direct recursion is admitted only through a recursive enum field bound by a
 match on the corresponding parameter. At least one argument must descend, and
 every other changed argument must descend from its own parameter. This is a
-deliberately small termination checker: numeric measures, forward calls, and
-mutually recursive value groups are not yet accepted.
+deliberately small termination checker: numeric measures and mutually recursive
+value groups are not yet accepted.
 
 These datatypes do not blur the level boundary. `succ(zero)` is a `ValueTerm`.
 An `Id(Nat, left, right)` inhabitant remains `ProofEvidence`, and no enum match
@@ -384,9 +385,9 @@ document staging. `stage-analysis-probe` builds synthetic documents directly.
 The public elaborator now has an earlier, narrower recursion boundary: it
 predeclares every value-function identity, installs checked bodies as native Z3
 recursive definitions, and accepts direct structural self-calls. It still
-rejects calls to a later uninstalled definition and mutual recursion. The
-prototype deliberately contains general SCC transfers before the source rule
-that will check and install a whole recursive group exists.
+schedules acyclic forward dependencies before their callers, while rejecting
+mutual recursion. The prototype deliberately contains general SCC transfers
+before the source rule that will check and install a whole recursive group exists.
 
 Within that prototype, `value_flow.cpp` lowers value functions into an immutable
 graph before staging touches Z3. Every node has a resolved local, constructor, or
@@ -436,12 +437,14 @@ an invalid `z3::expr`.
 
 The first source slice now owns two of those pieces for direct recursion. A
 signature pass creates every function's native value sorts before any body.
-Ordinary calls construct that native application rather than substituting and
-re-elaborating the callee body. While checking one body, a self-call is accepted
+`value_definition_plan.cpp` discovers calls in bodies, guarantees, and coeffect
+indices, then schedules every acyclic dependency before its caller with source
+order as the stable tie-breaker. Ordinary calls construct the native application
+rather than substituting and re-elaborating the callee body. While checking one body, a self-call is accepted
 only when each changed argument is an exact recursive enum field obtained by
 matching its corresponding parameter, and at least one argument changes. This
 pointwise structural rule is well-founded and deliberately excludes integer
-measures, caller-supplied termination proofs, forward calls, and mutual SCCs.
+measures, caller-supplied termination proofs, and mutual SCCs.
 Rainfall retains signature declaration, each accepted descent edge, and native
 definition installation separately.
 
@@ -608,7 +611,8 @@ payloads, recursive self fields, construction, and exhaustive matching. Value
 function signatures are predeclared, and checked bodies become native Z3
 recursive definitions; calls never inline source bodies. A direct self-call must
 descend through an exact recursive enum field of the corresponding parameter.
-Later uninstalled definitions and mutual recursion remain unavailable.
+Acyclic forward calls are reordered behind their dependencies; mutual recursion
+remains unavailable.
 Functions may declare guarantees and lexical identity or indexed-family
 coeffects. Failed guarantees return typed, exact-roundtripped counterexamples;
 negative integer literals are accepted so every completed integer numeral has a

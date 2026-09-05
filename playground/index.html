@@ -60,6 +60,11 @@
                 <td><code>succ(previous) =&gt; succ(copy(previous)),</code></td>
               </tr>
               <tr>
+                <td>forward value call</td>
+                <td>Function signatures exist before bodies; acyclic dependencies are checked and installed before their callers regardless of source order. Cyclic groups remain rejected.</td>
+                <td><code>copy(copy(value))</code></td>
+              </tr>
+              <tr>
                 <td>identity evidence</td>
                 <td><code>refl(value)</code> is accepted only when both endpoints are the exact same value.</td>
                 <td><code>proof p: Id(Int, n, n) = refl(n);</code></td>

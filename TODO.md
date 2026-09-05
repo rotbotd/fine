@@ -45,15 +45,16 @@ callers synthesize or supply the evidence.
       and admit direct structural recursion, but the staging evaluator still
       blocks every recursive SCC. Close the connection in three named parts:
       - [x] Signature pass: register every value-function name and native value
-            sort before any body. A later function is visible as declared but is
-            not callable until its definition has been checked and installed.
+            sort before any body. The definition planner schedules acyclic
+            dependencies before their callers, so source order does not prohibit
+            an ordinary forward call.
       - [ ] Recursive definition rule: calls no longer elaborate a callee body;
             every checked function is one native `recfun`/`recdef`. Direct
             self-recursion is accepted only when every changed argument is an
             exact recursive enum field descended from its corresponding
-            parameter, with at least one strict change. Forward and mutually
-            recursive definition groups remain rejected until one SCC can be
-            checked and installed atomically. Keep induction/proof obligations
+            parameter, with at least one strict change. Mutually recursive
+            definition groups remain rejected until one SCC can be checked and
+            installed atomically. Keep induction/proof obligations
             separate from definitional unfolding: a symbolic nonnegativity fact
             still times out.
       - [ ] Staging permission: require Fine-owned structural termination

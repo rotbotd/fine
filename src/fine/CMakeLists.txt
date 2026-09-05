@@ -6,6 +6,7 @@ add_executable(fine-bin
   rainfall_lift.cpp
   runtime.cpp
   document_runner.cpp
+  value_definition_plan.cpp
   proof_engine_inductive.cpp
   proof_engine_search.cpp
   proof_engine_types.cpp

@@ -1,4 +1,5 @@
 #include "elaboration_internal.h"
+#include "value_definition_plan.h"
 
 // Document execution: declaration ordering, run scopes, local bindings, and
 // assertions. Value and proof semantics belong to their respective owners.
@@ -39,8 +40,8 @@ namespace fine::elaboration {
             proofs_.declare_proof_function(function);
         for (auto const &function : document.functions)
             values_.declare_function_signature(function);
-        for (auto const &function : document.functions)
-            values_.declare_function(function);
+        for (syntax::FunctionDecl const *function : value_definition_order(document.functions))
+            values_.declare_function(*function);
         if (document.run)
             execute_run(*document.run);
         result_.functions_verified = values_.functions_verified();

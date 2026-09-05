@@ -6444,6 +6444,60 @@ nix build --no-link --print-out-paths .#default .#playground-wasm \
   .#playground-wasm-pthreads .#playground
 ```
 
+## 2026-09-05 — acyclic forward value definitions
+
+Predeclaring native function identities removed source-body inlining but still
+made source order observable: a body could only call a definition already
+installed. `value_definition_plan.cpp` now owns a syntactic call graph over
+value-function bodies, guarantees, and value expressions inside coeffect proof
+types. It schedules every acyclic dependency before its caller, using original
+source position only as the deterministic tie-breaker between ready definitions.
+All native signatures are still declared first.
+
+`value-forward-call.fine` puts `twice_copy` before `copy`; the planner checks and
+installs the later structural recursive definition first, then verifies the
+caller and its ground assertion. This is a real forward call rather than source
+substitution: `twice_copy` retains two native applications of `copy`. Ordinary
+documents which already placed dependencies first preserve their order.
+
+The planner rejects a cyclic component before installing any body.
+`reject-mutual-value-recursion.fine` uses the structurally plausible `even`/`odd`
+pair so the control does not confuse a nondecreasing loop with the missing
+feature. Mutual recursion still needs a group-owned structural argument and
+atomic `recdef` installation; merely noticing that each cross-call receives a
+constructor field would not prove that every cycle descends. This slice therefore
+removes accidental source-order dependence without weakening the exact direct
+self-recursion gate.
+
+The first implementation put dependency traversal directly in
+`DocumentRunner`; it was moved immediately into `value_definition_plan.*` so
+document lifetime does not acquire graph ownership. The accepted-document plan
+remains separate from the cacheable staging graph: they share the fact that calls
+have exact names, not one mutable representation or a dependency on Z3 handles.
+
+Clean artifacts: native
+`/nix/store/d140xrmhxqbfqbfm1wzfiphrgd1hjlzz-fine-0.1.0`, ordinary Wasm
+`/nix/store/gvyk0mrzsdxwb1bqbc2pj8s5m3g3r0gh-fine-playground-wasm-0.1.0`,
+pthread Wasm
+`/nix/store/nhyzk0kykkq8k8xc4c6p4k3jnz6b1xxv-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/gsa1c976jq3xx77v50dfcm6qa6i81g8q-fine-playground-0.1.0`.
+
+Exact commands:
+
+```
+cmake --build .build -j4
+.build/fine run fine/fixtures/value-forward-call.fine
+.build/fine run fine/fixtures/reject-mutual-value-recursion.fine
+.build/fine rain fine/fixtures/value-forward-call.fine > /tmp/value-forward.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/value-forward-call.fine /tmp/value-forward.rain
+python3 fine/check_document_examples.py .
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
 All passed. Clean dirty-tree artifacts before the implementation commit:
 
 - native: `/nix/store/nm2bj8hy627i4rhwn68rbj711ymf45il-fine-0.1.0`
