@@ -6909,3 +6909,63 @@ implementation commit:
 - ordinary Wasm: `/nix/store/dp9hzhjxgzfsnskwcigzprw2skp46dx3-fine-playground-wasm-0.1.0`
 - pthread Wasm: `/nix/store/zxysk5xs5khxhvhwa98a12jxshw4f5wn-fine-playground-wasm-pthreads-0.1.0`
 - playground: `/nix/store/020f6i1dasj3y3knv5ip5rw4n4h5r6sn-fine-playground-0.1.0`
+
+## 2026-09-05 — source recursion/staging connection audit
+
+A read-only audit tested whether the cacheable SCC staging machinery already
+corresponds to source programs accepted by the public elaborator. It does not.
+Three temporary documents isolated the boundary:
+
+```
+enum Nat { zero, succ(Nat), }
+function recur(value: Nat) -> Nat { recur(value) }
+```
+
+fails at the self-call with `unknown function recur`. A function calling a later
+nonrecursive definition likewise fails with `unknown function after`, and the
+first half of a mutual pair fails with `unknown function right`. In contrast,
+`stage-analysis-probe` constructs a synthetic mutual pair and reports an SCC of
+size two, dependency summaries `11`/`11`, and
+`mutual-recursion-blocked: true`.
+
+The mismatch is exact. `ValueFlowBuilder` precollects every function signature
+before lowering any body, so it can form the complete call graph and SCCs.
+`DocumentRunner` asks `ValueElaborator` to verify declarations sequentially.
+`ValueElaborator::declare_function` inserts a function into `functions_` only
+after elaborating and verifying its body. `elaborate_call` accepts only an entry
+already in that map and then elaborates the callee body by substitution. Merely
+predeclaring the map entry would therefore replace the current direct rejection
+with compiler recursion on a self-call; it would not supply recursive function
+semantics.
+
+The architecture previously placed the value-flow account beside executable
+semantics without stating that it is a checked ownership prototype. It now says
+so directly. The current source boundary is previously verified calls only,
+with callee-body inlining; forward calls and all runtime recursion are absent.
+The TODO splits the connection into three owners rather than writing “add
+recursion” as one item:
+
+1. a signature pass, startable this week, which registers all typed call
+   identities without granting execution;
+2. a recursive definition rule which checks bodies and calls without recursively
+   invoking the elaborator, chosen against a concrete recursive enum function;
+3. a staging-permission step which uses Fine-owned structural termination
+   evidence or an explicit bound before evaluating an SCC transfer.
+
+No implementation was started because the first part alone would make the failure
+less honest. The audit's exit condition was a precise accepted-source boundary
+and a non-circular list of the three missing semantic owners; both are now in
+`ARCHITECTURE.md` and `TODO.md`.
+
+Exact commands:
+
+```
+.build/fine run /tmp/fine-direct-recursion.fine
+.build/fine run /tmp/fine-forward-call.fine
+.build/fine run /tmp/fine-mutual-recursion.fine
+.build/fine stage-analysis-probe
+rg -n 'functions_\.emplace|elaborate_value\(function.body|signatures_\.emplace|recursive_functions\.contains' \
+  src/fine/value_elaborator.cpp src/fine/value_flow.cpp src/fine/stage_transfer.cpp
+python3 fine/check_document_examples.py .
+git diff --check
+```

@@ -40,8 +40,18 @@ callers synthesize or supply the evidence.
       invalidate reverse callers. The current pure value language has no other
       effects yet; add effect rows only when source syntax can produce one.
 - [ ] Keep “stageable from these inputs” separate from “safe for the compiler to
-      execute now.” Recursive compile-time evaluation still requires Fine's
-      structural termination evidence or an explicit bounded policy.
+      execute now.” The current SCC/transfer analysis is exercised only by
+      `stage-analysis-probe`; accepted value functions are source-ordered,
+      body-inlined, and nonrecursive. Close the connection in three named parts:
+      - [ ] Signature pass (startable this week): register and type-check all
+            value-function signatures before any body, so forward and SCC call
+            identities exist without making them executable.
+      - [ ] Recursive definition rule: check bodies and calls without recursively
+            elaborating the callee body; choose the exact Z3 definition/contract
+            boundary from a discriminating recursive enum program.
+      - [ ] Staging permission: require Fine-owned structural termination
+            evidence or an explicit bound before replacing a blocked recursive
+            transfer with compile-time evaluation.
 - [x] Use constructor availability for the first staged proof-to-value match.
       The SMT context must leave one feasible constructor, and every value field
       used by the residual arm must be recovered from a runtime index. Ambiguous

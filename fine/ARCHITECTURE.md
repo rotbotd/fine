@@ -370,12 +370,19 @@ Implementations are in `value_elaborator.cpp`, `proof_engine_types.cpp`,
 
 ## Cacheable value-flow boundary
 
-`value_flow.cpp` lowers value functions into an immutable graph before staging
-touches Z3. Every node has a resolved local, constructor, or direct function
-identity and an ordinary Fine value type. Canonical semantic keys include the
-resolved operation tree and types while excluding source positions, trivia,
-local spelling, streams, Rainfall identities, pointers, and manager-local Z3
-handles.
+This boundary is currently a checked ownership prototype, not part of accepted
+document execution. `stage-analysis-probe` builds synthetic documents directly;
+the public elaborator still admits only previously verified value functions,
+inlines their bodies at calls, and rejects forward, direct-recursive, and mutual-
+recursive calls. The prototype deliberately contains SCCs before the source
+semantic rule that will license recursion exists.
+
+Within that prototype, `value_flow.cpp` lowers value functions into an immutable
+graph before staging touches Z3. Every node has a resolved local, constructor, or
+direct function identity and an ordinary Fine value type. Canonical semantic
+keys include the resolved operation tree and types while excluding source
+positions, trivia, local spelling, streams, Rainfall identities, pointers, and
+manager-local Z3 handles.
 
 The exact named-call graph is partitioned into strongly connected components.
 `stage_analysis.cpp` computes which parameters may affect a function's result;
@@ -415,6 +422,14 @@ recursive function: structural termination evidence or an explicit bound must
 be connected separately. The cache and every exact value remain Fine-owned, so
 a later session can replay a hit into a fresh Z3 manager rather than retaining
 an invalid `z3::expr`.
+
+Predeclaring all value-function names would not close this gap. The current call
+elaborator substitutes and elaborates the callee body, so a self-call would recurse
+inside the compiler. Source recursion needs three separately owned pieces: a
+signature prepass, a non-inlining semantic rule for checking recursive definition
+bodies and their calls, and a termination certificate that alone can authorize
+compile-time recursion. Only then can the existing SCC block become an execution
+permission rather than a synthetic test result.
 
 The current pure value expression language has no effectful primitive beyond
 the separately retained executable-edge set and recursive-call block. If Fine
@@ -556,8 +571,10 @@ make `counterexample` executable source.
 
 Runtime values include `Int`, `Bool`, and native Z3 enum datatypes with typed
 payloads, recursive self fields, construction, and exhaustive matching. Value
-functions are nonrecursive and may declare guarantees and lexical identity or
-indexed-family coeffects. Failed guarantees return typed, exact-roundtripped counterexamples;
+functions may call only previously verified value functions; calls inline the
+callee body during elaboration, so forward and recursive calls remain absent.
+Functions may declare guarantees and lexical identity or indexed-family
+coeffects. Failed guarantees return typed, exact-roundtripped counterexamples;
 negative integer literals are accepted so every completed integer numeral has a
 source form.
 
