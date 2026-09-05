@@ -4,6 +4,16 @@
 // source materialization. Stateful elaboration lives in the consumer files.
 namespace fine {
 
+    ValueRecursionCertificate::ValueRecursionCertificate(
+        std::vector<syntax::FunctionDecl const *> declarations, std::size_t call_graphs, std::size_t closure_graphs,
+        std::size_t idempotent_loops)
+        : declarations_(std::move(declarations)), call_graphs_(call_graphs), closure_graphs_(closure_graphs),
+          idempotent_loops_(idempotent_loops) {
+        functions_.reserve(declarations_.size());
+        for (auto const *declaration : declarations_)
+            functions_.push_back(declaration->name);
+    }
+
     SemanticError::SemanticError(syntax::SourceSpan span, std::string message)
         : std::runtime_error(std::move(message)), span_(span) {}
 

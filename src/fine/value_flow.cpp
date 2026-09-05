@@ -1,5 +1,7 @@
 #include "value_flow.h"
 
+#include "runtime.h"
+
 #include <algorithm>
 #include <functional>
 #include <sstream>
@@ -45,6 +47,42 @@ namespace fine::stage {
         };
 
     }  // namespace
+
+    bool CertifiedValueFlowProgram::recursion_certified(std::string const &function) const {
+        auto found = program_.function_sccs().find(function);
+        return found != program_.function_sccs().end() && certified_recursive_sccs_.contains(found->second);
+    }
+
+    CertifiedValueFlowProgram build_certified_value_flow(syntax::Document const &document,
+                                                          ExecutionResult const &execution) {
+        CertifiedValueFlowProgram result;
+        result.program_ = build_value_flow(document);
+        std::map<std::string, syntax::FunctionDecl const *> declarations;
+        for (auto const &function : document.functions)
+            declarations.emplace(function.name, &function);
+        for (auto const &certificate : execution.value_recursion_certificates) {
+            if (certificate.functions_.empty() ||
+                certificate.functions_.size() != certificate.declarations_.size())
+                throw std::logic_error("malformed value-recursion certificate");
+            std::optional<std::size_t> scc;
+            for (std::size_t i = 0; i < certificate.functions_.size(); ++i) {
+                auto declaration = declarations.find(certificate.functions_[i]);
+                auto flow_scc = result.program_.function_sccs().find(certificate.functions_[i]);
+                if (declaration == declarations.end() || declaration->second != certificate.declarations_[i] ||
+                    flow_scc == result.program_.function_sccs().end())
+                    throw std::logic_error("value-recursion certificate does not belong to this parsed document");
+                if (scc && *scc != flow_scc->second)
+                    throw std::logic_error("value-recursion certificate no longer names one source SCC");
+                scc = flow_scc->second;
+            }
+            std::vector<std::string> certified_names = certificate.functions_;
+            std::sort(certified_names.begin(), certified_names.end());
+            if (!scc || result.program_.sccs().at(*scc).functions != certified_names)
+                throw std::logic_error("value-recursion certificate and value-flow SCC disagree");
+            result.certified_recursive_sccs_.insert(*scc);
+        }
+        return result;
+    }
 
     class ValueFlowBuilder {
     public:

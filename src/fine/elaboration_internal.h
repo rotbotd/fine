@@ -467,7 +467,8 @@ namespace fine::elaboration {
                                   std::optional<ValueKind> expected = std::nullopt);
         bool match_constructor_index(syntax::ValueExpr const &pattern, z3::expr const &target,
                                      std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings);
-        void declare_function_group(std::vector<syntax::FunctionDecl const *> const &group);
+        std::optional<ValueRecursionCertificate>
+        declare_function_group(std::vector<syntax::FunctionDecl const *> const &group);
         void verify_function(syntax::FunctionDecl const &declaration);
 
     private:

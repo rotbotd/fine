@@ -340,7 +340,8 @@ namespace fine::elaboration {
         }
     }
 
-    void ValueElaborator::declare_function_group(std::vector<syntax::FunctionDecl const *> const &group) {
+    std::optional<ValueRecursionCertificate>
+    ValueElaborator::declare_function_group(std::vector<syntax::FunctionDecl const *> const &group) {
         active_recursive_group_.clear();
         active_size_change_calls_.clear();
         for (auto const *declaration : group) {
@@ -468,6 +469,10 @@ namespace fine::elaboration {
         }
         active_recursive_group_.clear();
         active_size_change_calls_.clear();
+        if (termination.call_graphs == 0)
+            return std::nullopt;
+        return ValueRecursionCertificate(group, termination.call_graphs, termination.closure_graphs,
+                                         termination.idempotent_loops);
     }
 
     void ValueElaborator::verify_function(syntax::FunctionDecl const &declaration) {

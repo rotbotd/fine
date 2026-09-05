@@ -12,6 +12,10 @@
 #include <tuple>
 #include <vector>
 
+namespace fine {
+    struct ExecutionResult;
+}
+
 namespace fine::stage {
 
     struct FlowType {
@@ -103,6 +107,29 @@ namespace fine::stage {
     };
 
     ValueFlowProgram build_value_flow(syntax::Document const &document);
+
+    // The detached flow graph is intentionally insufficient to authorize
+    // recursion. This wrapper marks only SCCs whose exact source declarations
+    // were accepted by the ordinary elaborator before native installation.
+    class CertifiedValueFlowProgram {
+    public:
+        ValueFlowProgram const &program() const noexcept {
+            return program_;
+        }
+        std::set<std::size_t> const &certified_recursive_sccs() const noexcept {
+            return certified_recursive_sccs_;
+        }
+        bool recursion_certified(std::string const &function) const;
+
+    private:
+        friend CertifiedValueFlowProgram build_certified_value_flow(syntax::Document const &document,
+                                                                    ExecutionResult const &execution);
+        ValueFlowProgram program_;
+        std::set<std::size_t> certified_recursive_sccs_;
+    };
+
+    CertifiedValueFlowProgram build_certified_value_flow(syntax::Document const &document,
+                                                          ExecutionResult const &execution);
 
     struct StageExactValue {
         enum class Kind { integer, boolean, constructor };

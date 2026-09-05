@@ -42,7 +42,8 @@ namespace fine::elaboration {
             values_.declare_function_signature(function);
         auto definition_groups = value_definition_groups(document.functions);
         for (auto const &group : definition_groups)
-            values_.declare_function_group(group);
+            if (auto certificate = values_.declare_function_group(group))
+                result_.value_recursion_certificates.push_back(std::move(*certificate));
         for (auto const &function : document.functions)
             values_.verify_function(function);
         if (document.run)

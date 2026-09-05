@@ -13,6 +13,15 @@
 namespace fine {
 
     class LiveLiftPipeline;
+    struct ExecutionResult;
+    namespace elaboration {
+        class ValueElaborator;
+    }
+    namespace stage {
+        class CertifiedValueFlowProgram;
+        CertifiedValueFlowProgram build_certified_value_flow(syntax::Document const &document,
+                                                              ExecutionResult const &execution);
+    }
 
     class SemanticError : public std::runtime_error {
     public:
@@ -32,8 +41,47 @@ namespace fine {
         std::string text;
     };
 
+    // Evidence that one exact source SCC passed Fine's size-change check before
+    // any member was installed as a native recursive definition. Construction
+    // is private: staging may consume this result, but it cannot manufacture
+    // termination permission from a detached call graph.
+    class ValueRecursionCertificate {
+    public:
+        std::vector<std::string> const &functions() const noexcept {
+            return functions_;
+        }
+        std::size_t call_graphs() const noexcept {
+            return call_graphs_;
+        }
+        std::size_t closure_graphs() const noexcept {
+            return closure_graphs_;
+        }
+        std::size_t idempotent_loops() const noexcept {
+            return idempotent_loops_;
+        }
+
+    private:
+        friend class elaboration::ValueElaborator;
+        friend stage::CertifiedValueFlowProgram
+        stage::build_certified_value_flow(syntax::Document const &, ExecutionResult const &);
+
+        ValueRecursionCertificate(std::vector<syntax::FunctionDecl const *> declarations, std::size_t call_graphs,
+                                  std::size_t closure_graphs, std::size_t idempotent_loops);
+
+        // These identities are never dereferenced by staging. They make a
+        // certificate valid only for the parsed declarations which were
+        // actually elaborated, rather than another document with the same
+        // spellings.
+        std::vector<syntax::FunctionDecl const *> declarations_;
+        std::vector<std::string> functions_;
+        std::size_t call_graphs_ = 0;
+        std::size_t closure_graphs_ = 0;
+        std::size_t idempotent_loops_ = 0;
+    };
+
     struct ExecutionResult {
         std::vector<Materialization> materializations;
+        std::vector<ValueRecursionCertificate> value_recursion_certificates;
         std::size_t functions_verified = 0;
         std::size_t proof_functions_verified = 0;
         std::size_t proofs_formed = 0;

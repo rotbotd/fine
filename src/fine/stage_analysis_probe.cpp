@@ -1,11 +1,13 @@
 #include "stage_analysis_probe.h"
 
 #include "parser.h"
+#include "runtime.h"
 #include "value_flow.h"
 
 #include <algorithm>
 #include <map>
 #include <ostream>
+#include <sstream>
 #include <string_view>
 
 namespace fine::stage {
@@ -241,21 +243,48 @@ function eliminate_never_as_argument() -> Bool
             evaluate_stage_transfer(staged_proof_analysis.functions.at("eliminate_never_as_argument").transfer, {});
         output << "impossible-proof-argument-result: " << render_stage_value(impossible_argument.result) << '\n';
 
-        ValueFlowProgram mutual = parse(R"fine(
-enum Flag { off, on }
-function left(flag: Flag, value: Bool) -> Bool {
-  match flag { off => value, on => right(off, value), }
+        constexpr std::string_view mutual_source = R"fine(
+enum Nat { zero, succ(Nat) }
+function even(value: Nat) -> Bool {
+  match value { zero => true, succ(previous) => odd(previous), }
 }
-function right(flag: Flag, value: Bool) -> Bool { left(flag, value) }
-)fine");
+function odd(value: Nat) -> Bool {
+  match value { zero => false, succ(previous) => even(previous), }
+}
+)fine";
+        syntax::ConcreteSyntaxTree mutual_tree = syntax::parse_tree(mutual_source);
+        std::ostringstream checked_output;
+        ExecutionResult mutual_execution = execute(mutual_tree.ast, checked_output);
+        CertifiedValueFlowProgram certified_mutual =
+            build_certified_value_flow(mutual_tree.ast, mutual_execution);
+        ValueFlowProgram const &mutual = certified_mutual.program();
         StageAnalysisResult mutual_result = cache.analyze(mutual);
-        std::size_t left_scc = mutual.function_sccs().at("left");
-        output << "mutual-scc-size: " << mutual.sccs()[left_scc].functions.size() << '\n';
-        output << "mutual-left-dependencies: " << bits(mutual_result.functions.at("left").result_parameters) << '\n';
-        output << "mutual-right-dependencies: " << bits(mutual_result.functions.at("right").result_parameters) << '\n';
+        std::size_t even_scc = mutual.function_sccs().at("even");
+        output << "mutual-scc-size: " << mutual.sccs()[even_scc].functions.size() << '\n';
+        output << "mutual-recursion-certificates: " << mutual_execution.value_recursion_certificates.size() << '\n';
+        output << "mutual-certificate-closure: "
+               << mutual_execution.value_recursion_certificates.front().call_graphs() << '/'
+               << mutual_execution.value_recursion_certificates.front().closure_graphs() << '/'
+               << mutual_execution.value_recursion_certificates.front().idempotent_loops() << '\n';
+        output << "mutual-recursion-certified: "
+               << (certified_mutual.recursion_certified("even") && certified_mutual.recursion_certified("odd")
+                       ? "true"
+                       : "false")
+               << '\n';
+        bool copied_source_rejected = false;
+        try {
+            syntax::ConcreteSyntaxTree copied_tree = syntax::parse_tree(mutual_source);
+            (void)build_certified_value_flow(copied_tree.ast, mutual_execution);
+        }
+        catch (std::logic_error const &) {
+            copied_source_rejected = true;
+        }
+        output << "copied-source-certificate-rejected: " << (copied_source_rejected ? "true" : "false") << '\n';
+        output << "mutual-even-dependencies: " << bits(mutual_result.functions.at("even").result_parameters) << '\n';
+        output << "mutual-odd-dependencies: " << bits(mutual_result.functions.at("odd").result_parameters) << '\n';
         StageEvaluation mutual_stage = evaluate_stage_transfer(
-            mutual_result.functions.at("left").transfer, {stage_runtime({syntax::ValueType::Kind::enumeration, "Flag"}),
-                                                          stage_runtime({syntax::ValueType::Kind::boolean, {}})});
+            mutual_result.functions.at("even").transfer,
+            {stage_runtime({syntax::ValueType::Kind::enumeration, "Nat"})});
         output << "mutual-recursion-blocked: " << (mutual_stage.recursive_call_blocked ? "true" : "false") << '\n';
         return 0;
     }
