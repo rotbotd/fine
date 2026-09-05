@@ -1,0 +1,17 @@
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive IdentityGuarded(value: Flag) {
+  identity_guarded(candidate: Flag)
+    takes [is_off: Id(Flag, candidate, off)]
+    -> IdentityGuarded(candidate);
+}
+
+function dishonest_guarded_empty_match() -> Bool
+  takes [reachable: IdentityGuarded(off)]
+{
+  match reachable {
+  }
+}

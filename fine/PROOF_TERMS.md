@@ -306,8 +306,10 @@ erased and cannot enter the value expression.
 
 An indexed coeffect also contributes the disjunction of its possible outer
 constructor heads to the lexical SMT context, existentially hiding constructor
-value parameters. This is only a necessary condition: recursive proof fields are
-not treated as automatically inhabited. When that head cover is inconsistent,
+value parameters. Identity-shaped explicit constructor arguments and `takes`
+demands constrain each head with their endpoint equality. This is only a
+necessary condition: indexed recursive proof fields are not treated as
+automatically inhabited. When that head cover is inconsistent,
 zero arms eliminate the impossible evidence into the expected value type. The
 stage transfer records the result as bottom, not as an arbitrary runtime value.
 Zero arms against a reachable constructor are rejected.

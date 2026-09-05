@@ -243,6 +243,7 @@
           grep -F "verified function: eliminate_never" <<<"$staged_output"
           grep -F "verified function: eliminate_unreachable_index" <<<"$staged_output"
           grep -F "verified function: eliminate_never_as_argument" <<<"$staged_output"
+          grep -F "verified function: eliminate_failed_constructor_demand" <<<"$staged_output"
           grep -F "resolved coeffect: recover.evidence <- tagged_on (lexical search)" <<<"$staged_output"
           grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$staged_output"
           staged_materialized="$(mktemp)"
@@ -284,6 +285,15 @@
           fi
           grep -F 'must contain exactly its uniquely reachable arm `only_off`' \
             "$reachable_empty_match"
+
+          reachable_identity_guard="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-empty-reachable-identity-guard.fine" \
+              >"$reachable_identity_guard" 2>&1; then
+            echo "reachable identity-guarded constructor was discharged by an empty proof match" >&2
+            exit 1
+          fi
+          grep -F 'must contain exactly its uniquely reachable arm `identity_guarded`' \
+            "$reachable_identity_guard"
 
           induction_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-induction.fine")"
           echo "$induction_output"

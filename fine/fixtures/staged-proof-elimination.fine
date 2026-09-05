@@ -19,6 +19,12 @@ proof inductive OnlyOff(value: Flag) {
   only_off() -> OnlyOff(off);
 }
 
+proof inductive IdentityGuarded(value: Flag) {
+  identity_guarded(candidate: Flag)
+    takes [is_off: Id(Flag, candidate, off)]
+    -> IdentityGuarded(candidate);
+}
+
 function recover(value: Flag) -> Flag
   takes [evidence: Tagged(value)]
   ensures {
@@ -73,6 +79,17 @@ function eliminate_never_as_argument() -> Bool
 {
   keep_bool(match impossible {
   })
+}
+
+function eliminate_failed_constructor_demand() -> Bool
+  takes [impossible: IdentityGuarded(on)]
+  ensures {
+    result == true;
+    result == false;
+  }
+{
+  match impossible {
+  }
 }
 
 run staged_proof_elimination {

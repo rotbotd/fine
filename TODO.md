@@ -50,6 +50,10 @@ callers synthesize or supply the evidence.
       zero arms. Indexed evidence contributes a necessary existential
       constructor-head cover; the empty branch checks the resulting context is
       unsatisfiable and lowers to staging bottom.
+- [x] Include identity-shaped constructor arguments and `takes` demands in
+      staged reachability and the existential head cover. A result-compatible
+      constructor whose own identity demand is contradictory is unreachable;
+      indexed recursive premises remain deliberately omitted.
 
 Transfer exit test: one dead runtime branch preserves a compile-time value, one
 live join of distinct constants becomes runtime, a mutually recursive

@@ -24,6 +24,26 @@ namespace fine::elaboration {
         }
     }  // namespace
 
+    std::vector<z3::expr> ProofEngine::constructor_identity_constraints(syntax::ProofConstructorDecl const &constructor,
+                                                                        ValueEnvironment const &constructor_values) {
+        std::vector<z3::expr> constraints;
+        ProofEnvironment no_proofs;
+        std::vector<std::string> no_proof_order;
+        std::vector<z3::expr> no_absorbed;
+        auto collect = [&](syntax::CoeffectParameter const &parameter) {
+            if (parameter.type.kind != syntax::ProofType::Kind::identity)
+                return;
+            IdentityType identity =
+                elaborate_identity(parameter.type, constructor_values, no_proofs, no_proof_order, no_absorbed);
+            constraints.push_back(identity.left == identity.right);
+        };
+        for (auto const &parameter : constructor.explicit_proof_parameters)
+            collect(parameter);
+        for (auto const &parameter : constructor.proof_parameters)
+            collect(parameter);
+        return constraints;
+    }
+
     std::vector<ProofCandidate>
     ProofEngine::enumerate_inductive_proof_candidates(syntax::ProofType const &expected_syntax,
                                                       InductiveType const &expected, ProofEnvironment const &proofs,
@@ -471,6 +491,8 @@ namespace fine::elaboration {
                 solver.add(assumption);
             for (std::size_t i = 0; i < scrutinee->indices.size(); ++i)
                 solver.add(result_indices->indices[i].expression == scrutinee->indices[i].expression);
+            for (auto const &constraint : constructor_identity_constraints(constructor, constructor_values))
+                solver.add(constraint);
             z3::check_result status = solver.check();
             if (status == z3::unknown)
                 reject(expression.span,
@@ -859,6 +881,8 @@ namespace fine::elaboration {
             z3::expr head = values_.context().bool_val(true);
             for (std::size_t i = 0; i < type.indices.size(); ++i)
                 head = head && result_type->indices[i].expression == type.indices[i].expression;
+            for (auto const &constraint : constructor_identity_constraints(constructor, constructor_values))
+                head = head && constraint;
             if (!witnesses.empty())
                 head = z3::exists(witnesses, head);
             cover = cover || head;

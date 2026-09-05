@@ -539,6 +539,8 @@ namespace fine::elaboration {
         std::size_t coeffects_resolved_ = 0;
 
         z3::expr inductive_head_cover(InductiveType const &type, std::string const &evidence_name);
+        std::vector<z3::expr> constructor_identity_constraints(syntax::ProofConstructorDecl const &constructor,
+                                                               ValueEnvironment const &constructor_values);
 
         syntax::ValueExpr proof_syntax_as_value(syntax::ProofExpr const &expression);
         syntax::ValueExpr positional_value_argument(syntax::ProofExpr const &expression, std::size_t position);

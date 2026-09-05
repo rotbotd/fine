@@ -469,9 +469,13 @@ data; constructor storage is never manufactured.
 Zero reachable constructors are the other closed result. Absorbing indexed
 evidence contributes a necessary outer-constructor head cover to the lexical
 SMT context. The cover existentially hides constructor value parameters and
-deliberately ignores recursive proof premises, so it is a sound overapproximation
-rather than a fabricated decision procedure for inhabitation. For `Never()` the
-cover is false; for `OnlyOff(on)` it reduces to `off == on`. In either case an
+includes identity-shaped explicit proof parameters and `takes` demands as
+equalities. It deliberately ignores indexed proof premises, so it is a sound
+overapproximation rather than a fabricated decision procedure for inhabitation.
+For `Never()` the cover is false; for `OnlyOff(on)` it reduces to `off == on`.
+For `IdentityGuarded(on)`, the result head fixes the constructor's candidate to
+`on` while its coeffect demands `Id(Flag, candidate, off)`, so the head is
+likewise false. In each case an
 empty value match receives its result kind from the enclosing function, checks
 that the evidence context is unsatisfiable, and residualizes to staging bottom:
 
@@ -484,10 +488,11 @@ function eliminate_never() -> Bool
 }
 ```
 
-An empty match on `OnlyOff(off)` is rejected because `only_off` is reachable.
+Empty matches on `OnlyOff(off)` and `IdentityGuarded(off)` are rejected because
+their constructors are reachable.
 The head cover cannot make an impossible recursive premise look inhabited; by
-omitting proof premises it can only refuse some valid empty eliminations until a
-stronger source-owned analysis exists.
+omitting indexed proof premises it can only refuse some valid empty eliminations
+until a stronger source-owned analysis exists.
 
 ## Rainfall boundary
 

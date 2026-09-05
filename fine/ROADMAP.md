@@ -179,7 +179,8 @@ context proves exactly one constructor feasible and every constructor value used
 by the residual arm is already recoverable from a runtime index. Fine removes
 the match while compiling. Ambiguous constructors and proof-only hidden fields
 still fail before runtime lowering. If an indexed evidence head has no feasible
-constructor, zero arms discharge the enclosing expected value type and the stage
+constructor after its result indices and identity-shaped constructor demands are
+combined, zero arms discharge the enclosing expected value type and the stage
 transfer becomes bottom; an empty match against a reachable constructor fails.
 
 Exit conditions:

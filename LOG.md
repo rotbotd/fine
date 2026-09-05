@@ -6718,3 +6718,79 @@ commit:
 - ordinary Wasm: `/nix/store/05rq84jga8582n1l9q3w7ylm4zxfpdcx-fine-playground-wasm-0.1.0`
 - pthread Wasm: `/nix/store/55lki0ndb4npmn7f0mqj1k98lx2wgybn-fine-playground-wasm-pthreads-0.1.0`
 - playground: `/nix/store/ikh6l45i3sgzr1gq85yjz121ci540sq1-fine-playground-0.1.0`
+
+## 2026-09-05 — constructor identity demands constrain staged reachability
+
+The outer-constructor head cover initially looked only at the constructor result
+indices. That was too weak for a constructor whose result matches an evidence
+index but whose own identity premise contradicts that match. The discriminating
+family is:
+
+```fine
+proof inductive IdentityGuarded(value: Flag) {
+  identity_guarded(candidate: Flag)
+    takes [is_off: Id(Flag, candidate, off)]
+    -> IdentityGuarded(candidate);
+}
+```
+
+For evidence `IdentityGuarded(on)`, result matching fixes `candidate == on`, while
+the constructor demand contributes `candidate == off`. The constructor is
+therefore unreachable even though its result head alone matches. For
+`IdentityGuarded(off)`, the same constructor remains reachable.
+
+`ProofEngine::constructor_identity_constraints` now elaborates every
+identity-shaped explicit constructor proof parameter and every identity-shaped
+constructor `takes` parameter over the constructor's value environment. The
+resulting endpoint equalities enter both places that answer constructor
+reachability: the per-constructor solver used by value-level staged proof matches,
+and the existentially closed head disjunct absorbed when indexed evidence enters
+the lexical context. Indexed proof-family premises remain deliberately omitted.
+The cover is still a necessary overapproximation of inhabitation: Fine can use a
+contradictory identity premise to remove a constructor, but it does not pretend a
+recursive indexed premise is inhabited.
+
+`staged-proof-elimination.fine` now includes
+`eliminate_failed_constructor_demand()`, whose zero-arm match at
+`IdentityGuarded(on)` supports contradictory result guarantees only because the
+constructor's `Id(..., candidate, off)` demand makes the context impossible. The
+new control `reject-empty-reachable-identity-guard.fine` uses
+`IdentityGuarded(off)` and must demand the `identity_guarded` arm. This pair
+prevents both failure modes: forgetting the identity premise, and treating every
+identity-guarded constructor as impossible.
+
+The architecture, proof-term design, roadmap, TODO boundary, and browser
+reference now say that identity-shaped constructor parameters constrain staged
+reachability while indexed premises do not. The flake check requires the new
+positive function and the exact reachable-control diagnostic.
+
+Validation commands:
+
+```
+clang-format -i src/fine/elaboration_internal.h src/fine/proof_engine_inductive.cpp
+cmake --build .build -j4
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine stage-analysis-probe
+.build/fine run fine/fixtures/identity-coeffect.fine
+.build/fine run --proof-selector z3 fine/fixtures/playground-demo.fine
+.build/fine rain fine/fixtures/staged-proof-elimination.fine
+python3 fine/rainfall_replay.py <staged-rainfall-output>
+.build/fine rain fine/fixtures/proof-inductive-match.fine
+python3 fine/rainfall_replay.py <proof-match-rainfall-output>
+python3 fine/check_document_examples.py .
+.build/fine run fine/fixtures/reject-empty-reachable-proof-elimination.fine
+.build/fine run fine/fixtures/reject-empty-reachable-identity-guard.fine
+git diff --check
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All positive checks passed. Both reachable-constructor controls failed at the
+empty match with their exact required arm. Clean dirty-tree artifacts before the
+implementation commit:
+
+- native: `/nix/store/jq7mqcg4h3n5q851b1s53r99q5wqzdah-fine-0.1.0`
+- ordinary Wasm: `/nix/store/lw1h9qq0d6z8jgli3ji76x3h9l9cjhvr-fine-playground-wasm-0.1.0`
+- pthread Wasm: `/nix/store/5mac4rgsia1lyfyig3fi46va2fszdsmy-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/z6y0c0zv6yf2j3bzs2a3ybxq7f6ajrvq-fine-playground-0.1.0`
