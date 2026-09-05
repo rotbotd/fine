@@ -6863,3 +6863,49 @@ Clean dirty-tree artifacts before the implementation commit:
 - ordinary Wasm: `/nix/store/dp9hzhjxgzfsnskwcigzprw2skp46dx3-fine-playground-wasm-0.1.0`
 - pthread Wasm: `/nix/store/zxysk5xs5khxhvhwa98a12jxshw4f5wn-fine-playground-wasm-pthreads-0.1.0`
 - playground: `/nix/store/020f6i1dasj3y3knv5ip5rw4n4h5r6sn-fine-playground-0.1.0`
+
+## 2026-09-05 — hidden constructor witnesses remain existential
+
+The constructor-identity implementation had been tested only where the
+constructor value also appeared in the family result. In those cases result
+matching fixed the value before its identity demand was checked. That did not
+exercise the quantifier placement promised by the head cover for a constructor
+parameter absent from every result index.
+
+`HiddenIdentityConflict()` now has one constructor carrying a hidden `Flag`
+candidate and two `takes` demands: `candidate == off` and `candidate == on`.
+Neither equality comes from the zero-arity family result. The constructor
+feasibility trace retains the unsimplified conjunction over its fresh candidate,
+reports two identity constraints, and returns `unsat`. The absorbed head cover
+existentially closes that candidate and simplifies to false, so a zero-arm value
+match verifies contradictory guarantees without manufacturing a runtime value.
+
+The inverse control `HiddenIdentityWitness()` has the same hidden candidate but
+only `candidate == off`. Its existential witness is `off`, so the constructor is
+reachable and an empty match must request the exact `hidden_identity_witness`
+arm. This distinguishes existential choice from both accidental universal
+quantification and an unconstrained free constant. The architecture, proof-term
+design, and TODO now name that boundary explicitly.
+
+Validation commands:
+
+```
+cmake --build .build -j4
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine rain fine/fixtures/staged-proof-elimination.fine
+python3 fine/rainfall_replay.py fine/fixtures/staged-proof-elimination.fine <rainfall>
+.build/fine run fine/fixtures/reject-empty-reachable-hidden-identity-witness.fine
+git diff --check
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+The positive fixture and replay passed. The one-demand control failed at the
+empty match with the exact reachable arm. Clean dirty-tree artifacts before the
+implementation commit:
+
+- native: `/nix/store/lp7p6mp23b93a0r53b2f69krikdg5a0m-fine-0.1.0`
+- ordinary Wasm: `/nix/store/dp9hzhjxgzfsnskwcigzprw2skp46dx3-fine-playground-wasm-0.1.0`
+- pthread Wasm: `/nix/store/zxysk5xs5khxhvhwa98a12jxshw4f5wn-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/020f6i1dasj3y3knv5ip5rw4n4h5r6sn-fine-playground-0.1.0`

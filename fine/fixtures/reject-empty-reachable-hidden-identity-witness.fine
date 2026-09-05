@@ -1,0 +1,17 @@
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive HiddenIdentityWitness() {
+  hidden_identity_witness(candidate: Flag)
+    takes [is_off: Id(Flag, candidate, off)]
+    -> HiddenIdentityWitness();
+}
+
+function dishonest_hidden_identity_empty_match() -> Bool
+  takes [reachable: HiddenIdentityWitness()]
+{
+  match reachable {
+  }
+}

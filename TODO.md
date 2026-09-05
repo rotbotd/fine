@@ -57,6 +57,9 @@ callers synthesize or supply the evidence.
 - [x] Retain every staged constructor feasibility query in Rainfall as an exact
       result-index/identity-premise term and solver status. Replay closes the
       complete constructor set against the selected or impossible value match.
+- [x] Keep constructor parameters absent from the family result existential in
+      the head cover. One identity demand may choose a hidden witness; two
+      contradictory demands make that constructor impossible.
 
 Transfer exit test: one dead runtime branch preserves a compile-time value, one
 live join of distinct constants becomes runtime, a mutually recursive

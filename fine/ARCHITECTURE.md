@@ -475,7 +475,9 @@ overapproximation rather than a fabricated decision procedure for inhabitation.
 For `Never()` the cover is false; for `OnlyOff(on)` it reduces to `off == on`.
 For `IdentityGuarded(on)`, the result head fixes the constructor's candidate to
 `on` while its coeffect demands `Id(Flag, candidate, off)`, so the head is
-likewise false. In each case an
+likewise false. A candidate absent from the result remains genuinely existential:
+one demand fixing it to `off` is satisfiable, while simultaneous `off` and `on`
+demands make the constructor impossible. In each impossible case an
 empty value match receives its result kind from the enclosing function, checks
 that the evidence context is unsatisfiable, and residualizes to staging bottom:
 
@@ -488,8 +490,8 @@ function eliminate_never() -> Bool
 }
 ```
 
-Empty matches on `OnlyOff(off)` and `IdentityGuarded(off)` are rejected because
-their constructors are reachable.
+Empty matches on `OnlyOff(off)`, `IdentityGuarded(off)`, and the one-demand hidden
+witness are rejected because their constructors are reachable.
 The head cover cannot make an impossible recursive premise look inhabited; by
 omitting indexed proof premises it can only refuse some valid empty eliminations
 until a stronger source-owned analysis exists.

@@ -245,6 +245,7 @@
           grep -F "verified function: eliminate_never_as_argument" <<<"$staged_output"
           grep -F "verified function: eliminate_failed_constructor_demand" <<<"$staged_output"
           grep -F "verified function: eliminate_failed_explicit_constructor_child" <<<"$staged_output"
+          grep -F "verified function: eliminate_conflicting_hidden_witness" <<<"$staged_output"
           grep -F "resolved coeffect: recover.evidence <- tagged_on (lexical search)" <<<"$staged_output"
           grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$staged_output"
           staged_materialized="$(mktemp)"
@@ -278,6 +279,11 @@
           assert all("fine.enum.Flag.on" in terms[check["condition"]]["z3_text_diagnostic"] and
                      "fine.enum.Flag.off" in terms[check["condition"]]["z3_text_diagnostic"]
                      for check in guarded)
+          hidden = next(check for check in checks if check["family"] == "HiddenIdentityConflict")
+          hidden_text = terms[hidden["condition"]]["z3_text_diagnostic"]
+          assert hidden["identity_constraints"] == 2 and hidden["status"] == "unsat"
+          assert "candidate" in hidden_text and "fine.enum.Flag.off" in hidden_text
+          assert "fine.enum.Flag.on" in hidden_text
           PY
 
           staged_mutated="$(mktemp)"
@@ -341,6 +347,15 @@
           fi
           grep -F 'must contain exactly its uniquely reachable arm `explicit_identity_guarded`' \
             "$reachable_explicit_identity_guard"
+
+          reachable_hidden_identity="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-empty-reachable-hidden-identity-witness.fine" \
+              >"$reachable_hidden_identity" 2>&1; then
+            echo "satisfiable hidden identity witness was discharged by an empty proof match" >&2
+            exit 1
+          fi
+          grep -F 'must contain exactly its uniquely reachable arm `hidden_identity_witness`' \
+            "$reachable_hidden_identity"
 
           induction_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-induction.fine")"
           echo "$induction_output"

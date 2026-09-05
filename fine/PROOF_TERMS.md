@@ -314,6 +314,12 @@ zero arms eliminate the impossible evidence into the expected value type. The
 stage transfer records the result as bottom, not as an arbitrary runtime value.
 Zero arms against a reachable constructor are rejected.
 
+Constructor values absent from the result are existential witnesses, not free
+constants. A hidden `candidate` constrained only by `candidate == off` leaves its
+constructor reachable; adding `candidate == on` to the same constructor makes
+the existential head inconsistent. The paired fixtures fix this quantifier
+placement independently of result-index matching.
+
 Rainfall retains every constructor's exact feasibility condition before closing
 the staged match. Replay requires one observation per declared constructor and
 derives the feasible count and selected name from those statuses; a summary event

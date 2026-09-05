@@ -30,6 +30,12 @@ proof inductive ExplicitIdentityGuarded(value: Flag) {
     -> ExplicitIdentityGuarded(candidate);
 }
 
+proof inductive HiddenIdentityConflict() {
+  hidden_identity_conflict(candidate: Flag)
+    takes [is_off: Id(Flag, candidate, off), is_on: Id(Flag, candidate, on)]
+    -> HiddenIdentityConflict();
+}
+
 function recover(value: Flag) -> Flag
   takes [evidence: Tagged(value)]
   ensures {
@@ -99,6 +105,17 @@ function eliminate_failed_constructor_demand() -> Bool
 
 function eliminate_failed_explicit_constructor_child() -> Bool
   takes [impossible: ExplicitIdentityGuarded(on)]
+  ensures {
+    result == true;
+    result == false;
+  }
+{
+  match impossible {
+  }
+}
+
+function eliminate_conflicting_hidden_witness() -> Bool
+  takes [impossible: HiddenIdentityConflict()]
   ensures {
     result == true;
     result == false;
