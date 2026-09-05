@@ -2,6 +2,11 @@
   "schema": "fine.value-recursion-z3-probe.v1",
   "z3_source": "the Fine repository's bundled Z3 fork",
   "solver_timeout_ms": 1000,
+  "upstream_comparison": {
+    "commit": "6b3eb242b822fcb58adf4293f0564b1391db7a6e",
+    "built_from": "upstream/master in an isolated worktree",
+    "same_observations": true
+  },
   "observations": {
     "structural_ground_counterexample": "unsat",
     "structural_symbolic_nonnegative": "unknown (timeout)",

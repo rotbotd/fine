@@ -442,6 +442,8 @@ the solver's one-second timeout never applies. Native recursive definitions are
 a representation, not a termination checker or induction engine. Fine must admit
 them for evaluation only after its own termination or explicit-bound check, and
 long-running evaluation still needs cancellation outside a solver timeout.
+An isolated build of upstream Z3 at `6b3eb242b` reproduces the same last marker
+and external timeout; the hang is not introduced by Fine's fork.
 
 The current pure value expression language has no effectful primitive beyond
 the separately retained executable-edge set and recursive-call block. If Fine

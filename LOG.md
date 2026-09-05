@@ -7021,3 +7021,35 @@ timeout 5s /root/.cache/lynn/z3-recfun-probe \
   --unsafe-nonterminating-query
 # external status 124; last marker: nonterminating-term-built
 ```
+
+After the initial result, upstream `master` was fetched and built independently
+at `6b3eb242b822fcb58adf4293f0564b1391db7a6e`. The same source was compiled
+against that worktree's static `libz3.a`. All four safe observations were
+identical, and the unsafe run again exited through the external five-second
+timeout with `nonterminating-term-built` as its last marker. Fine's branch was
+not merged merely to obtain this comparison: the failure is present in current
+upstream rather than in the fork's observer changes.
+
+Additional commands:
+
+```
+git fetch upstream master
+git worktree add --detach /root/projects/z3-upstream-probe upstream/master
+cmake -S /root/projects/z3-upstream-probe \
+  -B /root/projects/z3-upstream-probe/.build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DZ3_BUILD_LIBZ3_SHARED=OFF \
+  -DZ3_BUILD_EXECUTABLE=OFF -DZ3_BUILD_TEST_EXECUTABLES=OFF \
+  -DZ3_BUILD_PYTHON_BINDINGS=OFF -DZ3_BUILD_DOTNET_BINDINGS=OFF \
+  -DZ3_BUILD_JAVA_BINDINGS=OFF
+ninja -C /root/projects/z3-upstream-probe/.build -j4 libz3
+TMPDIR=/root/.cache/lynn/link-tmp c++ -std=c++20 -O1 \
+  -I /root/projects/z3-upstream-probe/src \
+  -I /root/projects/z3-upstream-probe/src/api \
+  -I /root/projects/z3-upstream-probe/.build/src \
+  fine/research/value-recursion-z3-probe.cpp \
+  /root/projects/z3-upstream-probe/.build/libz3.a -pthread \
+  -o /root/.cache/lynn/z3-upstream-recfun-probe
+timeout 5s /root/.cache/lynn/z3-upstream-recfun-probe \
+  --unsafe-nonterminating-query
+# external status 124; last marker: nonterminating-term-built
+```
