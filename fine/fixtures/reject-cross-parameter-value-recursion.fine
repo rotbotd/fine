@@ -1,0 +1,11 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function steal(left: Nat, right: Nat) -> Nat {
+  match left {
+    zero => right,
+    succ(previous) => steal(previous, previous),
+  }
+}

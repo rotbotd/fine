@@ -38,6 +38,8 @@ namespace fine::elaboration {
         for (auto const &function : document.proof_functions)
             proofs_.declare_proof_function(function);
         for (auto const &function : document.functions)
+            values_.declare_function_signature(function);
+        for (auto const &function : document.functions)
             values_.declare_function(function);
         if (document.run)
             execute_run(*document.run);

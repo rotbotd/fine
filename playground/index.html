@@ -51,8 +51,13 @@
               </tr>
               <tr>
                 <td>value function</td>
-                <td>The body has the result type and satisfies every <code>ensures</code> clause. <code>result</code> is reserved there for the body. A failure returns typed input/result values only after source roundtrip and a fresh refutation check.</td>
+                <td>The body has the result type and satisfies every <code>ensures</code> clause. <code>result</code> is reserved there for the body. Checked bodies are native Z3 definitions rather than source-inlined calls. A failure returns typed input/result values only after source roundtrip and a fresh refutation check.</td>
                 <td><code>function keep(x: Int) -&gt; Int<br>ensures { result == x; }<br>{ x }</code></td>
+              </tr>
+              <tr>
+                <td>structural value recursion</td>
+                <td>A direct self-call must replace at least one parameter with its exact recursive enum field; every other changed argument must descend from its own parameter. Fine rejects the call before installing a nondecreasing Z3 definition.</td>
+                <td><code>succ(previous) =&gt; succ(copy(previous)),</code></td>
               </tr>
               <tr>
                 <td>identity evidence</td>

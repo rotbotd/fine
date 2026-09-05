@@ -135,6 +135,7 @@ namespace fine::elaboration {
         RuntimeEnum &enumeration = *enums_.at(scrutinee.kind.name);
         if (expression.match_constructors.empty())
             reject(expression.span, "match has no arms");
+        std::optional<std::size_t> scrutinee_root = structural_root(scrutinee.expression);
 
         std::set<std::string> seen;
         std::vector<std::pair<z3::expr, ValueTerm>> branches;
@@ -153,14 +154,20 @@ namespace fine::elaboration {
                        "match arm `" + name + "` expects " + std::to_string(constructor.fields.size()) + " binders");
             ValueEnvironment branch_values = values;
             std::set<std::string> arm_names;
+            std::size_t descendant_mark = active_structural_descendants_.size();
             for (std::size_t j = 0; j < binders.size(); ++j) {
                 if (!arm_names.insert(binders[j]).second)
                     reject(expression.match_arm_spans[i], "duplicate pattern binder `" + binders[j] + "`");
-                branch_values.insert_or_assign(
-                    binders[j], ValueTerm(constructor.fields[j], constructor.accessors[j](scrutinee.expression)));
+                ValueTerm field(constructor.fields[j], constructor.accessors[j](scrutinee.expression));
+                if (scrutinee_root && field.kind == scrutinee.kind)
+                    active_structural_descendants_.emplace_back(*scrutinee_root, field.expression);
+                branch_values.insert_or_assign(binders[j], std::move(field));
             }
             ValueTerm body =
                 elaborate_value(expression.elements[i + 1], branch_values, proofs, proof_order, absorbed, expected);
+            active_structural_descendants_.erase(
+                active_structural_descendants_.begin() + static_cast<std::ptrdiff_t>(descendant_mark),
+                active_structural_descendants_.end());
             branches.emplace_back(constructor.tester(scrutinee.expression), std::move(body));
         }
         if (seen.size() != enumeration.constructors.size()) {
@@ -290,9 +297,56 @@ namespace fine::elaboration {
         return same_ast(context_, instantiated.expression, target);
     }
 
-    void ValueElaborator::declare_function(syntax::FunctionDecl const &declaration) {
+    void ValueElaborator::declare_function_signature(syntax::FunctionDecl const &declaration) {
         if (functions_.contains(declaration.name) || proofs_->has_function(declaration.name) ||
             constructors_.contains(declaration.name))
+            reject(declaration.span, "duplicate function `" + declaration.name + "`");
+        std::vector<ValueKind> parameter_kinds;
+        z3::sort_vector domains(context_);
+        std::set<std::string> names;
+        for (auto const &parameter : declaration.parameters) {
+            if (parameter.name == "result")
+                reject(parameter.span, "`result` is reserved for the function body inside `ensures`");
+            if (!names.insert(parameter.name).second)
+                reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
+            require_known_type(parameter.type);
+            ValueKind kind = kind_of(parameter.type);
+            parameter_kinds.push_back(kind);
+            domains.push_back(sort(kind));
+        }
+        for (auto const &coeffect : declaration.coeffects) {
+            if (coeffect.name == "result")
+                reject(coeffect.span, "`result` is reserved for the function body inside `ensures`");
+            if (!names.insert(coeffect.name).second)
+                reject(coeffect.span, "duplicate parameter `" + coeffect.name + "`");
+        }
+        require_known_type(declaration.result_type);
+        ValueKind result_kind = kind_of(declaration.result_type);
+        std::string native_name = "fine.function." + declaration.name;
+        z3::func_decl native = context_.recfun(native_name.c_str(), domains, sort(result_kind));
+        functions_.emplace(declaration.name,
+                           std::make_unique<RuntimeFunction>(declaration, std::move(parameter_kinds), result_kind,
+                                                             std::move(native)));
+        if (rainfall_) {
+            std::vector<std::string> parameter_types;
+            for (auto const &parameter : declaration.parameters)
+                parameter_types.push_back(kind_name(kind_of(parameter.type)));
+            rainfall_->record(
+                "object", "function.signature.declare", {}, "fine.value-elaborator",
+                "The value-call identity and native sorts exist before any function body is checked",
+                {RainfallRecorder::string_field("function", declaration.name),
+                 RainfallRecorder::raw_field("parameter_types", RainfallRecorder::string_array(parameter_types)),
+                 RainfallRecorder::string_field("result_type", kind_name(result_kind)),
+                 RainfallRecorder::boolean_field("definition_installed", false)});
+        }
+    }
+
+    void ValueElaborator::declare_function(syntax::FunctionDecl const &declaration) {
+        auto registered = functions_.find(declaration.name);
+        if (registered == functions_.end() || registered->second->source != &declaration)
+            throw std::logic_error("value function definition was not predeclared");
+        RuntimeFunction &runtime = *registered->second;
+        if (runtime.verified)
             reject(declaration.span, "duplicate function `" + declaration.name + "`");
         ValueEnvironment values;
         ProofEnvironment proofs;
@@ -350,10 +404,35 @@ namespace fine::elaboration {
         }
         require_known_type(declaration.result_type);
         ValueKind result_kind = kind_of(declaration.result_type);
+        active_function_ = &runtime;
+        active_parameter_values_.clear();
+        active_structural_descendants_.clear();
+        active_recursive_calls_ = 0;
+        for (auto const &parameter : declaration.parameters)
+            active_parameter_values_.push_back(values.at(parameter.name));
         ValueTerm body = elaborate_value(declaration.body, values, proofs, proof_order, absorbed, result_kind);
+        active_function_ = nullptr;
+        active_parameter_values_.clear();
+        active_structural_descendants_.clear();
         if (body.kind != result_kind)
             reject(declaration.body.span,
                    "function body does not have declared result type `" + std::string(kind_name(result_kind)) + "`");
+        z3::expr_vector native_parameters(context_);
+        for (auto const &parameter : declaration.parameters)
+            native_parameters.push_back(values.at(parameter.name).expression);
+        context_.recdef(runtime.declaration, native_parameters, body.expression);
+        runtime.definition_installed = true;
+        if (rainfall_) {
+            std::string definition = rainfall_->term(body.expression, "value-function-definition");
+            rainfall_->record(
+                "derive", "function.definition.install", {"function:" + declaration.name},
+                "fine.value-elaborator",
+                "A checked body becomes one native recursive-function definition without source-body inlining",
+                {RainfallRecorder::string_field("function", declaration.name),
+                 RainfallRecorder::string_field("definition", definition),
+                 RainfallRecorder::number_field("recursive_calls", active_recursive_calls_),
+                 RainfallRecorder::boolean_field("native_recfun", true)});
+        }
         values.emplace("result", body);
         std::vector<z3::expr> ensures;
         for (auto const &clause : declaration.ensures) {
@@ -388,7 +467,7 @@ namespace fine::elaboration {
             if (status == z3::sat)
                 reject_with_counterexample(declaration, values, absorbed, body, guarantee, solver.get_model());
         }
-        functions_.emplace(declaration.name, &declaration);
+        runtime.verified = true;
         ++functions_verified_;
         output_ << "verified function: " << declaration.name << '\n';
         if (rainfall_)
@@ -415,24 +494,31 @@ namespace fine::elaboration {
                        "proof constructor `" + expression.name + "` cannot be called from a runtime value expression");
             reject(expression.span, "unknown function `" + expression.name + "`");
         }
-        syntax::FunctionDecl const &function = *found->second;
+        RuntimeFunction &runtime = *found->second;
+        syntax::FunctionDecl const &function = *runtime.source;
+        bool self_call = active_function_ == &runtime;
+        if (!runtime.verified && !runtime.definition_installed && !self_call)
+            reject(expression.span, "function `" + expression.name + "` is declared but not yet defined");
         if (expression.elements.size() != function.parameters.size())
             reject(expression.span, "function `" + expression.name + "` expects " +
                                         std::to_string(function.parameters.size()) + " value arguments");
         ValueEnvironment callee_values;
+        std::vector<ValueTerm> arguments;
         ProofEnvironment callee_proofs;
         std::vector<std::string> callee_proof_order;
         std::vector<z3::expr> callee_absorbed;
         for (std::size_t i = 0; i < expression.elements.size(); ++i) {
-            require_known_type(function.parameters[i].type);
-            ValueKind parameter_kind = kind_of(function.parameters[i].type);
+            ValueKind const &parameter_kind = runtime.parameter_kinds[i];
             ValueTerm argument = elaborate_value(expression.elements[i], caller_values, caller_proofs,
                                                  caller_proof_order, caller_absorbed, parameter_kind);
             if (argument.kind != parameter_kind)
                 reject(expression.elements[i].span,
                        "argument `" + function.parameters[i].name + "` has the wrong value type");
+            arguments.push_back(argument);
             callee_values.emplace(function.parameters[i].name, std::move(argument));
         }
+        if (self_call)
+            require_structural_self_call(expression, arguments);
         std::map<std::string, std::string> explicit_arguments;
         for (auto const &argument : expression.using_proofs) {
             if (!explicit_arguments.emplace(argument.coeffect, argument.proof).second)
@@ -524,12 +610,49 @@ namespace fine::elaboration {
             materializations_.request_materialization(syntax::ConcreteRange::empty_at(expression.call_argument_end),
                                                       insertion.str(), expression.span);
         }
-        ValueTerm result =
-            elaborate_value(function.body, callee_values, callee_proofs, callee_proof_order, callee_absorbed);
-        require_known_type(function.result_type);
-        if (result.kind != kind_of(function.result_type))
-            reject(expression.span, "internal function result type mismatch");
-        return result;
+        z3::expr_vector native_arguments(context_);
+        for (auto const &argument : arguments)
+            native_arguments.push_back(argument.expression);
+        return {runtime.result_kind, runtime.declaration(native_arguments)};
+    }
+
+    std::optional<std::size_t> ValueElaborator::structural_root(z3::expr const &expression) {
+        for (std::size_t i = 0; i < active_parameter_values_.size(); ++i)
+            if (same_ast(context_, active_parameter_values_[i].expression, expression))
+                return i;
+        for (auto const &descendant : active_structural_descendants_)
+            if (same_ast(context_, descendant.expression, expression))
+                return descendant.parameter_index;
+        return std::nullopt;
+    }
+
+    void ValueElaborator::require_structural_self_call(syntax::ValueExpr const &expression,
+                                                       std::vector<ValueTerm> const &arguments) {
+        bool strict = false;
+        std::vector<std::string> strict_parameters;
+        for (std::size_t i = 0; i < arguments.size(); ++i) {
+            if (same_ast(context_, arguments[i].expression, active_parameter_values_[i].expression))
+                continue;
+            std::optional<std::size_t> root = structural_root(arguments[i].expression);
+            if (!root || *root != i)
+                reject(expression.span, "recursive call `" + expression.name +
+                                            "` does not structurally descend from parameter `" +
+                                            active_function_->source->parameters[i].name + "`");
+            strict = true;
+            strict_parameters.push_back(active_function_->source->parameters[i].name);
+        }
+        if (!strict)
+            reject(expression.span, "recursive call `" + expression.name + "` does not structurally descend");
+        ++active_recursive_calls_;
+        if (rainfall_)
+            rainfall_->record(
+                "derive", "function.recursion.descend", {"function:" + expression.name},
+                "fine.structural-termination",
+                "Every changed recursive argument is a constructor field descended from its corresponding parameter",
+                {RainfallRecorder::string_field("function", expression.name),
+                 RainfallRecorder::raw_field("strict_parameters",
+                                             RainfallRecorder::string_array(strict_parameters)),
+                 RainfallRecorder::boolean_field("well_founded", true)});
     }
 
 }  // namespace fine::elaboration

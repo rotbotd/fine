@@ -131,6 +131,28 @@ namespace fine::elaboration {
         RuntimeEnum(z3::context &context, ValueKind kind) : kind(std::move(kind)), sort(context) {}
     };
 
+    struct RuntimeFunction {
+        syntax::FunctionDecl const *source;
+        std::vector<ValueKind> parameter_kinds;
+        ValueKind result_kind;
+        z3::func_decl declaration;
+        bool definition_installed = false;
+        bool verified = false;
+
+        RuntimeFunction(syntax::FunctionDecl const &source, std::vector<ValueKind> parameter_kinds,
+                        ValueKind result_kind, z3::func_decl declaration)
+            : source(&source), parameter_kinds(std::move(parameter_kinds)), result_kind(std::move(result_kind)),
+              declaration(std::move(declaration)) {}
+    };
+
+    struct StructuralDescendant {
+        std::size_t parameter_index;
+        z3::expr expression;
+
+        StructuralDescendant(std::size_t parameter_index, z3::expr expression)
+            : parameter_index(parameter_index), expression(std::move(expression)) {}
+    };
+
     struct ProofCandidate {
         std::string source;
         std::string production;
@@ -430,6 +452,7 @@ namespace fine::elaboration {
         void require_known_type(syntax::ValueType const &type);
         void declare_enum(syntax::EnumDecl const &declaration);
         void record_boundary();
+        void declare_function_signature(syntax::FunctionDecl const &declaration);
         ValueTerm elaborate_value(syntax::ValueExpr const &expression, ValueEnvironment const &values,
                                   ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
                                   std::vector<z3::expr> const &absorbed,
@@ -447,9 +470,13 @@ namespace fine::elaboration {
         ProofContext *proofs_ = nullptr;
         std::map<std::string, std::unique_ptr<RuntimeEnum>> enums_;
         std::map<std::string, std::pair<RuntimeEnum *, std::size_t>> constructors_;
-        std::map<std::string, syntax::FunctionDecl const *> functions_;
+        std::map<std::string, std::unique_ptr<RuntimeFunction>> functions_;
         std::size_t functions_verified_ = 0;
         std::size_t coeffects_resolved_ = 0;
+        RuntimeFunction *active_function_ = nullptr;
+        std::vector<ValueTerm> active_parameter_values_;
+        std::vector<StructuralDescendant> active_structural_descendants_;
+        std::size_t active_recursive_calls_ = 0;
 
         ValueTerm elaborate_constructor(syntax::ValueExpr const &expression, RuntimeEnum &enumeration,
                                         RuntimeConstructor const &constructor, ValueEnvironment const &values,
@@ -462,6 +489,9 @@ namespace fine::elaboration {
                                  ProofEnvironment const &caller_proofs,
                                  std::vector<std::string> const &caller_proof_order,
                                  std::vector<z3::expr> const &caller_absorbed);
+        std::optional<std::size_t> structural_root(z3::expr const &expression);
+        void require_structural_self_call(syntax::ValueExpr const &expression,
+                                          std::vector<ValueTerm> const &arguments);
         bool contains_parameter(syntax::ValueExpr const &expression, std::map<std::string, ValueKind> const &parameters,
                                 ValueEnvironment const &bindings);
         syntax::ValueExpr lift_model_value(z3::expr const &expression, ValueKind const &kind) const;

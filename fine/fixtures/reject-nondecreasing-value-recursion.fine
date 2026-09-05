@@ -1,0 +1,8 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function loop(value: Nat) -> Nat {
+  loop(value)
+}

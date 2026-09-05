@@ -72,6 +72,15 @@ function predecessor(value: Nat) -> Nat {
 }
 ```
 
+Every value-function name and native sort is registered before bodies are
+checked. A checked body becomes one native Z3 function definition; calls build
+applications of that declaration and never elaborate the source body again.
+Direct recursion is admitted only through a recursive enum field bound by a
+match on the corresponding parameter. At least one argument must descend, and
+every other changed argument must descend from its own parameter. This is a
+deliberately small termination checker: numeric measures, forward calls, and
+mutually recursive value groups are not yet accepted.
+
 These datatypes do not blur the level boundary. `succ(zero)` is a `ValueTerm`.
 An `Id(Nat, left, right)` inhabitant remains `ProofEvidence`, and no enum match
 can inspect it. Static indexed families use the separate `proof inductive`
@@ -371,11 +380,13 @@ Implementations are in `value_elaborator.cpp`, `proof_engine_types.cpp`,
 ## Cacheable value-flow boundary
 
 This boundary is currently a checked ownership prototype, not part of accepted
-document execution. `stage-analysis-probe` builds synthetic documents directly;
-the public elaborator still admits only previously verified value functions,
-inlines their bodies at calls, and rejects forward, direct-recursive, and mutual-
-recursive calls. The prototype deliberately contains SCCs before the source
-semantic rule that will license recursion exists.
+document staging. `stage-analysis-probe` builds synthetic documents directly.
+The public elaborator now has an earlier, narrower recursion boundary: it
+predeclares every value-function identity, installs checked bodies as native Z3
+recursive definitions, and accepts direct structural self-calls. It still
+rejects calls to a later uninstalled definition and mutual recursion. The
+prototype deliberately contains general SCC transfers before the source rule
+that will check and install a whole recursive group exists.
 
 Within that prototype, `value_flow.cpp` lowers value functions into an immutable
 graph before staging touches Z3. Every node has a resolved local, constructor, or
@@ -423,13 +434,22 @@ be connected separately. The cache and every exact value remain Fine-owned, so
 a later session can replay a hit into a fresh Z3 manager rather than retaining
 an invalid `z3::expr`.
 
-Predeclaring all value-function names would not close this gap. The current call
-elaborator substitutes and elaborates the callee body, so a self-call would recurse
-inside the compiler. Source recursion needs three separately owned pieces: a
-signature prepass, a non-inlining semantic rule for checking recursive definition
-bodies and their calls, and a termination certificate that alone can authorize
-compile-time recursion. Only then can the existing SCC block become an execution
-permission rather than a synthetic test result.
+The first source slice now owns two of those pieces for direct recursion. A
+signature pass creates every function's native value sorts before any body.
+Ordinary calls construct that native application rather than substituting and
+re-elaborating the callee body. While checking one body, a self-call is accepted
+only when each changed argument is an exact recursive enum field obtained by
+matching its corresponding parameter, and at least one argument changes. This
+pointwise structural rule is well-founded and deliberately excludes integer
+measures, caller-supplied termination proofs, forward calls, and mutual SCCs.
+Rainfall retains signature declaration, each accepted descent edge, and native
+definition installation separately.
+
+The cacheable staging evaluator still blocks every recursive transfer. Connecting
+the new source rule to compile-time evaluation, and extending definition checking
+from one body to an atomic mutually recursive SCC, remain separate work. A native
+definition is therefore executable by Z3 on concrete ground calls, but the staging
+prototype does not yet use structural acceptance as permission to run an SCC.
 
 The checked native-Z3 probe in
 `research/value-recursion-z3-probe.cpp` fixes the likely non-inlining boundary.
@@ -585,8 +605,10 @@ make `counterexample` executable source.
 
 Runtime values include `Int`, `Bool`, and native Z3 enum datatypes with typed
 payloads, recursive self fields, construction, and exhaustive matching. Value
-functions may call only previously verified value functions; calls inline the
-callee body during elaboration, so forward and recursive calls remain absent.
+function signatures are predeclared, and checked bodies become native Z3
+recursive definitions; calls never inline source bodies. A direct self-call must
+descend through an exact recursive enum field of the corresponding parameter.
+Later uninstalled definitions and mutual recursion remain unavailable.
 Functions may declare guarantees and lexical identity or indexed-family
 coeffects. Failed guarantees return typed, exact-roundtripped counterexamples;
 negative integer literals are accepted so every completed integer numeral has a

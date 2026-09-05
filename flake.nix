@@ -120,6 +120,7 @@
             "$src/fine/fixtures/identity-coeffect.fine" \
             "$src/fine/fixtures/playground-demo.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
+            "$src/fine/fixtures/value-structural-recursion.fine" \
             "$src/fine/fixtures/proof-inductive-match.fine" \
             "$src/fine/fixtures/staged-proof-elimination.fine" \
             "$src/fine/fixtures/proof-inductive-holes.fine" \
@@ -191,6 +192,42 @@
           grep -F "verified function: rebuild" <<<"$enum_output"
           grep -F "formed proof: same : Id(Nat, one, one) (virtual)" <<<"$enum_output"
           grep -F "runtime-value-kinds: Int, Bool, Nat" <<<"$enum_output"
+
+          value_recursion_output="$($out/bin/fine run \
+            "$src/fine/fixtures/value-structural-recursion.fine")"
+          echo "$value_recursion_output"
+          grep -F "verified function: copy" <<<"$value_recursion_output"
+          grep -F "verified assertion: value_structural_recursion.0" \
+            <<<"$value_recursion_output"
+          value_recursion_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/value-structural-recursion.fine" \
+            > "$value_recursion_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/value-structural-recursion.fine" \
+            "$value_recursion_rain"
+          grep -F '"operation":"function.signature.declare"' "$value_recursion_rain"
+          grep -F '"operation":"function.recursion.descend"' "$value_recursion_rain"
+          grep -F '"operation":"function.definition.install"' "$value_recursion_rain"
+
+          nondecreasing_value_recursion="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-nondecreasing-value-recursion.fine" \
+              >"$nondecreasing_value_recursion" 2>&1; then
+            echo "nondecreasing value recursion unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'recursive call `loop` does not structurally descend' \
+            "$nondecreasing_value_recursion"
+
+          cross_parameter_value_recursion="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-cross-parameter-value-recursion.fine" \
+              >"$cross_parameter_value_recursion" 2>&1; then
+            echo "cross-parameter value recursion unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'does not structurally descend from parameter `right`' \
+            "$cross_parameter_value_recursion"
 
           nonexhaustive_enum="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-nonexhaustive-enum-match.fine" \

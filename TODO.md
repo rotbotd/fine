@@ -41,16 +41,21 @@ callers synthesize or supply the evidence.
       effects yet; add effect rows only when source syntax can produce one.
 - [ ] Keep “stageable from these inputs” separate from “safe for the compiler to
       execute now.” The current SCC/transfer analysis is exercised only by
-      `stage-analysis-probe`; accepted value functions are source-ordered,
-      body-inlined, and nonrecursive. Close the connection in three named parts:
-      - [ ] Signature pass (startable this week): register and type-check all
-            value-function signatures before any body, so forward and SCC call
-            identities exist without making them executable.
-      - [ ] Recursive definition rule: check bodies and calls without recursively
-            elaborating the callee body. Native Z3 `recfun`/`recdef` is the
-            candidate representation: it evaluates structural and mutually
-            recursive ground calls, but a symbolic nonnegativity fact times out.
-            Keep induction/proof obligations separate from definitional unfolding.
+      `stage-analysis-probe`; accepted value functions now use native definitions
+      and admit direct structural recursion, but the staging evaluator still
+      blocks every recursive SCC. Close the connection in three named parts:
+      - [x] Signature pass: register every value-function name and native value
+            sort before any body. A later function is visible as declared but is
+            not callable until its definition has been checked and installed.
+      - [ ] Recursive definition rule: calls no longer elaborate a callee body;
+            every checked function is one native `recfun`/`recdef`. Direct
+            self-recursion is accepted only when every changed argument is an
+            exact recursive enum field descended from its corresponding
+            parameter, with at least one strict change. Forward and mutually
+            recursive definition groups remain rejected until one SCC can be
+            checked and installed atomically. Keep induction/proof obligations
+            separate from definitional unfolding: a symbolic nonnegativity fact
+            still times out.
       - [ ] Staging permission: require Fine-owned structural termination
             evidence or an explicit bound before replacing a blocked recursive
             transfer with compile-time evaluation. Z3 accepts

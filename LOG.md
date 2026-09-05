@@ -7053,3 +7053,69 @@ timeout 5s /root/.cache/lynn/z3-upstream-recfun-probe \
   --unsafe-nonterminating-query
 # external status 124; last marker: nonterminating-term-built
 ```
+
+## 2026-09-05 — direct structural value recursion
+
+The first source recursion slice now crosses the boundary isolated by the native
+Z3 probe. `DocumentRunner` registers every value-function name and native value
+sort before checking any body. Each checked body is installed exactly once with
+`recfun`/`recdef`; an ordinary call constructs an application of that stable
+declaration instead of recursively elaborating the callee's source body. Later
+functions remain declared but uncallable until their definitions have been
+checked, so this slice does not accidentally grant forward or mutual recursion.
+
+Direct self-calls have a Fine-owned termination rule before `recdef` is ever
+installed. While matching a runtime enum parameter, the value elaborator tracks
+each exact same-enum constructor field together with the parameter it descended
+from. At a self-call, at least one argument must change to such a descendant,
+and every changed argument must descend from its corresponding parameter. This
+permits nested structural descent and multiple recursive fields, but prevents a
+recursive call from stealing a descendant obtained from another parameter.
+Unchanged arguments remain admissible. The rule is deliberately narrower than
+numeric measures, caller-supplied termination evidence, or mutually recursive
+SCCs.
+
+`value-structural-recursion.fine` defines `copy : Nat -> Nat` by matching and
+recursing on `previous`; its concrete ground application verifies. Rainfall
+retains `function.signature.declare`, `function.recursion.descend`, and
+`function.definition.install` as separate events, including strict parameters
+and the recursive-call count, and replay closes. Two controls are semantic rather
+than cosmetic: `loop(value)` is rejected for no strict descent, while
+`steal(previous, previous)` is rejected because its second argument is a
+descendant of `left`, not of `right`. Both failures happen before native
+definition installation, avoiding the Z3 hang documented in the preceding
+slice.
+
+The cacheable staging evaluator still blocks recursive SCC transfers. Ground Z3
+execution of an accepted source definition is therefore closed here, while
+using structural acceptance as staging permission and atomically checking and
+installing a forward/mutual SCC remain separate work.
+
+One implementation failure was retained: `StructuralDescendant` intentionally
+has no meaningless default Z3 expression, but the first branch cleanup used
+`vector::resize`, whose template instantiation requires a default constructor
+even when only shrinking. Replacing it with an exact suffix `erase` preserved
+the invariant and compiled.
+
+Clean artifacts for this slice: native
+`/nix/store/m66pb7rc421ci4yjnrigls79csx6hfgd-fine-0.1.0`, ordinary Wasm
+`/nix/store/6xbkxbc3psr0iyxk7782mkdjqyycw396-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/6j74b82nhcblvnykyy5kzc270ijhqqsy-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/c2mgx97sqpmyrj1ygb2ljpzc541bx14h-fine-playground-0.1.0`.
+
+Exact commands:
+
+```
+cmake --build .build -j4
+.build/fine run fine/fixtures/value-structural-recursion.fine
+.build/fine rain fine/fixtures/value-structural-recursion.fine > /tmp/value-recursion.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/value-structural-recursion.fine /tmp/value-recursion.rain
+.build/fine run fine/fixtures/reject-nondecreasing-value-recursion.fine
+.build/fine run fine/fixtures/reject-cross-parameter-value-recursion.fine
+python3 fine/check_document_examples.py .
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
