@@ -11,6 +11,9 @@ add_executable(fine-bin
   proof_engine_types.cpp
   value_counterexample.cpp
   value_elaborator.cpp
+  value_flow.cpp
+  stage_analysis.cpp
+  stage_analysis_probe.cpp
   source.cpp
 )
 option(FINE_ENABLE_LIVE_LIFT "Build the nonblocking live-lifting prototype" OFF)

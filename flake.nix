@@ -62,6 +62,20 @@
           grep -F "latest-observed: 11" <<<"$live_lift"
           grep -F "latest-published: 11" <<<"$live_lift"
 
+          stage_analysis="$($out/bin/fine stage-analysis-probe)"
+          echo "$stage_analysis"
+          grep -F "cold-misses: 3" <<<"$stage_analysis"
+          grep -F "warm-hits: 3" <<<"$stage_analysis"
+          grep -F "changed-leaf-miss: true" <<<"$stage_analysis"
+          grep -F "reverse-caller-miss: true" <<<"$stage_analysis"
+          grep -F "unrelated-hit: true" <<<"$stage_analysis"
+          grep -F "local-renaming-hits: 3" <<<"$stage_analysis"
+          grep -F "same-summary-leaf-miss: true" <<<"$stage_analysis"
+          grep -F "same-summary-caller-hit: true" <<<"$stage_analysis"
+          grep -F "mutual-scc-size: 2" <<<"$stage_analysis"
+          grep -F "mutual-left-dependencies: 11" <<<"$stage_analysis"
+          grep -F "mutual-right-dependencies: 11" <<<"$stage_analysis"
+
           ${pkgs.python3}/bin/python "$src/fine/check_document_examples.py" "$src"
 
           demo_output="$($out/bin/fine run --proof-selector z3 \

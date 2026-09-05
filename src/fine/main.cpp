@@ -6,6 +6,7 @@
 #endif
 #include "runtime.h"
 #include "source.h"
+#include "stage_analysis_probe.h"
 
 #include "c++/z3++.h"
 
@@ -215,6 +216,8 @@ namespace {
 }  // namespace
 
 int main(int argc, char **argv) try {
+    if (argc == 2 && std::string_view(argv[1]) == "stage-analysis-probe")
+        return fine::stage::run_stage_analysis_probe(std::cout);
 #ifdef FINE_HAS_LIVE_LIFT
     if (argc == 2 && std::string_view(argv[1]) == "live-lift-probe")
         return fine::run_live_lift_probe(std::cout);

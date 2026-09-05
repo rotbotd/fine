@@ -368,6 +368,31 @@ Implementations are in `value_elaborator.cpp`, `proof_engine_types.cpp`,
 `proof_engine_search.cpp`, `proof_engine_inductive.cpp`, and
 `document_runner.cpp`.
 
+## Cacheable value-flow boundary
+
+`value_flow.cpp` lowers value functions into an immutable graph before staging
+touches Z3. Every node has a resolved local, constructor, or direct function
+identity and an ordinary Fine value type. Canonical semantic keys include the
+resolved operation tree and types while excluding source positions, trivia,
+local spelling, streams, Rainfall identities, pointers, and manager-local Z3
+handles.
+
+The exact named-call graph is partitioned into strongly connected components.
+`stage_analysis.cpp` currently computes the first exported summary: which
+parameters may affect a function's result. Mutually recursive components reach
+their least dependency summaries by monotone iteration. Each SCC cache key is
+its own semantic graph plus the fingerprints of imported summaries. A changed
+callee therefore revisits reverse callers only when its exported dependency
+summary changes; an unrelated SCC remains reusable. The cache owns only Fine
+data, so a later session can replay a hit into a fresh Z3 manager rather than
+retaining an invalid `z3::expr`.
+
+This is the cache and call-graph substrate, not the completed staging pass.
+`bottom | comptime(value) | runtime`, executable match edges, effect summaries,
+and the proof-elimination consumer remain open. `stage-analysis-probe` checks a
+cold and warm run, semantic invalidation, local-renaming stability, unrelated
+reuse, and a mutually recursive dependency fixed point.
+
 ## Rainfall boundary
 
 The existing manager-local term registry and `fine.generated-term.v1` renderer

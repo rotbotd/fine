@@ -6276,3 +6276,93 @@ is the existential package `exists capture. (capture, (Input, capture) ->
 Output)`, which hides heterogeneous environment products without presenting the
 whole closure as an arrow type. That decision is dormant and imposes no current
 interface or implementation requirement.
+
+## 2026-09-05 — cacheable value-flow and SCC dependency substrate
+
+The first staging implementation deliberately stops before the
+`bottom | comptime(value) | runtime` analysis. It closes the representation and
+invalidation boundary needed by that pass without changing accepted Fine syntax
+or routing the new result into proof elimination.
+
+`src/fine/value_flow.{h,cpp}` now lowers every parsed value function into a
+Fine-owned typed graph. Nodes distinguish locals, integer and Boolean literals,
+runtime-enum constructors, equality, resolved direct calls, and enum matches.
+Match arms allocate semantic local IDs for constructor fields. The graph stores
+ordinary `FlowType`s and declaration names, never source pointers, output state,
+Rainfall IDs, or `z3::expr`. `ValueFlowFunction` and `ValueFlowProgram` expose
+only const accessors after construction.
+
+Canonical keys are exact length-delimited structural encodings with explicit IR
+version strings. They include resolved operations, types, local IDs, call targets,
+constructor identities, and match structure; source positions, whitespace,
+comments, and local spelling are absent. This makes the current cache insensitive
+to trivia and alpha-renaming without relying on collision-prone hash equality.
+The builder accepts the whole declaration table before lowering, so its direct
+call graph can represent forward and mutually recursive calls even though the
+current execution elaborator still verifies value functions in declaration
+order.
+
+The direct call graph is partitioned with Tarjan SCCs. `stage_analysis.cpp`
+computes an exported relational dependency summary for every function: one bit
+per formal parameter indicates whether that input may affect the result. Calls
+substitute callee dependency bits through actual-argument dependencies rather
+than assigning one global stage bit to a function. Match binders inherit the
+scrutinee's dependencies conservatively. Mutually recursive SCCs start at the
+empty dependency relation and rise monotonically to a fixed point.
+
+`StageAnalysisCache` stores one entry per SCC membership. Its exact key contains
+the SCC semantic graph and the names plus fingerprints of imported summaries.
+Thus a changed function misses its own entry; reverse callers are revisited only
+when its exported dependency fingerprint changes; unrelated SCCs remain hits.
+A body change from constant `true` to constant `false` misses the changed leaf
+but does not invalidate its caller because both export the same empty dependency
+relation. This stop is correct for the current dependency-only cache. The later
+exact-value/effect summary must widen that fingerprint before it caches compile-
+time values.
+
+The internal `fine stage-analysis-probe` exercises parsed Fine programs rather
+than hand-assembling graph objects. It checks:
+
+- three cold misses followed by three warm hits;
+- a leaf changing from identity to constant invalidates the leaf and reverse
+  caller while preserving an unrelated hit;
+- comments and local renaming preserve all three hits;
+- a semantically changed leaf with the same exported dependency relation misses
+  locally but stops before its caller;
+- two mutually recursive functions occupy one SCC and both converge to dependency
+  vector `11`.
+
+The first compile failed because `ValueFlowBuilder` lived in an anonymous
+namespace while the immutable graph classes friended the named
+`fine::stage::ValueFlowBuilder`; the friendship therefore named a different
+class and every private construction access was rejected. Moving the builder to
+the named namespace retained the const-only public graph boundary. A second run
+caught that parser builtin types retain printable names while literal nodes used
+empty names; normalizing non-enum `FlowType` names fixed the false Boolean result-
+type mismatch. The core, analysis, and executable probe were then split into
+three translation units instead of retaining test fixtures in the graph builder.
+
+Validation commands:
+
+```
+cmake --build .build -j4
+.build/fine stage-analysis-probe
+.build/fine run fine/fixtures/runtime-enum.fine
+.build/fine run --proof-selector z3 fine/fixtures/playground-demo.fine
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default
+nix build --no-link --print-out-paths .#playground-wasm-pthreads .#playground
+nix build --no-link --print-out-paths .#playground-wasm
+```
+
+All passed. Clean dirty-tree artifacts before the implementation commit:
+
+- native: `/nix/store/wbmsdz200z2s7ypg6d64jgr5wgdmsq5g-fine-0.1.0`
+- ordinary Wasm: `/nix/store/jlni9nwbj3rqbyxlb6g3qrwwhw14xm0c-fine-playground-wasm-0.1.0`
+- pthread Wasm: `/nix/store/akk8lv3r2mib1g9skh6i0h4z38amj3s9-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/8dbhmmls2806idnn5m77mbb7avkh93gc-fine-playground-0.1.0`
+
+The open edge is now narrow: enrich `StageDependencySummary` with exact abstract
+values and effects, track live match edges, and include that larger exported
+summary in the same SCC cache protocol. This slice does not claim staging,
+compile-time execution, or permission to inspect proof constructors.

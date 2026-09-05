@@ -20,6 +20,12 @@ callers synthesize or supply the evidence.
 
 ## Planned: infer staging before mixed compile-time/runtime elimination
 
+- [x] Lower every value function into an immutable, typed Fine-owned flow graph
+      with resolved locals, constructors, and direct calls. Canonical semantic
+      keys ignore trivia and local spelling. Partition the exact call graph into
+      SCCs, solve relational parameter-dependency summaries by monotone
+      iteration, and cache each SCC by its graph plus imported summary
+      fingerprints. The cache contains no source pointers or Z3 handles.
 - [ ] Infer availability rather than asking for a trusted `comptime` annotation.
       Use the finite-height abstract value shape `bottom | comptime(value) |
       runtime`; different constants join to `runtime` rather than changing from
@@ -27,11 +33,9 @@ callers synthesize or supply the evidence.
 - [ ] Track executable control-flow edges together with values, as in SCCP, so a
       dead runtime arm cannot contaminate a compile-time result and phi-like
       joins inspect only live predecessors.
-- [ ] For the current named-call language, build the exact direct call graph,
-      solve mutually recursive strongly connected groups with a conventional
-      monotone worklist, and retain relational argument-dependency plus effect
-      summaries. Do not collapse a function such as identity to one global
-      compile-time/runtime bit.
+- [ ] Extend the relational SCC summaries from parameter dependencies to exact
+      abstract values and effects. Do not collapse a function such as identity
+      to one global compile-time/runtime bit.
 - [ ] Keep “stageable from these inputs” separate from “safe for the compiler to
       execute now.” Recursive compile-time evaluation still requires Fine's
       structural termination evidence or an explicit bounded policy.
