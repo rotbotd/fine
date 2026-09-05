@@ -1,0 +1,17 @@
+{
+  "schema": "fine.value-recursion-z3-probe.v1",
+  "z3_source": "the Fine repository's bundled Z3 fork",
+  "solver_timeout_ms": 1000,
+  "observations": {
+    "structural_ground_counterexample": "unsat",
+    "structural_symbolic_nonnegative": "unknown (timeout)",
+    "mutual_structural_ground_counterexample": "unsat",
+    "nonterminating_definition_accepted": true,
+    "nonterminating_ground_query": {
+      "external_timeout_seconds": 5,
+      "external_exit_status": 124,
+      "last_marker": "nonterminating-term-built",
+      "blocked_operation": "solver.add(loop(0) == 0)"
+    }
+  }
+}

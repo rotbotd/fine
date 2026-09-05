@@ -6969,3 +6969,55 @@ rg -n 'functions_\.emplace|elaborate_value\(function.body|signatures_\.emplace|r
 python3 fine/check_document_examples.py .
 git diff --check
 ```
+
+## 2026-09-05 — native Z3 recursive-definition boundary
+
+The source-recursion audit left one exact design choice open: whether native Z3
+recursive function declarations can be Fine's non-inlining semantic
+representation. `fine/research/value-recursion-z3-probe.cpp` tests that boundary
+against the repository's bundled Z3 fork rather than a system binding.
+
+The positive side is useful and narrow. A recursive `size : Nat -> Int` defined
+by `recfun`/`recdef` makes the ground counterexample `size(succ(succ(zero))) != 2`
+unsatisfiable. A mutually recursive `even`/`odd` pair likewise makes
+`not even(succ(succ(zero)))` unsatisfiable. This supplies stable function
+identities and ground definitional unfolding without elaborator-side body
+substitution, including mutually recursive forward declarations.
+
+Two controls fix what that representation does not provide. The symbolic query
+`size(n) < 0` returns `unknown (timeout)` under a one-second solver timeout, so
+even structural recursion does not turn induction into ordinary unfolding.
+Z3 also accepts the nonterminating definition `loop(x) = loop(x) + 1`. In the
+unsafe mode, constructing `loop(0)` returns, but adding `loop(0) == 0` to a
+solver fails to return within an external five-second timeout. The last emitted
+marker is `nonterminating-term-built`; `nonterminating-assert-added` is never
+reached. The solver's own one-second timeout cannot help because expansion hangs
+inside `solver.add`, before `solver.check`.
+
+This preserves the three-owner plan and makes each responsibility sharper:
+
+1. the signature pass may predeclare native recursive function identities;
+2. the recursive definition rule may install checked bodies without inlining,
+   while proof functions/induction remain responsible for symbolic theorems;
+3. Fine-owned structural termination evidence or an explicit evaluation bound
+   must gate every recursive definition used at compile time. Worker-level
+   cancellation remains necessary because solver timeouts do not cover assertion
+   construction and recursive expansion.
+
+The JSON beside the probe records the exact outcomes. The safe default mode only
+declares the nonterminating function; the deliberately hanging query requires an
+explicit flag and an external timeout, so it cannot poison ordinary checks.
+
+Exact commands:
+
+```
+mkdir -p /root/.cache/lynn/link-tmp
+TMPDIR=/root/.cache/lynn/link-tmp c++ -std=c++20 -O1 \
+  -I src -I src/api -I .build/src \
+  fine/research/value-recursion-z3-probe.cpp .build/libz3.a -pthread \
+  -o /root/.cache/lynn/z3-recfun-probe
+/root/.cache/lynn/z3-recfun-probe
+timeout 5s /root/.cache/lynn/z3-recfun-probe \
+  --unsafe-nonterminating-query
+# external status 124; last marker: nonterminating-term-built
+```

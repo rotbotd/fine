@@ -47,11 +47,15 @@ callers synthesize or supply the evidence.
             value-function signatures before any body, so forward and SCC call
             identities exist without making them executable.
       - [ ] Recursive definition rule: check bodies and calls without recursively
-            elaborating the callee body; choose the exact Z3 definition/contract
-            boundary from a discriminating recursive enum program.
+            elaborating the callee body. Native Z3 `recfun`/`recdef` is the
+            candidate representation: it evaluates structural and mutually
+            recursive ground calls, but a symbolic nonnegativity fact times out.
+            Keep induction/proof obligations separate from definitional unfolding.
       - [ ] Staging permission: require Fine-owned structural termination
             evidence or an explicit bound before replacing a blocked recursive
-            transfer with compile-time evaluation.
+            transfer with compile-time evaluation. Z3 accepts
+            `loop(x) = loop(x) + 1`, and merely asserting a ground equation about
+            `loop(0)` hangs before `solver.check()`, outside the solver timeout.
 - [x] Use constructor availability for the first staged proof-to-value match.
       The SMT context must leave one feasible constructor, and every value field
       used by the residual arm must be recovered from a runtime index. Ambiguous

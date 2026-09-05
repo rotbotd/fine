@@ -431,6 +431,18 @@ bodies and their calls, and a termination certificate that alone can authorize
 compile-time recursion. Only then can the existing SCC block become an execution
 permission rather than a synthetic test result.
 
+The checked native-Z3 probe in
+`research/value-recursion-z3-probe.cpp` fixes the likely non-inlining boundary.
+`recfun`/`recdef` evaluates a structural `Nat` size function at a ground term and
+two mutually recursive parity functions at a ground term. It does not prove the
+symbolic fact `size(n) >= 0` within one second. More importantly, it accepts the
+definition `loop(x) = loop(x) + 1`; adding the ground constraint `loop(0) == 0`
+then fails to return within five seconds before `solver.check()` is reached, so
+the solver's one-second timeout never applies. Native recursive definitions are
+a representation, not a termination checker or induction engine. Fine must admit
+them for evaluation only after its own termination or explicit-bound check, and
+long-running evaluation still needs cancellation outside a solver timeout.
+
 The current pure value expression language has no effectful primitive beyond
 the separately retained executable-edge set and recursive-call block. If Fine
 adds effects, those must become explicit transfer outputs rather than be inferred
