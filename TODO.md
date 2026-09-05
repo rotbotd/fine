@@ -39,7 +39,7 @@ callers synthesize or supply the evidence.
       Transfer fingerprints, rather than conservative source-graph fallbacks,
       invalidate reverse callers. The current pure value language has no other
       effects yet; add effect rows only when source syntax can produce one.
-- [ ] Keep “stageable from these inputs” separate from “safe for the compiler to
+- [x] Keep “stageable from these inputs” separate from “safe for the compiler to
       execute now.” The current SCC/transfer analysis is exercised only by
       `stage-analysis-probe`; accepted value functions now use native definitions
       and admit direct structural recursion, but the staging evaluator still
@@ -57,7 +57,7 @@ callers synthesize or supply the evidence.
             nondecreasing mutual cycle fails before installation. Keep
             induction/proof obligations separate from definitional unfolding:
             a symbolic nonnegativity fact still times out.
-      - [ ] Staging permission: require Fine-owned structural termination
+      - [x] Staging permission: require Fine-owned structural termination
             evidence or an explicit bound before replacing a blocked recursive
             transfer with compile-time evaluation. Z3 accepts
             `loop(x) = loop(x) + 1`, and merely asserting a ground equation about
@@ -70,14 +70,18 @@ callers synthesize or supply the evidence.
                   The probe now uses accepted structural `even`/`odd`, retains
                   the 2/4/2 direct/closure/idempotent counts, and still blocks
                   recursive evaluation.
-            - [ ] Transfer knot: tie `recursive_call` nodes to one immutable
+            - [x] Transfer knot: tie `recursive_call` nodes to one immutable
                   transfer map for exactly the certified SCC. Do not create a
                   cyclic `shared_ptr` term graph or admit names from a bare
-                  `ValueFlowProgram` as permission.
-            - [ ] Exact execution: follow that knot only when every demanded
+                  `ValueFlowProgram` as permission. Recursive nodes now retain
+                  only the callee name; the certified analysis result owns the
+                  acyclic peer-root table.
+            - [x] Exact execution: follow that knot only when every demanded
                   recursive argument is exact, retain `recursive_call_blocked`
                   for partial/runtime inputs, and retain external cancellation
-                  even for certified computations.
+                  even for certified computations. Exact mutual parity and an
+                  acyclic constant caller close; runtime `Nat` remains blocked,
+                  and a cancellation callback interrupts a deeper exact input.
 - [x] Use constructor availability for the first staged proof-to-value match.
       The SMT context must leave one feasible constructor, and every value field
       used by the residual arm must be recovered from a runtime index. Ambiguous
@@ -102,7 +106,9 @@ live join of distinct constants becomes runtime, a mutually recursive
 named-function group stabilizes only after its exact source execution exports a
 certificate, and the same identity function yields a
 compile-time result for a known argument and a runtime result for a runtime
-argument. A known constructor with a runtime payload crosses a function call and
+argument. Certified mutual parity evaluates an exact `Nat`, remains blocked on a
+runtime `Nat`, and is externally cancellable; a nonrecursive caller reaches the
+same certified SCC without losing its environment. A known constructor with a runtime payload crosses a function call and
 selects one caller match arm. A strict argument's blocked recursion survives
 even when the callee ignores its value. The proof controls reject elimination
 when its constructor choice depends on runtime data and reject a used field that

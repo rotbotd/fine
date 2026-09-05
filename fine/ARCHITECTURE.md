@@ -419,8 +419,18 @@ graph counts for inspection, while privately retaining the exact parsed
 declaration identities. `build_certified_value_flow` therefore accepts a
 certificate only for the same AST objects which were checked; byte-identical
 source parsed again is a different unchecked object and is rejected. The
-resulting wrapper names certified flow SCCs without teaching the evaluator to
-run them yet. The staging cache itself continues to contain no source pointers.
+resulting wrapper names certified flow SCCs. The staging cache itself continues
+to contain no source pointers.
+
+Certified analysis then creates one immutable `StageTransferEnvironment` from
+the cached acyclic roots. An intra-SCC `recursive_call` term stores only its
+callee's stable name; it does not embed a peer root. The environment owns the
+name-to-transfer table and the set of certified recursive names, so no
+`shared_ptr` points back from a term into its owner. Bare `ValueFlowProgram`
+analysis cannot construct this environment, and the certified evaluator refuses
+an analysis result without one. Ordinary calls propagate the environment, which
+lets an acyclic constant caller enter a certified recursive dependency without
+duplicating its source body.
 
 The cache fingerprint uses the normalized transfers for the whole SCC and the
 exact fingerprints of imported transfers. This replaces the earlier
@@ -472,12 +482,14 @@ position across calls. The no-descent mutual control fails before `recdef`.
 Rainfall retains each direct matrix, the closure counts and accepted idempotent
 loops, and native installation separately.
 
-The cacheable staging evaluator still blocks every recursive transfer. The
-source certificate now reaches the staging owner, but tying recursive-call nodes
-to one immutable SCC transfer map and evaluating exact arguments remain separate
-work. A native definition is executable by Z3 on concrete ground calls, but the
-staging prototype does not yet use size-change acceptance as permission to run an
-SCC.
+The cacheable evaluator follows a certified recursive edge only when every strict
+argument evaluation is complete and has an exact Fine value. Runtime, partially
+known, bottom, or already-blocked argument computations retain
+`recursive_call_blocked`; they do not speculate through the SCC. Exact evaluation
+polls a caller-supplied cancellation function throughout the transfer tree and
+throws `StageEvaluationCancelled` when requested. This is still a staging
+prototype rather than accepted document staging, but its permission, ownership,
+exactness, and interruption boundaries are now executable rather than comments.
 
 The checked native-Z3 probe in
 `research/value-recursion-z3-probe.cpp` fixes the likely non-inlining boundary.
@@ -503,9 +515,11 @@ nonconstant transfer, caller-specific identity, dead and live match edges,
 known constructors crossing calls with runtime payloads, capture-safe nested
 calls, strict argument observability, integer normalization, agreement with the
 direct source evaluator, and an elaborator-certified mutually recursive
-dependency fixed point which remains execution-blocked. Its negative control
-reparses identical source and proves the certificate cannot be replayed onto the
-new declarations.
+dependency fixed point. Its exact `Nat` input evaluates, its runtime input remains
+blocked, an acyclic caller reaches it, and an explicit cancellation stops a
+deeper exact input. Negative controls reject a bare analysis result and reparse
+identical source to prove the certificate cannot be replayed onto new
+declarations.
 
 ## Staged elimination of indexed evidence
 

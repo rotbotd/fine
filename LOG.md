@@ -7363,3 +7363,67 @@ documentation follow-up `a25013eeb`: native
 Wasm `/nix/store/3q6yipq892kv3h7rgaqlzkxrgilswn69-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/gbmbqpfkh28pwp22hjfxhnmfa7iy21kv-fine-playground-0.1.0`.
+
+## 2026-09-05 — certified recursive staging knot (`69353af44`)
+
+The staging prototype now evaluates source-certified recursion without creating
+an ownership cycle. `StageTransferTerm::recursive_call` remains a leaf containing
+only its callee's stable function name and evaluated argument terms. A new
+`StageTransferEnvironment` owns copies of every acyclic transfer root in the
+analysis result plus the exact set of recursive names admitted by
+`ValueRecursionCertificate`. No transfer term points back to the environment and
+no peer root is embedded in a recursive term, so destruction remains ordinary
+`shared_ptr` tree destruction rather than cycle collection.
+
+The environment cannot be manufactured through the public structs. Its
+constructor, function table, certificate set, and key are private to
+`StageAnalysisCache`; clients receive only a shared const view. Bare
+`analyze(ValueFlowProgram)` retains the old cacheable summaries without an
+environment. Only `analyze(CertifiedValueFlowProgram)` builds the name table,
+and `evaluate_certified_stage_function` rejects a result whose environment is
+absent. The existing cache entries remain detached Fine-owned summaries: no
+source pointer or elaborator token enters them, and certified and bare analyses
+may safely share the same structural transfer roots.
+
+At a recursive call, the evaluator first evaluates every strict argument exactly
+once and retains its match edges and recursive-block bit. It follows the
+name-table edge only when the callee name is certified, every argument carries an
+exact Fine value, and no argument computation is already blocked. Otherwise the
+result remains runtime with `recursive_call_blocked`. Ordinary nonrecursive call
+terms propagate the same environment to their embedded callee root, so an
+acyclic function may call into a certified recursive SCC without losing
+permission at that boundary.
+
+External interruption is explicit rather than inferred from source termination.
+`StageEvaluationControl` carries a caller callback which is polled at transfer
+entry and throughout term evaluation; a true result raises
+`StageEvaluationCancelled`. Size-change acceptance proves the recursive source
+call chain is finite, but it does not promise that a large exact input is cheap or
+that a browser should become unresponsive while computing it.
+
+The probe's accepted `even`/`odd` SCC now distinguishes all boundaries. Exact
+`even(4)` reduces to `comptime(true)` with no recursion block. A runtime `Nat`
+still joins the base arm and unresolved recursive arm to runtime and retains the
+block. The acyclic zero-argument `four_even` function enters the same SCC through
+an ordinary call and also produces `comptime(true)`. A deeper exact input is
+interrupted by the cancellation callback. Separate negative controls prove a
+bare flow analysis has no permission environment and byte-identical reparsed
+source cannot reuse the elaborator certificate.
+
+Exact checks before documentation:
+
+```
+cmake --build .build -j2
+.build/fine stage-analysis-probe
+.build/fine run fine/fixtures/value-mutual-recursion.fine
+python3 fine/check_document_examples.py .
+nix flake check --no-write-lock-file
+```
+
+The new probe discriminators are
+`bare-recursion-permission-rejected: true`,
+`mutual-exact-result: comptime(true)`,
+`mutual-exact-recursion-blocked: false`,
+`certified-recursive-callee-result: comptime(true)`,
+`mutual-runtime-recursion-blocked: true`, and
+`mutual-exact-cancellation: true`.
