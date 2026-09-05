@@ -380,24 +380,34 @@ handles.
 The exact named-call graph is partitioned into strongly connected components.
 `stage_analysis.cpp` computes which parameters may affect a function's result;
 mutually recursive components reach their least dependency summaries by
-monotone iteration. Each function also exports its result under wholly
-runtime-unknown arguments. This makes two constant functions returning
-different values distinct cache dependencies. A constant result at top is a
-complete transfer summary in the current pure value language. A nonconstant
-result is not, so its fingerprint conservatively includes the SCC graph and
-imported fingerprints until a reusable relational transformer exists. This
-prevents a cached `caller() { leaf(true) }` from surviving when `leaf` changes
-from identity to a different nonconstant operation.
+monotone iteration. It then builds an immutable `StageTransfer` for every
+function. A transfer contains normalized parameters, exact constants,
+constructors, equality, matches, and calls to already cached callee transfers.
+It contains no source pointers or Z3 objects. Calls remain compositional rather
+than substituting a callee body: their arguments are evaluated exactly once, so
+an ignored strict argument cannot lose its executable edges or recursion block.
+Calls within the active SCC are explicit recursive boundaries rather than
+unrolled terms.
 
-`stage_evaluation.cpp` carries the caller-specific flat domain
+The cache fingerprint uses the normalized transfers for the whole SCC and the
+exact fingerprints of imported transfers. This replaces the earlier
+conservative fallback which fingerprinted the source graph whenever a summary
+was nonconstant. A change from identity to Boolean comparison now invalidates a
+constant-argument reverse caller because its imported transfer changed, while
+two different source spellings with the same normalized transfer stop the
+invalidation there.
+
+`stage_evaluation.cpp` and `stage_transfer.cpp` carry the caller-specific domain
 `bottom | comptime(exact Fine value) | runtime` through locals, arbitrary-size
 integers, Booleans, nested native-enum constructors, equality, direct calls, and
-matches. A known constructor makes exactly one match edge executable. A runtime
-scrutinee makes every arm executable and joins only their results; distinct
-constants rise to runtime. Thus a dead arm containing a runtime local cannot
-contaminate a constant live arm, while `identity(true)` and
-`identity(runtime)` remain distinct. Executable edges retain function, match
-node, arm, and constructor identity.
+matches. Runtime aggregates additionally retain a known constructor and abstract
+fields; this is control-flow information, not another stage. Consequently
+`make_left(runtime)` remains runtime-valued but a caller can still select its
+single `left` arm. Joins preserve the tag only when both predecessors have the
+same constructor, joining their fields pointwise. Otherwise the result is
+generic runtime. A wholly unknown scrutinee makes every arm executable and joins
+only their results; distinct constants rise to runtime. Executable edges retain
+function, match node, source arm, and constructor identity.
 
 Recursive calls are deliberately marked blocked and yield runtime in this
 caller-specific evaluator. Stageability does not grant permission to execute a
@@ -406,13 +416,17 @@ be connected separately. The cache and every exact value remain Fine-owned, so
 a later session can replay a hit into a fresh Z3 manager rather than retaining
 an invalid `z3::expr`.
 
-This is still not the completed staging pass. Cached exact relational transfers,
-effects, recursive evaluation under termination evidence, and the
+The current pure value expression language has no effectful primitive beyond
+the separately retained executable-edge set and recursive-call block. If Fine
+adds effects, those must become explicit transfer outputs rather than be inferred
+from a constant result. Recursive evaluation under termination evidence and the
 proof-elimination consumer remain open. `stage-analysis-probe` checks cache
-invalidation, alpha/trivia stability, exact constant stopping, a changed
+invalidation, alpha/trivia stability, normalized transfer stopping, a changed
 nonconstant transfer, caller-specific identity, dead and live match edges,
-constructor-field propagation, integer normalization, and the mutually
-recursive dependency fixed point and execution block.
+known constructors crossing calls with runtime payloads, capture-safe nested
+calls, strict argument observability, integer normalization, agreement with the
+direct source evaluator, and the mutually recursive dependency fixed point and
+execution block.
 
 ## Rainfall boundary
 

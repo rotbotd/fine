@@ -33,10 +33,12 @@ callers synthesize or supply the evidence.
 - [x] Track executable control-flow edges together with values, as in SCCP, so a
       dead runtime arm cannot contaminate a compile-time result and phi-like
       joins inspect only live predecessors.
-- [ ] Extend the cached relational SCC summaries from dependency bits and their
-      runtime-input result to a reusable exact abstract transfer and effects.
-      Caller-specific inference already distinguishes `identity(true)` from
-      `identity(runtime)`; do not collapse that into one global stage bit.
+- [x] Cache an immutable exact abstract transfer for every function. Calls
+      compose cached callee transfers without re-lowering source; strict
+      arguments, live match edges, and recursive-call blocks remain observable.
+      Transfer fingerprints, rather than conservative source-graph fallbacks,
+      invalidate reverse callers. The current pure value language has no other
+      effects yet; add effect rows only when source syntax can produce one.
 - [ ] Keep “stageable from these inputs” separate from “safe for the compiler to
       execute now.” Recursive compile-time evaluation still requires Fine's
       structural termination evidence or an explicit bounded policy.
@@ -45,12 +47,14 @@ callers synthesize or supply the evidence.
       choice is compile-time-known; runtime-dependent proof evidence remains
       opaque and may only contribute through the existing proof context.
 
-Exit test: one dead runtime branch preserves a compile-time value, one live join
-of distinct constants becomes runtime, a mutually recursive named-function group
-stabilizes, and the same identity function yields a compile-time result for a
-known argument and a runtime result for a runtime argument. A separate proof
-fixture must reject elimination when its constructor choice depends on runtime
-data.
+Transfer exit test: one dead runtime branch preserves a compile-time value, one
+live join of distinct constants becomes runtime, a mutually recursive
+named-function group stabilizes, and the same identity function yields a
+compile-time result for a known argument and a runtime result for a runtime
+argument. A known constructor with a runtime payload crosses a function call and
+selects one caller match arm. A strict argument's blocked recursion survives
+even when the callee ignores its value. A separate proof fixture must reject
+elimination when its constructor choice depends on runtime data.
 
 Do not add 0-CFA, first-class function types, closures, or existential closure
 packages for this slice. If closures are ever demanded by a concrete program,

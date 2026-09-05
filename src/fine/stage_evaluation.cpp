@@ -36,21 +36,7 @@ namespace fine::stage {
         }
 
         AbstractValue exact(ExactValue value) {
-            return {AbstractValue::Kind::comptime, value.type, std::move(value)};
-        }
-
-        AbstractValue join(AbstractValue const &left, AbstractValue const &right) {
-            require_type(left, right.type);
-            require_type(right, left.type);
-            if (left.kind == AbstractValue::Kind::bottom)
-                return right;
-            if (right.kind == AbstractValue::Kind::bottom)
-                return left;
-            if (left.kind == AbstractValue::Kind::runtime || right.kind == AbstractValue::Kind::runtime)
-                return stage_runtime(left.type);
-            if (left.exact == right.exact)
-                return left;
-            return stage_runtime(left.type);
+            return {AbstractValue::Kind::comptime, value.type, std::move(value), {}, {}};
         }
 
         class Evaluator {
@@ -107,22 +93,10 @@ namespace fine::stage {
                     absorb(input);
 
                 if (flow.kind == FlowNode::Kind::constructor) {
-                    bool has_bottom = false;
-                    bool has_runtime = false;
-                    std::vector<ExactValue> fields;
-                    for (auto const &input : inputs) {
-                        has_bottom = has_bottom || input.result.kind == AbstractValue::Kind::bottom;
-                        has_runtime = has_runtime || input.result.kind == AbstractValue::Kind::runtime;
-                        if (input.result.exact)
-                            fields.push_back(*input.result.exact);
-                    }
-                    if (has_bottom)
-                        result.result = stage_bottom(flow.type);
-                    else if (has_runtime)
-                        result.result = stage_runtime(flow.type);
-                    else
-                        result.result =
-                            exact({ExactValue::Kind::constructor, flow.type, flow.payload, std::move(fields)});
+                    std::vector<AbstractValue> fields;
+                    for (auto const &input : inputs)
+                        fields.push_back(input.result);
+                    result.result = stage_constructor(flow.type, flow.payload, std::move(fields));
                     return result;
                 }
 
@@ -155,11 +129,17 @@ namespace fine::stage {
                     return result;
 
                 std::vector<std::size_t> executable;
+                std::string known_constructor;
                 if (scrutinee.exact) {
                     if (scrutinee.exact->kind != ExactValue::Kind::constructor)
                         throw std::logic_error("compile-time match scrutinee is not a constructor");
+                    known_constructor = scrutinee.exact->payload;
+                }
+                else if (!scrutinee.known_constructor.empty())
+                    known_constructor = scrutinee.known_constructor;
+                if (!known_constructor.empty()) {
                     for (std::size_t i = 0; i < flow.arms.size(); ++i)
-                        if (flow.arms[i].constructor == scrutinee.exact->payload)
+                        if (flow.arms[i].constructor == known_constructor)
                             executable.push_back(i);
                     if (executable.size() != 1)
                         throw std::logic_error("compile-time constructor has no unique match arm");
@@ -176,12 +156,14 @@ namespace fine::stage {
                     for (std::size_t field = 0; field < arm.binders.size(); ++field) {
                         if (scrutinee.exact)
                             arm_locals[arm.binders[field]] = exact(scrutinee.exact->fields.at(field));
+                        else if (!scrutinee.known_constructor.empty())
+                            arm_locals[arm.binders[field]] = scrutinee.fields.at(field);
                         else
                             arm_locals[arm.binders[field]] = stage_runtime(arm.binder_types.at(field));
                     }
                     StageEvaluation body = node(function, arm.body, arm_locals);
                     absorb(body);
-                    result.result = join(result.result, body.result);
+                    result.result = join_stage_values(result.result, body.result);
                 }
                 return result;
             }
@@ -219,11 +201,11 @@ namespace fine::stage {
     }  // namespace
 
     StageAbstractValue stage_bottom(FlowType type) {
-        return {StageAbstractValue::Kind::bottom, std::move(type), std::nullopt};
+        return {StageAbstractValue::Kind::bottom, std::move(type), std::nullopt, {}, {}};
     }
 
     StageAbstractValue stage_runtime(FlowType type) {
-        return {StageAbstractValue::Kind::runtime, std::move(type), std::nullopt};
+        return {StageAbstractValue::Kind::runtime, std::move(type), std::nullopt, {}, {}};
     }
 
     StageAbstractValue stage_boolean(bool value) {
@@ -234,6 +216,64 @@ namespace fine::stage {
     StageAbstractValue stage_integer(std::string_view value) {
         FlowType type = integer_type();
         return exact({ExactValue::Kind::integer, type, normalize_integer(value), {}});
+    }
+
+    StageAbstractValue stage_constructor(FlowType type, std::string constructor,
+                                         std::vector<StageAbstractValue> fields) {
+        for (auto const &field : fields)
+            if (field.kind == StageAbstractValue::Kind::bottom)
+                return stage_bottom(std::move(type));
+        std::vector<StageExactValue> exact_fields;
+        for (auto const &field : fields) {
+            if (!field.exact)
+                break;
+            exact_fields.push_back(*field.exact);
+        }
+        if (exact_fields.size() == fields.size())
+            return exact(
+                {StageExactValue::Kind::constructor, std::move(type), std::move(constructor), std::move(exact_fields)});
+        return {StageAbstractValue::Kind::runtime, std::move(type), std::nullopt, std::move(constructor),
+                std::move(fields)};
+    }
+
+    StageAbstractValue join_stage_values(StageAbstractValue const &left, StageAbstractValue const &right) {
+        require_type(left, right.type);
+        require_type(right, left.type);
+        if (left.kind == StageAbstractValue::Kind::bottom)
+            return right;
+        if (right.kind == StageAbstractValue::Kind::bottom)
+            return left;
+        if (left.exact && right.exact && left.exact == right.exact)
+            return left;
+
+        auto constructor = [](StageAbstractValue const &value) -> std::string {
+            if (value.exact && value.exact->kind == StageExactValue::Kind::constructor)
+                return value.exact->payload;
+            return value.known_constructor;
+        };
+        std::string left_constructor = constructor(left);
+        std::string right_constructor = constructor(right);
+        if (!left_constructor.empty() && left_constructor == right_constructor) {
+            std::vector<StageAbstractValue> left_fields = left.fields;
+            std::vector<StageAbstractValue> right_fields = right.fields;
+            if (left.exact) {
+                left_fields.clear();
+                for (auto const &field : left.exact->fields)
+                    left_fields.push_back(exact(field));
+            }
+            if (right.exact) {
+                right_fields.clear();
+                for (auto const &field : right.exact->fields)
+                    right_fields.push_back(exact(field));
+            }
+            if (left_fields.size() != right_fields.size())
+                throw std::logic_error("same stage constructor has different arity");
+            std::vector<StageAbstractValue> fields;
+            for (std::size_t i = 0; i < left_fields.size(); ++i)
+                fields.push_back(join_stage_values(left_fields[i], right_fields[i]));
+            return stage_constructor(left.type, left_constructor, std::move(fields));
+        }
+        return stage_runtime(left.type);
     }
 
     StageEvaluation infer_stage(ValueFlowProgram const &program, std::string const &function,
@@ -253,6 +293,9 @@ namespace fine::stage {
         std::string result = std::to_string(static_cast<int>(value.kind)) + field(type_key(value.type));
         if (value.exact)
             result += field(exact_key(*value.exact));
+        result += field(value.known_constructor);
+        for (auto const &child : value.fields)
+            result += field(stage_value_key(child));
         return result;
     }
 

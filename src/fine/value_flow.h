@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -120,8 +121,47 @@ namespace fine::stage {
         Kind kind = Kind::bottom;
         FlowType type;
         std::optional<StageExactValue> exact;
+        // This is an auxiliary executable-edge fact, not a fourth stage: a
+        // runtime aggregate may still have a statically known constructor.
+        std::string known_constructor;
+        std::vector<StageAbstractValue> fields;
 
         friend bool operator==(StageAbstractValue const &, StageAbstractValue const &) = default;
+    };
+
+    struct StageTransferTerm;
+    using StageTransferTermPtr = std::shared_ptr<StageTransferTerm const>;
+
+    struct StageTransferArm {
+        std::string constructor;
+        std::size_t source_arm = 0;
+        std::vector<FlowLocalId> binders;
+        std::vector<FlowType> binder_types;
+        StageTransferTermPtr body;
+    };
+
+    struct StageTransferTerm {
+        enum class Kind { parameter, bound, exact, constructor, equal, match, call, recursive_call };
+
+        Kind kind = Kind::parameter;
+        FlowType type;
+        std::string payload;
+        FlowLocalId local = 0;
+        std::optional<StageExactValue> exact;
+        std::vector<StageTransferTermPtr> inputs;
+        std::vector<StageTransferArm> arms;
+        std::string origin_function;
+        FlowNodeId origin_match = 0;
+        std::vector<FlowType> callee_parameters;
+        StageTransferTermPtr callee_root;
+        std::string callee_key;
+    };
+
+    struct StageTransfer {
+        std::vector<FlowType> parameters;
+        FlowType result_type;
+        StageTransferTermPtr root;
+        std::string key;
     };
 
     struct StageFunctionSummary {
@@ -132,6 +172,7 @@ namespace fine::stage {
         // have the same empty parameter-dependency relation.
         StageAbstractValue runtime_input_result;
         bool recursive_call_blocked = false;
+        StageTransfer transfer;
         std::string fingerprint;
     };
 
@@ -140,6 +181,8 @@ namespace fine::stage {
         FlowNodeId match = 0;
         std::size_t arm = 0;
         std::string constructor;
+
+        friend bool operator==(StageMatchEdge const &, StageMatchEdge const &) = default;
 
         friend bool operator<(StageMatchEdge const &left, StageMatchEdge const &right) {
             return std::tie(left.function, left.match, left.arm, left.constructor) <
@@ -159,8 +202,16 @@ namespace fine::stage {
     StageAbstractValue stage_runtime(FlowType type);
     StageAbstractValue stage_boolean(bool value);
     StageAbstractValue stage_integer(std::string_view value);
+    StageAbstractValue stage_constructor(FlowType type, std::string constructor,
+                                         std::vector<StageAbstractValue> fields);
+    StageAbstractValue join_stage_values(StageAbstractValue const &left, StageAbstractValue const &right);
     StageEvaluation infer_stage(ValueFlowProgram const &program, std::string const &function,
                                 std::vector<StageAbstractValue> const &arguments);
+    StageTransfer build_stage_transfer(ValueFlowProgram const &program, std::string const &function,
+                                       std::map<std::string, StageFunctionSummary> const &available,
+                                       std::set<std::string> const &recursive_functions);
+    StageEvaluation evaluate_stage_transfer(StageTransfer const &transfer,
+                                            std::vector<StageAbstractValue> const &arguments);
     std::string render_stage_value(StageAbstractValue const &value);
     std::string stage_value_key(StageAbstractValue const &value);
 

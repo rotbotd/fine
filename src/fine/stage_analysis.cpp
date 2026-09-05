@@ -97,33 +97,30 @@ namespace fine::stage {
             }
         }
         std::map<std::string, StageFunctionSummary> result;
+        std::set<std::string> recursive_functions(scc.functions.begin(), scc.functions.end());
         for (auto const &name : scc.functions) {
             StageFunctionSummary summary = summaries.at(name);
+            summary.transfer = build_stage_transfer(program, name, available, recursive_functions);
+            result.emplace(name, std::move(summary));
+        }
+        std::ostringstream component_transfer;
+        component_transfer << "fine-stage-transfer-scc-v1";
+        for (auto const &name : scc.functions)
+            component_transfer << field(name) << field(result.at(name).transfer.key);
+        for (auto const &name : scc.functions) {
+            StageFunctionSummary &summary = result.at(name);
             ValueFlowFunction const &function = program.functions().at(name);
             std::vector<StageAbstractValue> runtime_arguments;
             for (auto const &type : function.parameters())
                 runtime_arguments.push_back(stage_runtime(type));
-            StageEvaluation evaluation = infer_stage(program, name, runtime_arguments);
+            StageEvaluation evaluation = evaluate_stage_transfer(summary.transfer, runtime_arguments);
             summary.runtime_input_result = evaluation.result;
             summary.recursive_call_blocked = evaluation.recursive_call_blocked;
             std::ostringstream fingerprint;
-            fingerprint << "fine-stage-summary-v3:" << bits(summary.result_parameters) << ':'
+            fingerprint << "fine-stage-summary-v4:" << bits(summary.result_parameters) << ':'
                         << stage_value_key(summary.runtime_input_result) << ':'
-                        << (summary.recursive_call_blocked ? '1' : '0');
-            if (summary.runtime_input_result.kind != StageAbstractValue::Kind::comptime ||
-                summary.recursive_call_blocked) {
-                // A flat runtime result does not describe how exact arguments
-                // transform. Until that full relational transformer is cached,
-                // retain the SCC graph and imported fingerprints so a changed
-                // nonconstant callee cannot leave a constant-argument caller
-                // stale. A constant result at top is already an exact transfer.
-                fingerprint << ':' << field(scc.semantic_key);
-                for (std::size_t dependency : scc.dependencies)
-                    for (auto const &dependency_name : program.sccs()[dependency].functions)
-                        fingerprint << field(dependency_name) << field(available.at(dependency_name).fingerprint);
-            }
+                        << (summary.recursive_call_blocked ? '1' : '0') << ':' << field(component_transfer.str());
             summary.fingerprint = fingerprint.str();
-            result.emplace(name, std::move(summary));
         }
         return result;
     }

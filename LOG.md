@@ -6454,3 +6454,100 @@ All passed. Clean dirty-tree artifacts before the implementation commit:
 The remaining staging edge is a cached exact relational transfer rather than the
 current safe graph fallback, plus effects. Only after those summaries exist
 should inferred proof-constructor availability become an elimination rule.
+
+## 2026-09-05 — reusable staging transfers across function boundaries
+
+The third staging slice replaces the conservative nonconstant-summary fallback
+with an executable, Fine-owned transfer term. `src/fine/stage_transfer.cpp`
+normalizes each acyclic function into immutable terms for parameters, bound match
+fields, exact values, enum construction, equality, matches, and calls to already
+cached transfers. Calls inside the active SCC remain explicit recursive
+boundaries. `StageFunctionSummary` now owns this transfer; the SCC fingerprint
+contains every member transfer key and every imported callee key rather than
+falling back to the source flow graph whenever the all-runtime result is flat.
+The transfer contains ordinary Fine types and exact values only—no source
+pointer, parser object, Z3 context, or manager-local AST.
+
+The first implementation performed raw callee substitution. Making match-bound
+locals scope correctly was possible, but the representation was rejected before
+closing the slice: an inlined call duplicated each actual term wherever the
+formal appeared, and an unused formal erased the actual entirely. Fine calls are
+strict. Both outcomes could duplicate or lose executable match edges and a
+recursive-call block even when the returned value was unchanged. The retained
+representation therefore has a compositional call node: evaluate each actual
+once, invoke the immutable callee transfer on those abstract values, and union
+the callee observations. The `strict_argument` control passes a blocked recursive
+call to a function returning constant true; the result is `comptime(true)` while
+`recursive_call_blocked` remains true.
+
+This exposed a second loss in the old flat abstract value. A constructor with a
+runtime payload was reduced to undifferentiated runtime. Consequently
+`make_left(runtime)` could not tell a caller that only its `left` match arm was
+executable. `StageAbstractValue` now retains an auxiliary known-constructor name
+and abstract fields on a runtime aggregate. This is not a fourth stage: the value
+is still runtime because its payload is unavailable. It is a control-flow fact.
+Joins of the same known constructor retain the tag and join their fields
+pointwise; distinct constructor tags rise to generic runtime. Both the direct
+source evaluator and reusable transfer evaluator implement this rule, and exact
+stage cache keys include the recursive constructor shape.
+
+The probe now covers three failure-prone boundaries. `inspect_left(runtime)`
+calls `make_left`, stays runtime-valued across that call, and nevertheless selects
+one caller match arm and returns `comptime(true)`. `capture_avoiding` composes
+nested callees whose match binders reuse local IDs internally; independent
+transfer evaluation keeps their scopes separate and returns `comptime(true)` with
+three exact source edges. `strict_argument` proves that a constant callee result
+does not erase strict argument observations. Representative cached-transfer
+results, edge sets, and recursive-block bits are also compared with the original
+direct flow-graph evaluator as an independent oracle.
+
+The present pure value syntax has no other effectful operations. Calling the
+transfer "values plus effects" now would invent a row for syntax Fine cannot
+write. The explicit outputs at this boundary are the abstract value, executable
+match-edge set, and recursive-call block. If an effectful value form is added,
+its effect must become another compositional output rather than disappear behind
+a constant result.
+
+Validation commands:
+
+```
+clang-format -i src/fine/value_flow.h src/fine/stage_evaluation.cpp \
+  src/fine/stage_transfer.cpp src/fine/stage_analysis.cpp \
+  src/fine/stage_analysis_probe.cpp
+cmake --build .build -j4
+.build/fine stage-analysis-probe
+.build/fine run fine/fixtures/runtime-enum.fine
+.build/fine run --proof-selector z3 fine/fixtures/playground-demo.fine
+python3 fine/check_document_examples.py .
+git diff --check
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All passed. The discriminating probe lines are:
+
+```
+known-tag-runtime-payload: comptime(true)
+known-tag-edges: 1
+cross-call-known-tag: comptime(true)
+cross-call-known-tag-edges: 1
+capture-avoiding-result: comptime(true)
+capture-avoiding-edges: 3
+strict-argument-result: comptime(true)
+strict-argument-recursion-blocked: true
+transfer-matches-direct-oracle: true
+```
+
+Clean dirty-tree artifacts before the implementation commit:
+
+- native: `/nix/store/hv4v5bhsb6s8wpsvgj28i6c5mfa5jnvi-fine-0.1.0`
+- ordinary Wasm: `/nix/store/q2cdfh8cy958qsjy64sg7lyxjlxbfhcg-fine-playground-wasm-0.1.0`
+- pthread Wasm: `/nix/store/f4zchj31y4rl41n22k0np4jzjkv5b00x-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/gc2mhrm9c8f39c2kjvh882363adhdrzf-fine-playground-0.1.0`
+
+The reusable transfer is closed for the current first-order pure value language.
+The next staging boundary is not more cache machinery: either authorize recursive
+compile-time execution with Fine-owned termination evidence, or connect inferred
+constructor availability to one proof-elimination fixture while rejecting a
+runtime-dependent constructor choice.
