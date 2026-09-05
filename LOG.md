@@ -7288,3 +7288,70 @@ enabled until that certificate crosses the owner boundary. This keeps “the
 abstract result is computable from these inputs,” “the source recursion was
 accepted,” and “the compiler is allowed to spend time executing it now” as
 three distinct facts.
+
+## 2026-09-05 — exact staging certificate handoff (`9907521d1`)
+
+The first staging-permission component now exists without enabling recursive
+compile-time evaluation. `ValueElaborator::declare_function_group` returns a
+`ValueRecursionCertificate` only after `require_size_change_termination` has
+accepted the complete SCC, every native `recdef` has been installed, and at
+least one recursive call graph exists. `DocumentRunner` alone transfers those
+certificates into the public `ExecutionResult`; acyclic singleton definitions do
+not acquire decorative certificates.
+
+The certificate is inspectable but not constructible by clients. Its public
+surface names the source functions and retains the direct-call, finite-closure,
+and accepted-idempotent-loop counts. Privately it retains the exact
+`FunctionDecl` identities checked by the elaborator. This is intentionally a
+transient compiler handoff rather than a serializable theorem: a certificate
+cannot authorize a modified or independently reparsed program merely because
+its function names match.
+
+`build_certified_value_flow` is the only bridge into the staging owner. It first
+lowers the supplied document, then requires every private declaration identity
+to occur in that same document and every named function to land in exactly one
+matching flow SCC. It returns `CertifiedValueFlowProgram`, which holds the
+ordinary immutable flow graph plus the certified recursive SCC indices. The
+existing `StageAnalysisCache::analyze(ValueFlowProgram)` still receives only the
+bare graph, so no evaluator behavior changed and recursive transfers remain
+blocked. Later execution must accept the certified wrapper explicitly; the
+current API makes accidental permission through a detached flow graph visible.
+
+The former staging probe used `left(on,value) -> right(off,value) ->
+left(off,value)`. That program terminates through a constructor reset outside
+Fine's accepted size-change relation, so the probe could never honestly obtain
+source permission. It now uses the same structural mutual parity shape as the
+accepted language fixture: both `even(succ(previous)) -> odd(previous)` and
+`odd(succ(previous)) -> even(previous)` descend through the recursive enum
+field. Ordinary execution emits one certificate with 2 direct graphs, 4 closure
+graphs, and 2 accepted idempotent loops. The staging wrapper marks both
+functions' shared SCC, while evaluation with a runtime `Nat` still reports
+`recursive_call_blocked`. A negative control reparses the exact same bytes and
+requires certificate construction to reject the new declaration identities.
+
+The first build exposed a header-order error rather than a semantic failure:
+`value_flow.h` named `ExecutionResult` without a parent-namespace forward
+declaration, so the friend declaration did not bind to the implementation and
+private wrapper members appeared inaccessible. Adding the explicit
+`namespace fine { struct ExecutionResult; }` declaration fixed both diagnostics.
+The SCC comparison was also made order-independent because the definition
+planner preserves source order while `ValueFlowProgram` canonicalizes member
+names lexicographically.
+
+Exact checks before documentation:
+
+```
+cmake --build .build -j2
+.build/fine stage-analysis-probe
+.build/fine run fine/fixtures/value-mutual-recursion.fine
+.build/fine run fine/fixtures/reject-mutual-value-recursion.fine
+python3 fine/check_document_examples.py .
+nix flake check --no-write-lock-file
+```
+
+The probe reports `mutual-recursion-certificates: 1`,
+`mutual-certificate-closure: 2/4/2`, `mutual-recursion-certified: true`,
+`copied-source-certificate-rejected: true`, and
+`mutual-recursion-blocked: true`. The next boundary is not another certificate:
+it is an immutable SCC transfer environment which lets `recursive_call` refer
+back to peer roots without cyclic ownership.

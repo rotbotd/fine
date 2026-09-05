@@ -383,7 +383,8 @@ Implementations are in `value_elaborator.cpp`, `proof_engine_types.cpp`,
 ## Cacheable value-flow boundary
 
 This boundary is currently a checked ownership prototype, not part of accepted
-document staging. `stage-analysis-probe` builds synthetic documents directly.
+document staging. `stage-analysis-probe` builds nonrecursive synthetic documents
+directly, but its recursive case now passes through the ordinary elaborator.
 The public elaborator predeclares every value-function identity, partitions the
 body-call graph into SCCs, checks each recursive group by size-change termination,
 and only then installs the group's native Z3 recursive definitions. The separate
@@ -408,6 +409,18 @@ than substituting a callee body: their arguments are evaluated exactly once, so
 an ignored strict argument cannot lose its executable edges or recursion block.
 Calls within the active SCC are explicit recursive boundaries rather than
 unrolled terms.
+
+Termination permission crosses this boundary as an opaque
+`ValueRecursionCertificate`, not as a boolean reconstructed from the detached
+flow graph. `ValueElaborator` can construct one only after the source group's
+size-change closure succeeds and the group has been installed atomically. The
+public execution result exposes the function names and direct/closure/idempotent
+graph counts for inspection, while privately retaining the exact parsed
+declaration identities. `build_certified_value_flow` therefore accepts a
+certificate only for the same AST objects which were checked; byte-identical
+source parsed again is a different unchecked object and is rejected. The
+resulting wrapper names certified flow SCCs without teaching the evaluator to
+run them yet. The staging cache itself continues to contain no source pointers.
 
 The cache fingerprint uses the normalized transfers for the whole SCC and the
 exact fingerprints of imported transfers. This replaces the earlier
@@ -459,8 +472,9 @@ position across calls. The no-descent mutual control fails before `recdef`.
 Rainfall retains each direct matrix, the closure counts and accepted idempotent
 loops, and native installation separately.
 
-The cacheable staging evaluator still blocks every recursive transfer. Connecting
-the source termination certificate to compile-time execution remains separate
+The cacheable staging evaluator still blocks every recursive transfer. The
+source certificate now reaches the staging owner, but tying recursive-call nodes
+to one immutable SCC transfer map and evaluating exact arguments remain separate
 work. A native definition is executable by Z3 on concrete ground calls, but the
 staging prototype does not yet use size-change acceptance as permission to run an
 SCC.
@@ -488,8 +502,10 @@ invalidation, alpha/trivia stability, normalized transfer stopping, a changed
 nonconstant transfer, caller-specific identity, dead and live match edges,
 known constructors crossing calls with runtime payloads, capture-safe nested
 calls, strict argument observability, integer normalization, agreement with the
-direct source evaluator, and the mutually recursive dependency fixed point and
-execution block.
+direct source evaluator, and an elaborator-certified mutually recursive
+dependency fixed point which remains execution-blocked. Its negative control
+reparses identical source and proves the certificate cannot be replayed onto the
+new declarations.
 
 ## Staged elimination of indexed evidence
 
