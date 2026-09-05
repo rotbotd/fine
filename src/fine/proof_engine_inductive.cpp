@@ -4,6 +4,26 @@
 // structural induction, context absorption, and proof-level declarations.
 namespace fine::elaboration {
 
+    namespace {
+        bool uses_free_value_name(syntax::ValueExpr const &expression, std::string const &name,
+                                  std::set<std::string> const &bound = {}) {
+            if (expression.kind == syntax::ValueExpr::Kind::name)
+                return expression.name == name && !bound.contains(name);
+            if (expression.kind != syntax::ValueExpr::Kind::match)
+                return std::any_of(expression.elements.begin(), expression.elements.end(),
+                                   [&](auto const &element) { return uses_free_value_name(element, name, bound); });
+            if (!expression.elements.empty() && uses_free_value_name(expression.elements.front(), name, bound))
+                return true;
+            for (std::size_t i = 0; i < expression.match_binders.size(); ++i) {
+                auto arm_bound = bound;
+                arm_bound.insert(expression.match_binders[i].begin(), expression.match_binders[i].end());
+                if (uses_free_value_name(expression.elements.at(i + 1), name, arm_bound))
+                    return true;
+            }
+            return false;
+        }
+    }  // namespace
+
     std::vector<ProofCandidate>
     ProofEngine::enumerate_inductive_proof_candidates(syntax::ProofType const &expected_syntax,
                                                       InductiveType const &expected, ProofEnvironment const &proofs,
@@ -387,6 +407,162 @@ namespace fine::elaboration {
             std::move(name),          std::move(expected), "constructor:" + constructor.name, expression.span, "", "",
             expected_syntax.arguments};
     }
+    ValueTerm ProofEngine::elaborate_staged_value_match(syntax::ValueExpr const &expression,
+                                                        ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                                        std::vector<std::string> const &proof_order,
+                                                        std::vector<z3::expr> const &absorbed) {
+        if (expression.elements.empty() || expression.elements.front().kind != syntax::ValueExpr::Kind::name)
+            reject(expression.span, "a staged proof match requires one local proof name");
+        std::string const &proof_name = expression.elements.front().name;
+        auto proof_found = proofs.find(proof_name);
+        if (proof_found == proofs.end())
+            reject(expression.elements.front().span, "unknown proof `" + proof_name + "`");
+        auto scrutinee = std::get_if<InductiveType>(&proof_found->second.type);
+        if (!scrutinee)
+            reject(expression.elements.front().span,
+                   "proof match scrutinee `" + proof_name + "` is not indexed-family evidence");
+        auto family_found = proof_inductives_.find(scrutinee->family);
+        if (family_found == proof_inductives_.end())
+            throw std::logic_error("proof evidence names an undeclared family");
+        syntax::ProofInductiveDecl const &family = *family_found->second;
+
+        struct Candidate {
+            syntax::ProofConstructorDecl const *constructor;
+            ValueEnvironment values;
+            std::set<std::string> determined_parameters;
+        };
+        std::vector<Candidate> candidates;
+        std::vector<std::string> feasible_names;
+        for (auto const &constructor : family.constructors) {
+            std::map<std::string, ValueKind> parameter_kinds;
+            for (auto const &parameter : constructor.parameters)
+                parameter_kinds.emplace(parameter.name, kind_of(parameter.type));
+
+            ValueEnvironment determined;
+            for (std::size_t i = 0; i < scrutinee->indices.size(); ++i) {
+                ValueEnvironment trial = determined;
+                if (values_.match_constructor_index(constructor.result_type.arguments.at(i),
+                                                    scrutinee->indices[i].expression, parameter_kinds, trial))
+                    determined = std::move(trial);
+            }
+            ValueEnvironment constructor_values = determined;
+            for (auto const &parameter : constructor.parameters) {
+                if (constructor_values.contains(parameter.name))
+                    continue;
+                ValueKind kind = kind_of(parameter.type);
+                std::string symbol = "fine.staged-proof-match." + std::to_string(expression.node_id) + "." +
+                                     constructor.name + "." + parameter.name;
+                constructor_values.emplace(
+                    parameter.name, ValueTerm(kind, values_.context().constant(symbol.c_str(), values_.sort(kind))));
+            }
+
+            ProofEnvironment no_proofs;
+            std::vector<std::string> no_proof_order;
+            std::vector<z3::expr> no_absorbed;
+            SemanticProofType result = elaborate_proof_type(constructor.result_type, constructor_values, no_proofs,
+                                                            no_proof_order, no_absorbed);
+            auto result_indices = std::get_if<InductiveType>(&result);
+            if (!result_indices || result_indices->family != family.name ||
+                result_indices->indices.size() != scrutinee->indices.size())
+                throw std::logic_error("checked proof constructor changed family or arity");
+            z3::solver solver(values_.context());
+            for (auto const &assumption : absorbed)
+                solver.add(assumption);
+            for (std::size_t i = 0; i < scrutinee->indices.size(); ++i)
+                solver.add(result_indices->indices[i].expression == scrutinee->indices[i].expression);
+            z3::check_result status = solver.check();
+            if (status == z3::unknown)
+                reject(expression.span,
+                       "constructor availability for proof match was unknown: " + solver.reason_unknown());
+            if (status == z3::sat) {
+                std::set<std::string> determined_names;
+                for (auto const &[name, value] : determined)
+                    determined_names.insert(name);
+                feasible_names.push_back(constructor.name);
+                candidates.push_back({&constructor, std::move(constructor_values), std::move(determined_names)});
+            }
+        }
+
+        if (candidates.size() != 1) {
+            std::ostringstream message;
+            message << "proof match cannot produce a runtime value: constructor is not uniquely determined";
+            if (!feasible_names.empty()) {
+                message << " (feasible:";
+                for (auto const &name : feasible_names)
+                    message << ' ' << name;
+                message << ')';
+            }
+            reject(expression.span, message.str());
+        }
+        Candidate const &selected = candidates.front();
+        syntax::ProofConstructorDecl const &constructor = *selected.constructor;
+        if (expression.match_constructors.size() != 1 || expression.match_constructors.front() != constructor.name)
+            reject(expression.span,
+                   "staged proof match must contain exactly its uniquely reachable arm `" + constructor.name + "`");
+        std::size_t positional_binders = constructor.parameters.size() + constructor.explicit_proof_parameters.size();
+        if (expression.match_binders.front().size() != positional_binders)
+            reject(expression.match_arm_spans.front(), "proof match arm `" + constructor.name + "` expects " +
+                                                           std::to_string(positional_binders) + " positional binders");
+
+        ValueEnvironment branch_values = values;
+        ProofEnvironment branch_proofs = proofs;
+        std::vector<std::string> branch_proof_order = proof_order;
+        std::vector<z3::expr> branch_absorbed = absorbed;
+        std::set<std::string> arm_names;
+        syntax::ValueExpr const &body = expression.elements.at(1);
+        for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
+            auto const &parameter = constructor.parameters[i];
+            std::string const &binder = expression.match_binders.front()[i];
+            if (!arm_names.insert(binder).second || branch_values.contains(binder) || branch_proofs.contains(binder))
+                reject(expression.match_arm_spans.front(), "duplicate proof match binder `" + binder + "`");
+            if (!selected.determined_parameters.contains(parameter.name) && uses_free_value_name(body, binder))
+                reject(body.span, "proof match field `" + binder +
+                                      "` is not determined by a runtime index and cannot enter runtime code");
+            branch_values.emplace(binder, selected.values.at(parameter.name));
+        }
+
+        ProofEnvironment constructor_proofs;
+        std::vector<std::string> constructor_proof_order;
+        auto bind_proof = [&](syntax::CoeffectParameter const &parameter, std::string const &binder,
+                              std::string formation) {
+            SemanticProofType field_type = elaborate_proof_type(parameter.type, selected.values, constructor_proofs,
+                                                                constructor_proof_order, branch_absorbed);
+            if (!arm_names.insert(binder).second || branch_values.contains(binder) || branch_proofs.contains(binder))
+                reject(expression.match_arm_spans.front(), "duplicate proof match binder `" + binder + "`");
+            ProofEvidence field(binder, std::move(field_type), std::move(formation), expression.match_arm_spans.front(),
+                                "", "", parameter.type.arguments);
+            auto [inserted, ok] = branch_proofs.emplace(binder, std::move(field));
+            branch_proof_order.push_back(binder);
+            absorb(inserted->second, branch_absorbed, {"staged-proof-match:" + std::to_string(expression.node_id)},
+                   "staged-proof-field");
+            constructor_proofs.emplace(parameter.name, inserted->second);
+            constructor_proof_order.push_back(parameter.name);
+        };
+        for (std::size_t i = 0; i < constructor.explicit_proof_parameters.size(); ++i) {
+            auto const &parameter = constructor.explicit_proof_parameters[i];
+            bind_proof(parameter, expression.match_binders.front()[constructor.parameters.size() + i],
+                       "staged-proof-match-explicit-field:" + proof_name);
+        }
+        for (auto const &parameter : constructor.proof_parameters)
+            bind_proof(parameter, parameter.name, "staged-proof-match-coeffect:" + proof_name);
+
+        ValueTerm result =
+            values_.elaborate_value(body, branch_values, branch_proofs, branch_proof_order, branch_absorbed);
+        if (rainfall_)
+            rainfall_->record("derive", "proof.inductive.value-match",
+                              {"staged-proof-match:" + std::to_string(expression.node_id)},
+                              "fine.staged-proof-elimination",
+                              "A uniquely feasible static constructor selects one residual runtime value arm",
+                              {RainfallRecorder::string_field("scrutinee", proof_name),
+                               RainfallRecorder::string_field("family", family.name),
+                               RainfallRecorder::string_field("constructor", constructor.name),
+                               RainfallRecorder::number_field("feasible_constructors", feasible_names.size()),
+                               RainfallRecorder::boolean_field("constructor_unique", true),
+                               RainfallRecorder::boolean_field("runtime_proof_value_created", false),
+                               RainfallRecorder::boolean_field("proof_field_loaded_at_runtime", false)});
+        return result;
+    }
+
     ProofEvidence ProofEngine::elaborate_proof_match(
         syntax::ProofExpr const &expression, syntax::ProofType const &expected_syntax, SemanticProofType expected,
         ValueEnvironment const &values, ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,

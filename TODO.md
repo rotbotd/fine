@@ -42,10 +42,10 @@ callers synthesize or supply the evidence.
 - [ ] Keep “stageable from these inputs” separate from “safe for the compiler to
       execute now.” Recursive compile-time evaluation still requires Fine's
       structural termination evidence or an explicit bounded policy.
-- [ ] Use the inferred constructor availability when proof-only elimination
-      begins: constructor inspection is admissible only when the constructor
-      choice is compile-time-known; runtime-dependent proof evidence remains
-      opaque and may only contribute through the existing proof context.
+- [x] Use constructor availability for the first staged proof-to-value match.
+      The SMT context must leave one feasible constructor, and every value field
+      used by the residual arm must be recovered from a runtime index. Ambiguous
+      runtime-dependent evidence and proof-only hidden fields are rejected.
 
 Transfer exit test: one dead runtime branch preserves a compile-time value, one
 live join of distinct constants becomes runtime, a mutually recursive
@@ -53,8 +53,9 @@ named-function group stabilizes, and the same identity function yields a
 compile-time result for a known argument and a runtime result for a runtime
 argument. A known constructor with a runtime payload crosses a function call and
 selects one caller match arm. A strict argument's blocked recursion survives
-even when the callee ignores its value. A separate proof fixture must reject
-elimination when its constructor choice depends on runtime data.
+even when the callee ignores its value. The proof controls reject elimination
+when its constructor choice depends on runtime data and reject a used field that
+exists only inside erased evidence.
 
 Do not add 0-CFA, first-class function types, closures, or existential closure
 packages for this slice. If closures are ever demanded by a concrete program,

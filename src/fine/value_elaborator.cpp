@@ -124,6 +124,9 @@ namespace fine::elaboration {
                                                ProofEnvironment const &proofs,
                                                std::vector<std::string> const &proof_order,
                                                std::vector<z3::expr> const &absorbed) {
+        if (!expression.elements.empty() && expression.elements[0].kind == syntax::ValueExpr::Kind::name &&
+            proofs.contains(expression.elements[0].name))
+            return proofs_->elaborate_staged_value_match(expression, values, proofs, proof_order, absorbed);
         ValueTerm scrutinee = elaborate_value(expression.elements[0], values, proofs, proof_order, absorbed);
         if (scrutinee.kind.tag != ValueKind::Tag::enumeration)
             reject(expression.elements[0].span, "match scrutinee is not an enum value");
@@ -293,20 +296,32 @@ namespace fine::elaboration {
                 reject(coeffect.span, "`result` is reserved for the function body inside `ensures`");
             if (!names.insert(coeffect.name).second)
                 reject(coeffect.span, "duplicate parameter `" + coeffect.name + "`");
-            IdentityType type = proofs_->elaborate_identity(coeffect.type, values, proofs, proof_order, absorbed);
-            ProofEvidence evidence(coeffect.name, std::move(type), "coeffect", coeffect.span,
-                                   print_value(coeffect.type.left), print_value(coeffect.type.right));
+            SemanticProofType type =
+                proofs_->elaborate_proof_type(coeffect.type, values, proofs, proof_order, absorbed);
+            std::string left_source = coeffect.type.kind == syntax::ProofType::Kind::identity
+                                          ? print_value(coeffect.type.left)
+                                          : std::string{};
+            std::string right_source = coeffect.type.kind == syntax::ProofType::Kind::identity
+                                           ? print_value(coeffect.type.right)
+                                           : std::string{};
+            ProofEvidence evidence(coeffect.name, std::move(type), "coeffect", coeffect.span, std::move(left_source),
+                                   std::move(right_source), coeffect.type.arguments);
             std::string source;
             if (rainfall_) {
-                source = rainfall_->source_node(coeffect.type.node_id, coeffect.type.span, "proof-type.identity");
-                IdentityType const &identity = std::get<IdentityType>(evidence.type);
-                std::string proposition = rainfall_->term(identity.left == identity.right, "coeffect-proposition");
+                bool identity_type = std::holds_alternative<IdentityType>(evidence.type);
+                source = rainfall_->source_node(coeffect.type.node_id, coeffect.type.span,
+                                                identity_type ? "proof-type.identity" : "proof-type.inductive");
+                std::string proposition;
+                if (identity_type) {
+                    IdentityType const &identity = std::get<IdentityType>(evidence.type);
+                    proposition = rainfall_->term(identity.left == identity.right, "coeffect-proposition");
+                }
                 rainfall_->record("object", "coeffect.demand.declare", {"function:" + declaration.name},
                                   "fine.two-level-elaborator",
-                                  "Function signature declares identity evidence required from each caller",
+                                  "Function signature declares exact static evidence required from each caller",
                                   {RainfallRecorder::string_field("function", declaration.name),
                                    RainfallRecorder::string_field("coeffect", coeffect.name),
-                                   RainfallRecorder::string_field("proof_type", print_identity(coeffect.type)),
+                                   RainfallRecorder::string_field("proof_type", print_proof_type(coeffect.type)),
                                    RainfallRecorder::string_field("source", source),
                                    RainfallRecorder::string_field("proposition", proposition)});
             }
@@ -342,16 +357,15 @@ namespace fine::elaboration {
             if (status == z3::unknown) {
                 if (rainfall_) {
                     rainfall_->validate_terms();
-                    rainfall_->record(
-                        "scope", "function.guarantee.unknown.close", {"function:" + declaration.name},
-                        "fine.value-elaborator",
-                        "The counterexample query returned unknown; Fine does not manufacture a witness",
-                        {RainfallRecorder::string_field("function", declaration.name),
-                         RainfallRecorder::string_field("status", "unknown"),
-                         RainfallRecorder::string_field("reason", solver.reason_unknown())});
+                    rainfall_->record("scope", "function.guarantee.unknown.close", {"function:" + declaration.name},
+                                      "fine.value-elaborator",
+                                      "The counterexample query returned unknown; Fine does not manufacture a witness",
+                                      {RainfallRecorder::string_field("function", declaration.name),
+                                       RainfallRecorder::string_field("status", "unknown"),
+                                       RainfallRecorder::string_field("reason", solver.reason_unknown())});
                 }
-                reject(declaration.span, "function `" + declaration.name + "` guarantee check was unknown: " +
-                                             solver.reason_unknown());
+                reject(declaration.span,
+                       "function `" + declaration.name + "` guarantee check was unknown: " + solver.reason_unknown());
             }
             if (status == z3::sat)
                 reject_with_counterexample(declaration, values, absorbed, body, guarantee, solver.get_model());
@@ -408,8 +422,8 @@ namespace fine::elaboration {
         }
         std::vector<std::pair<std::string, std::string>> chosen;
         for (auto const &coeffect : function.coeffects) {
-            IdentityType demand = proofs_->elaborate_identity(coeffect.type, callee_values, callee_proofs,
-                                                              callee_proof_order, callee_absorbed);
+            SemanticProofType demand = proofs_->elaborate_proof_type(coeffect.type, callee_values, callee_proofs,
+                                                                     callee_proof_order, callee_absorbed);
             std::string proof_name;
             bool explicit_choice = false;
             if (auto explicit_found = explicit_arguments.find(coeffect.name);
@@ -425,26 +439,24 @@ namespace fine::elaboration {
                 for (auto const &candidate : caller_proof_order) {
                     auto candidate_found = caller_proofs.find(candidate);
                     if (candidate_found != caller_proofs.end() &&
-                        std::holds_alternative<IdentityType>(candidate_found->second.type) &&
-                        same_type(context_, std::get<IdentityType>(candidate_found->second.type), demand)) {
+                        same_type(context_, candidate_found->second.type, demand)) {
                         proof_name = candidate;
                         break;
                     }
                 }
                 if (proof_name.empty())
                     reject(expression.span, "missing caller proof for coeffect `" + expression.name + "." +
-                                                coeffect.name + " : " + print_identity(coeffect.type) + "`");
+                                                coeffect.name + " : " + print_proof_type(coeffect.type) + "`");
             }
             auto evidence_found = caller_proofs.find(proof_name);
             if (evidence_found == caller_proofs.end())
                 reject(expression.span, "unknown caller proof `" + proof_name + "`");
-            if (!std::holds_alternative<IdentityType>(evidence_found->second.type) ||
-                !same_type(context_, std::get<IdentityType>(evidence_found->second.type), demand))
+            if (!same_type(context_, evidence_found->second.type, demand))
                 reject(expression.span, "caller proof `" + proof_name + "` does not satisfy coeffect `" +
                                             expression.name + "." + coeffect.name + "`");
             ProofEvidence supplied(coeffect.name, std::move(demand), "caller:" + proof_name,
                                    evidence_found->second.span, evidence_found->second.left_source,
-                                   evidence_found->second.right_source);
+                                   evidence_found->second.right_source, coeffect.type.arguments);
             auto [inserted, ok] = callee_proofs.emplace(coeffect.name, std::move(supplied));
             callee_proof_order.push_back(coeffect.name);
             proofs_->absorb(inserted->second, callee_absorbed, {"call:" + expression.name}, "resolved-coeffect");
@@ -453,18 +465,20 @@ namespace fine::elaboration {
             output_ << "resolved coeffect: " << expression.name << '.' << coeffect.name << " <- " << proof_name
                     << (explicit_choice ? " (explicit)" : " (lexical search)") << '\n';
             if (rainfall_) {
-                IdentityType const &identity = std::get<IdentityType>(inserted->second.type);
-                std::string demand_term =
-                    rainfall_->term(identity.left == identity.right, "instantiated-coeffect-proposition");
+                std::string demand_term;
+                if (auto identity = std::get_if<IdentityType>(&inserted->second.type))
+                    demand_term =
+                        rainfall_->term(identity->left == identity->right, "instantiated-coeffect-proposition");
                 rainfall_->record("derive", "coeffect.demand.instantiate", {"call:" + expression.name},
                                   "fine.two-level-elaborator",
-                                  "Value arguments instantiate the callee's identity demand in the caller's manager",
+                                  "Value arguments instantiate the callee's static demand in the caller's manager",
                                   {RainfallRecorder::string_field("function", expression.name),
                                    RainfallRecorder::string_field("coeffect", coeffect.name),
+                                   RainfallRecorder::string_field("proof_type", print_proof_type(coeffect.type)),
                                    RainfallRecorder::string_field("proposition", demand_term)});
                 rainfall_->record(
                     "derive", "coeffect.resolve", {"call:" + expression.name}, "fine.lexical-proof-search",
-                    "Exact caller-local identity evidence selected; no global instance search",
+                    "Exact caller-local evidence selected; no global instance search",
                     {RainfallRecorder::string_field("function", expression.name),
                      RainfallRecorder::string_field("coeffect", coeffect.name),
                      RainfallRecorder::string_field("proof", proof_name),

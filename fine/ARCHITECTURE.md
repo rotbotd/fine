@@ -74,7 +74,7 @@ function predecessor(value: Nat) -> Nat {
 
 These datatypes do not blur the level boundary. `succ(zero)` is a `ValueTerm`.
 An `Id(Nat, left, right)` inhabitant remains `ProofEvidence`, and no enum match
-can inspect it. Static indexed families will use the separate `proof inductive`
+can inspect it. Static indexed families use the separate `proof inductive`
 form rather than pretending an indexed proof constructor is a runtime enum.
 
 ## Static indexed constructors
@@ -419,14 +419,52 @@ an invalid `z3::expr`.
 The current pure value expression language has no effectful primitive beyond
 the separately retained executable-edge set and recursive-call block. If Fine
 adds effects, those must become explicit transfer outputs rather than be inferred
-from a constant result. Recursive evaluation under termination evidence and the
-proof-elimination consumer remain open. `stage-analysis-probe` checks cache
+from a constant result. Recursive evaluation under termination evidence remains
+open. The first proof-elimination consumer is below. `stage-analysis-probe` checks cache
 invalidation, alpha/trivia stability, normalized transfer stopping, a changed
 nonconstant transfer, caller-specific identity, dead and live match edges,
 known constructors crossing calls with runtime payloads, capture-safe nested
 calls, strict argument observability, integer normalization, agreement with the
 direct source evaluator, and the mutually recursive dependency fixed point and
 execution block.
+
+## Staged elimination of indexed evidence
+
+An indexed-family coeffect may select runtime code, but its evidence still has
+no runtime representation. At a value-level `match`, `ProofEngine` checks each
+family constructor under the function's absorbed identity constraints. The
+match is admitted only when exactly one constructor is satisfiable. It returns
+that branch environment to `ValueElaborator`, which elaborates only the residual
+value arm. There is no runtime tag test and no proof value in the result.
+
+```fine
+function recover(value: Flag) -> Flag
+  takes [evidence: Tagged(value)]
+  ensures {
+    result == value;
+  }
+{
+  match evidence {
+    tagged(field) => field,
+  }
+}
+```
+
+Here `tagged(field) -> Tagged(field)` makes `field` the same runtime value as the
+family index `value`; the proof contributes no storage. The transfer builder
+lowers the checked match directly to that residual alias, so `recover(runtime)`
+still exports a reusable runtime-to-runtime transfer. A second fixture uses an
+absorbed `Id(Flag, value, off)` to leave `selected_off` as the only satisfiable
+constructor, proving that availability comes from the SMT context rather than
+the spelling of the index.
+
+Two controls define the refusal boundary. `Selected(value)` with unconstrained
+runtime `value` leaves both `selected_off` and `selected_on` feasible, so the
+match is rejected at its source span. A one-constructor `Hidden()` family is not
+enough by itself: if `hidden(value: Int)` does not expose `value` through a
+runtime index, an arm returning `value` is rejected. Unused hidden fields and
+proof-only branch evidence remain harmless. Constructor choice is compile-time
+data; constructor storage is never manufactured.
 
 ## Rainfall boundary
 
@@ -480,8 +518,8 @@ make `counterexample` executable source.
 
 Runtime values include `Int`, `Bool`, and native Z3 enum datatypes with typed
 payloads, recursive self fields, construction, and exhaustive matching. Value
-functions are nonrecursive and may declare guarantees and lexical identity
-coeffects. Failed guarantees return typed, exact-roundtripped counterexamples;
+functions are nonrecursive and may declare guarantees and lexical identity or
+indexed-family coeffects. Failed guarantees return typed, exact-roundtripped counterexamples;
 negative integer literals are accepted so every completed integer numeral has a
 source form.
 
@@ -493,8 +531,10 @@ or structurally admitted induction-hypothesis applications. Identity search has
 both deterministic and Z3 datatype-model selectors; checkpoint mode can retain
 a typed partial source tree with unresolved holes.
 
-There are no runtime proof values, proof elimination into runtime data, runtime
-recursion, numeric termination measures, general dependent types, universes,
+There are no runtime proof values or runtime inspection of proof tags or fields.
+The only proof-to-value match is compile-time reduction of one uniquely feasible
+constructor whose used value fields come from runtime indices. Runtime recursion,
+numeric termination measures, general dependent types, universes,
 global theorem search, or proof-constructor synthesis. Live browser search is
 source-ordered rather than a joint optimization over several holes. Both one-shot
 Z3 selection and live epochs use direct production discovery. One-shot Rainfall

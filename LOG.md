@@ -6551,3 +6551,91 @@ The next staging boundary is not more cache machinery: either authorize recursiv
 compile-time execution with Fine-owned termination evidence, or connect inferred
 constructor availability to one proof-elimination fixture while rejecting a
 runtime-dependent constructor choice.
+
+## 2026-09-05 — staged proof elimination without a runtime proof
+
+This slice makes one `proof inductive` eliminator produce an ordinary runtime
+value while preserving the two-level representation. It does not reintroduce a
+proof-valued runtime variant. A value-level `match evidence` is accepted only
+when the current elaboration context determines exactly one constructor. The
+proof engine checks each constructor result against the scrutinee's exact family
+indices in a fresh solver containing the already absorbed lexical equalities. It
+rejects zero or multiple feasible constructors, elaborates only the unique arm,
+and records that decision as `proof.inductive.value-match`. There is no runtime
+proof tag test and no runtime proof-field load.
+
+The strongest positive control is not the singleton family. `Selected(value)`
+has both `selected_off` and `selected_on`; `selected_by_equality(value)` also
+takes `Id(Flag, value, off)`. Absorbing that identity into the lexical SMT
+context makes only `selected_off` feasible, so the match reduces to its literal
+`true` body. Removing that equality leaves both constructors feasible and fails
+at the elimination site. This establishes that the decision uses the current
+solver context rather than constructor count or source-arm count.
+
+Constructor value fields receive a separate runtime boundary. A used field may
+enter the selected value arm only when matching the constructor result indices
+structurally recovers it from a runtime family index. Thus
+`Tagged(field) -> Tagged(field)` can reduce `recover(value)` to the ordinary
+runtime parameter `value`; a singleton `Hidden()` constructor carrying an
+unindexed `value: Int` is still rejected when the arm returns `value`. Uniqueness
+of the constructor is not permission to inspect erased storage. This first
+boundary deliberately does not ask a model for arbitrary unique hidden values.
+
+Value-function coeffects now accept any semantic proof type rather than only
+`Id`. Exact caller-local resolution and `using` selection are shared with the
+identity path. Proof evidence remains a strong source object in the proof engine
+and Rainfall, while `ValueElaborator` receives only the selected ordinary value
+arm. The materializer turns the implicit `recover(on)` demand into
+`recover(on) using [evidence = tagged_on]` and reruns with search forbidden.
+
+The cacheable staging transfer needed one corresponding consumer. Its source
+lowerer now recognizes an accepted one-arm staged proof match, matches constructor
+result indices against the enclosing proof coeffect, aliases recovered constructor
+fields to ordinary value-flow nodes, and lowers only the residual arm. The probe
+therefore reports `recover(runtime)` as `runtime` with dependency bit `1`, rather
+than treating the erased match as an opaque failure or inventing a runtime branch.
+The compiler's semantic constructor-feasibility check still belongs to
+`ProofEngine`; the transfer builder only represents the already accepted residual
+shape.
+
+The current limit is explicit. Fine checks a symbolic value function at its
+declaration, so a two-constructor family depending on an unconstrained runtime
+input is rejected even if a future call site would pass a constant. Call-site
+specialization/monomorphization is not part of this slice. Proof applications are
+also not normalized to constructor structure here, and an empty proof match has
+no expected result type in the present value-expression AST. All three remain
+separate later problems rather than being hidden behind this acceptance rule.
+
+New checked fixtures:
+
+- `staged-proof-elimination.fine`: runtime-index field recovery, exact-index
+  constructor selection, and constructor selection under an absorbed identity;
+- `reject-runtime-dependent-proof-elimination.fine`: two feasible constructors
+  under a runtime index;
+- `reject-hidden-proof-field-elimination.fine`: one constructor but an erased,
+  unindexed field used by runtime code.
+
+Validation commands:
+
+```
+cmake --build .build -j4
+.build/fine stage-analysis-probe
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine materialize fine/fixtures/staged-proof-elimination.fine
+.build/fine rain fine/fixtures/staged-proof-elimination.fine
+python3 fine/rainfall_replay.py <rainfall-output>
+.build/fine run fine/fixtures/identity-coeffect.fine
+.build/fine run --proof-selector z3 fine/fixtures/playground-demo.fine
+python3 fine/check_document_examples.py .
+git diff --check
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All passed. Clean dirty-tree artifacts before the implementation commit:
+
+- native: `/nix/store/4yb18wp3i6lhhppyzag0xjw9d1jgnqcz-fine-0.1.0`
+- ordinary Wasm: `/nix/store/fbnbh86y74xxi4203mj176r234brjybc-fine-playground-wasm-0.1.0`
+- pthread Wasm: `/nix/store/b7xhzfhn0cvf8vj17wf8n8c19v5sr51r-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/z113rf0393l46a5j6jfvdj4jl6w56ng0-fine-playground-0.1.0`

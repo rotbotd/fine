@@ -28,10 +28,19 @@ cases and no proof case in `ValueTerm`.
 
 An identity proof remains exact source evidence. Introducing it automatically
 adds its equality proposition to the local solver context. A function `takes`
-identity evidence from its caller; a call resolves that coeffect from exact
-lexical proof evidence and may materialize the chosen proof as an explicit
+identity or indexed evidence from its caller; a call resolves that coeffect from
+exact lexical proof evidence and may materialize the chosen proof as an explicit
 `using` argument. The argument is checked again but never becomes a runtime
 argument.
+
+An indexed coeffect can be matched in a value function only as a compile-time
+reduction. Fine asks which declared constructors remain satisfiable under the
+current identity constraints, requires exactly one, and elaborates only that
+arm. A constructor value binder may enter the residual expression only when it
+is recovered from a runtime family index. Thus `Tagged(value)` can return its
+`tagged(field)` binder when the constructor result equates `field` with `value`;
+`Hidden()` cannot return a constructor-only integer. Neither case adds a proof
+variant to `ValueTerm`.
 
 ## Quarantined consumers
 

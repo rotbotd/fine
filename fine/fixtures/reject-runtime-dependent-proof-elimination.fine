@@ -1,0 +1,18 @@
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive Selected(value: Flag) {
+  selected_off() -> Selected(off);
+  selected_on() -> Selected(on);
+}
+
+function reveal(value: Flag) -> Bool
+  takes [evidence: Selected(value)]
+{
+  match evidence {
+    selected_off() => false,
+    selected_on() => true,
+  }
+}

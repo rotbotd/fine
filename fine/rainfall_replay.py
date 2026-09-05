@@ -380,6 +380,16 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      data.get("runtime_value_created") is False,
                      f"event {sequence}: malformed or incomplete indexed proof match")
             proof_matches.add(scope)
+        elif operation == "proof.inductive.value-match":
+            _require(len(within) == 1 and within[0].startswith("staged-proof-match:") and
+                     isinstance(data.get("scrutinee"), str) and data["scrutinee"] and
+                     isinstance(data.get("family"), str) and data["family"] and
+                     isinstance(data.get("constructor"), str) and data["constructor"] and
+                     data.get("feasible_constructors") == 1 and
+                     data.get("constructor_unique") is True and
+                     data.get("runtime_proof_value_created") is False and
+                     data.get("proof_field_loaded_at_runtime") is False,
+                     f"event {sequence}: malformed staged proof-to-value match")
         elif operation == "proof.function.verify":
             function = data.get("function")
             parameter_sources = data.get("parameter_sources")

@@ -93,6 +93,8 @@
           grep -F "strict-argument-recursion-blocked: true" <<<"$stage_analysis"
           grep -F "normalized-integer-equality: comptime(true)" <<<"$stage_analysis"
           grep -F "transfer-matches-direct-oracle: true" <<<"$stage_analysis"
+          grep -F "staged-proof-residual-result: runtime" <<<"$stage_analysis"
+          grep -F "staged-proof-residual-dependencies: 1" <<<"$stage_analysis"
           grep -F "mutual-scc-size: 2" <<<"$stage_analysis"
           grep -F "mutual-left-dependencies: 11" <<<"$stage_analysis"
           grep -F "mutual-right-dependencies: 11" <<<"$stage_analysis"
@@ -117,6 +119,7 @@
             "$src/fine/fixtures/playground-demo.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
             "$src/fine/fixtures/proof-inductive-match.fine" \
+            "$src/fine/fixtures/staged-proof-elimination.fine" \
             "$src/fine/fixtures/proof-inductive-holes.fine" \
             "$src/fine/fixtures/top-level-declarations.fine"; do
             concrete_roundtrip="$(mktemp)"
@@ -230,6 +233,41 @@
           $out/bin/fine rain "$src/fine/fixtures/proof-inductive-match.fine" > "$proof_match_rain"
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/proof-inductive-match.fine" "$proof_match_rain"
+
+          staged_output="$($out/bin/fine run "$src/fine/fixtures/staged-proof-elimination.fine")"
+          echo "$staged_output"
+          grep -F "verified function: recover" <<<"$staged_output"
+          grep -F "verified function: selected_by_equality" <<<"$staged_output"
+          grep -F "resolved coeffect: recover.evidence <- tagged_on (lexical search)" <<<"$staged_output"
+          grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$staged_output"
+          staged_materialized="$(mktemp)"
+          $out/bin/fine materialize "$src/fine/fixtures/staged-proof-elimination.fine" \
+            > "$staged_materialized"
+          grep -F 'recover(on) using [evidence = tagged_on]' "$staged_materialized"
+
+          staged_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/staged-proof-elimination.fine" > "$staged_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/staged-proof-elimination.fine" "$staged_rain"
+          grep -F '"operation":"proof.inductive.value-match"' "$staged_rain"
+
+          runtime_proof_elimination="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-runtime-dependent-proof-elimination.fine" \
+              >"$runtime_proof_elimination" 2>&1; then
+            echo "runtime-dependent proof elimination unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -F 'constructor is not uniquely determined (feasible: selected_off selected_on)' \
+            "$runtime_proof_elimination"
+
+          hidden_proof_field="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-hidden-proof-field-elimination.fine" \
+              >"$hidden_proof_field" 2>&1; then
+            echo "proof-only field unexpectedly entered runtime code" >&2
+            exit 1
+          fi
+          grep -F 'is not determined by a runtime index and cannot enter runtime code' \
+            "$hidden_proof_field"
 
           induction_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-induction.fine")"
           echo "$induction_output"

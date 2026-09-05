@@ -1,0 +1,55 @@
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive Tagged(value: Flag) {
+  tagged(field: Flag) -> Tagged(field);
+}
+
+proof inductive Selected(value: Flag) {
+  selected_off() -> Selected(off);
+  selected_on() -> Selected(on);
+}
+
+function recover(value: Flag) -> Flag
+  takes [evidence: Tagged(value)]
+  ensures {
+    result == value;
+  }
+{
+  match evidence {
+    tagged(field) => field,
+  }
+}
+
+function selected_off_value() -> Bool
+  takes [evidence: Selected(off)]
+{
+  match evidence {
+    selected_off() => true,
+  }
+}
+
+function selected_by_equality(value: Flag) -> Bool
+  takes [at_off: Id(Flag, value, off), evidence: Selected(value)]
+{
+  match evidence {
+    selected_off() => true,
+  }
+}
+
+run staged_proof_elimination {
+  proof tagged_on: Tagged(on) = tagged(on);
+  let recovered: Flag = recover(on);
+  assert recovered == on;
+
+  proof off_selected: Selected(off) = selected_off();
+  let selected: Bool = selected_off_value() using [evidence = off_selected];
+  assert selected;
+
+  proof off_identity: Id(Flag, off, off) = refl(off);
+  let constrained: Bool = selected_by_equality(off)
+    using [at_off = off_identity, evidence = off_selected];
+  assert constrained;
+}

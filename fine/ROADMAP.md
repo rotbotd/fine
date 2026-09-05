@@ -173,6 +173,13 @@ and runtime function bodies cannot inspect constructors of `ProofEvidence`. A
 negative fixture must attempt both and fail before lowering. Rainfall may retain
 which evidence an eliminator used, but generated runtime code remains unchanged.
 
+The later staged consumer sharpens this boundary without adding runtime proof
+values. A value function may contain a proof-family match when the current SMT
+context proves exactly one constructor feasible and every constructor value used
+by the residual arm is already recoverable from a runtime index. Fine removes
+the match while compiling. Ambiguous constructors and proof-only hidden fields
+still fail before runtime lowering.
+
 Exit conditions:
 
 - one proof requires identity transport rather than mere context absorption;
@@ -379,7 +386,8 @@ separate concrete consumer forces each one.
 
 - no equality between proofs or higher identity types in this roadmap;
 - no runtime proof values and no late erasure pass;
-- no proof elimination into runtime data;
+- no runtime proof tag or field inspection; proof-to-value matching is limited
+  to compile-time reduction of one uniquely feasible constructor;
 - no global typeclass, instance, or theorem search;
 - no general universe of Fine types encoded as Z3 terms merely to simulate
   dependency;

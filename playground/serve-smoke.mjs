@@ -87,12 +87,12 @@ try {
       || !reference.includes("every view retains earlier completed holes")
       || !reference.includes("shared ring") || !reference.includes("last validated source"))
     throw new Error("language reference does not state the checkpoint interruption boundary");
-  for (const form of ["runtime enum", "runtime match", "indexed proof family", "indexed constructor evidence", "indexed proof match", "structural proof induction", "indexed proof hole", "partial proof checkpoint", "empty proof match"])
+  for (const form of ["runtime enum", "runtime match", "indexed proof family", "indexed constructor evidence", "indexed proof match", "staged proof match", "structural proof induction", "indexed proof hole", "partial proof checkpoint", "empty proof match"])
     if (!reference.includes(form))
       throw new Error(`language reference is missing current form: ${form}`);
   if (!reference.includes("takes [") || reference.includes("<code>needs ["))
     throw new Error("language reference does not expose only the current static-input keyword");
-  for (const currentExample of ["proof function even_pred", "proof copied: Even(zero) = ?;", "proof function plus_shift"])
+  for (const currentExample of ["proof function even_pred", "proof copied: Even(zero) = ?;", "proof function plus_shift", "function recover(value: Flag)"])
     if (!reference.includes(currentExample))
       throw new Error(`language reference omits checked current example: ${currentExample}`);
   for (const staleExample of ["Rebuilt(value)", "shape_zero", "rebuilt_next"])

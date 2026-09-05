@@ -37,6 +37,13 @@ namespace fine::stage {
             FlowType result;
         };
 
+        struct ProofConstructorSignature {
+            std::string family;
+            std::vector<syntax::ValueParameter> parameters;
+            std::size_t explicit_proofs = 0;
+            std::vector<syntax::ValueExpr> result_indices;
+        };
+
     }  // namespace
 
     class ValueFlowBuilder {
@@ -62,6 +69,12 @@ namespace fine::stage {
                 if (!signatures_.emplace(function.name, std::move(signature)).second)
                     throw std::runtime_error("duplicate function in value-flow input: " + function.name);
             }
+            for (auto const &family : document.proof_inductives)
+                for (auto const &constructor : family.constructors)
+                    proof_constructors_.emplace(constructor.name,
+                                                ProofConstructorSignature{family.name, constructor.parameters,
+                                                                          constructor.explicit_proof_parameters.size(),
+                                                                          constructor.result_type.arguments});
         }
 
         ValueFlowProgram build() {
@@ -79,10 +92,13 @@ namespace fine::stage {
         std::set<std::string> enums_;
         std::map<std::string, ConstructorSignature> constructors_;
         std::map<std::string, FunctionSignature> signatures_;
+        std::map<std::string, ProofConstructorSignature> proof_constructors_;
 
         struct FunctionState {
             ValueFlowFunction function;
             std::map<std::string, std::pair<FlowLocalId, FlowType>> locals;
+            std::map<std::string, syntax::ProofType const *> proof_locals;
+            std::map<std::string, FlowNodeId> aliases;
             FlowLocalId next_local = 0;
         };
 
@@ -101,6 +117,8 @@ namespace fine::stage {
             };
 
             if (expression.kind == syntax::ValueExpr::Kind::name) {
+                if (auto alias = state.aliases.find(expression.name); alias != state.aliases.end())
+                    return alias->second;
                 if (auto local = state.locals.find(expression.name); local != state.locals.end())
                     return append(state, {FlowNode::Kind::local, local->second.second, {}, local->second.first});
                 auto constructor = constructors_.find(expression.name);
@@ -155,6 +173,11 @@ namespace fine::stage {
 
             if (expression.elements.empty())
                 throw std::runtime_error("match without scrutinee in value-flow input");
+            if (expression.elements.front().kind == syntax::ValueExpr::Kind::name) {
+                auto proof = state.proof_locals.find(expression.elements.front().name);
+                if (proof != state.proof_locals.end())
+                    return lower_staged_proof_match(expression, *proof->second, state);
+            }
             FlowNodeId scrutinee = lower(expression.elements.front(), state);
             FlowType scrutinee_type = state.function.nodes_[scrutinee].type;
             if (scrutinee_type.kind != syntax::ValueType::Kind::enumeration)
@@ -198,6 +221,77 @@ namespace fine::stage {
             return append(state, std::move(match));
         }
 
+        bool same_index_syntax(syntax::ValueExpr const &left, syntax::ValueExpr const &right) {
+            if (left.kind != right.kind || left.name != right.name || left.integer_text != right.integer_text ||
+                left.boolean_value != right.boolean_value || left.elements.size() != right.elements.size())
+                return false;
+            for (std::size_t i = 0; i < left.elements.size(); ++i)
+                if (!same_index_syntax(left.elements[i], right.elements[i]))
+                    return false;
+            return true;
+        }
+
+        bool bind_proof_index(syntax::ValueExpr const &pattern, syntax::ValueExpr const &target,
+                              std::set<std::string> const &parameters,
+                              std::map<std::string, syntax::ValueExpr const *> &bindings) {
+            if (pattern.kind == syntax::ValueExpr::Kind::name && parameters.contains(pattern.name)) {
+                auto [found, inserted] = bindings.emplace(pattern.name, &target);
+                return inserted || same_index_syntax(*found->second, target);
+            }
+            if (pattern.kind != target.kind || pattern.name != target.name ||
+                pattern.integer_text != target.integer_text || pattern.boolean_value != target.boolean_value ||
+                pattern.elements.size() != target.elements.size())
+                return false;
+            for (std::size_t i = 0; i < pattern.elements.size(); ++i)
+                if (!bind_proof_index(pattern.elements[i], target.elements[i], parameters, bindings))
+                    return false;
+            return true;
+        }
+
+        FlowNodeId lower_staged_proof_match(syntax::ValueExpr const &expression, syntax::ProofType const &proof,
+                                            FunctionState &state) {
+            if (proof.kind != syntax::ProofType::Kind::inductive)
+                throw std::runtime_error("value-flow proof match scrutinee is not indexed evidence");
+            if (expression.match_constructors.size() != 1)
+                throw std::runtime_error("unresolved proof match reached value-flow lowering");
+            auto signature = proof_constructors_.find(expression.match_constructors.front());
+            if (signature == proof_constructors_.end() || signature->second.family != proof.name)
+                throw std::runtime_error("wrong staged proof constructor in value-flow input");
+            auto const &constructor = signature->second;
+            if (expression.match_binders.front().size() != constructor.parameters.size() + constructor.explicit_proofs)
+                throw std::runtime_error("wrong staged proof match binder arity in value-flow input");
+
+            std::set<std::string> parameters;
+            for (auto const &parameter : constructor.parameters)
+                parameters.insert(parameter.name);
+            std::map<std::string, syntax::ValueExpr const *> parameter_bindings;
+            for (std::size_t i = 0; i < constructor.result_indices.size(); ++i) {
+                auto trial = parameter_bindings;
+                if (bind_proof_index(constructor.result_indices[i], proof.arguments.at(i), parameters, trial))
+                    parameter_bindings = std::move(trial);
+            }
+
+            std::vector<std::pair<std::string, std::optional<FlowNodeId>>> saved;
+            for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
+                std::string const &binder = expression.match_binders.front()[i];
+                auto old = state.aliases.find(binder);
+                saved.push_back({binder, old == state.aliases.end() ? std::nullopt : std::optional(old->second)});
+                auto binding = parameter_bindings.find(constructor.parameters[i].name);
+                if (binding != parameter_bindings.end())
+                    state.aliases[binder] = lower(*binding->second, state);
+                else
+                    state.aliases.erase(binder);
+            }
+            FlowNodeId body = lower(expression.elements.at(1), state);
+            for (auto const &[name, old] : saved) {
+                if (old)
+                    state.aliases[name] = *old;
+                else
+                    state.aliases.erase(name);
+            }
+            return body;
+        }
+
         std::string node_key(ValueFlowFunction const &function, FlowNodeId id) const {
             FlowNode const &node = function.nodes_[id];
             std::ostringstream key;
@@ -228,6 +322,8 @@ namespace fine::stage {
                     throw std::runtime_error("duplicate value-flow parameter: " + parameter.name);
                 state.function.parameters_.push_back(std::move(type));
             }
+            for (auto const &coeffect : declaration.coeffects)
+                state.proof_locals.emplace(coeffect.name, &coeffect.type);
             state.function.root_ = lower(declaration.body, state);
             if (state.function.nodes_[state.function.root_].type != state.function.result_type_)
                 throw std::runtime_error("value-flow function result type mismatch: " + declaration.name);

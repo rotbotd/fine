@@ -378,10 +378,18 @@ namespace fine::elaboration {
         virtual ~ProofContext() = default;
         virtual bool has_constructor(std::string const &name) const = 0;
         virtual bool has_function(std::string const &name) const = 0;
+        virtual SemanticProofType elaborate_proof_type(syntax::ProofType const &type, ValueEnvironment const &values,
+                                                       ProofEnvironment const &proofs,
+                                                       std::vector<std::string> const &proof_order,
+                                                       std::vector<z3::expr> const &absorbed) = 0;
         virtual IdentityType elaborate_identity(syntax::ProofType const &type, ValueEnvironment const &values,
                                                 ProofEnvironment const &proofs,
                                                 std::vector<std::string> const &proof_order,
                                                 std::vector<z3::expr> const &absorbed) = 0;
+        virtual ValueTerm elaborate_staged_value_match(syntax::ValueExpr const &expression,
+                                                       ValueEnvironment const &values, ProofEnvironment const &proofs,
+                                                       std::vector<std::string> const &proof_order,
+                                                       std::vector<z3::expr> const &absorbed) = 0;
         virtual void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed,
                             std::vector<std::string> within, std::string_view role,
                             std::optional<std::string> source = std::nullopt) = 0;
@@ -457,9 +465,8 @@ namespace fine::elaboration {
         syntax::ValueExpr lift_model_value(z3::expr const &expression, ValueKind const &kind) const;
         [[noreturn]] void reject_with_counterexample(syntax::FunctionDecl const &declaration,
                                                      ValueEnvironment const &values,
-                                                     std::vector<z3::expr> const &absorbed,
-                                                     ValueTerm const &body, z3::expr const &guarantee,
-                                                     z3::model const &model);
+                                                     std::vector<z3::expr> const &absorbed, ValueTerm const &body,
+                                                     z3::expr const &guarantee, z3::model const &model);
     };
 
     class ProofEngine final : public ProofContext {
@@ -491,7 +498,7 @@ namespace fine::elaboration {
         SemanticProofType elaborate_proof_type(syntax::ProofType const &type, ValueEnvironment const &values,
                                                ProofEnvironment const &proofs,
                                                std::vector<std::string> const &proof_order,
-                                               std::vector<z3::expr> const &absorbed);
+                                               std::vector<z3::expr> const &absorbed) override;
         ProofEvidence elaborate_any_proof(syntax::ProofExpr const &expression, syntax::ProofType const &expected_syntax,
                                           SemanticProofType expected, ValueEnvironment const &values,
                                           ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
@@ -506,6 +513,10 @@ namespace fine::elaboration {
         IdentityType elaborate_identity(syntax::ProofType const &type, ValueEnvironment const &values,
                                         ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
                                         std::vector<z3::expr> const &absorbed) override;
+        ValueTerm elaborate_staged_value_match(syntax::ValueExpr const &expression, ValueEnvironment const &values,
+                                               ProofEnvironment const &proofs,
+                                               std::vector<std::string> const &proof_order,
+                                               std::vector<z3::expr> const &absorbed) override;
 
     private:
         ValueElaborator &values_;

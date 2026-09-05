@@ -1,0 +1,11 @@
+proof inductive Hidden() {
+  hidden(value: Int) -> Hidden();
+}
+
+function reveal() -> Int
+  takes [evidence: Hidden()]
+{
+  match evidence {
+    hidden(value) => value,
+  }
+}

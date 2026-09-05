@@ -204,6 +204,25 @@ function normalized_integer() -> Bool { -0 == 0 }
         compare_oracle("normalized_integer", {}, normalized);
         output << "transfer-matches-direct-oracle: " << (oracle_equal ? "true" : "false") << '\n';
 
+        ValueFlowProgram staged_proof = parse(R"fine(
+enum Flag { off, on }
+proof inductive Tagged(value: Flag) {
+  tagged(field: Flag) -> Tagged(field);
+}
+function recover(value: Flag) -> Flag
+  takes [evidence: Tagged(value)]
+{
+  match evidence { tagged(field) => field, }
+}
+)fine");
+        StageAnalysisResult staged_proof_analysis = StageAnalysisCache().analyze(staged_proof);
+        StageEvaluation staged_proof_result =
+            evaluate_stage_transfer(staged_proof_analysis.functions.at("recover").transfer,
+                                    {stage_runtime({syntax::ValueType::Kind::enumeration, "Flag"})});
+        output << "staged-proof-residual-result: " << render_stage_value(staged_proof_result.result) << '\n';
+        output << "staged-proof-residual-dependencies: "
+               << bits(staged_proof_analysis.functions.at("recover").result_parameters) << '\n';
+
         ValueFlowProgram mutual = parse(R"fine(
 enum Flag { off, on }
 function left(flag: Flag, value: Bool) -> Bool {
