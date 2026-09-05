@@ -54,6 +54,9 @@ callers synthesize or supply the evidence.
       staged reachability and the existential head cover. A result-compatible
       constructor whose own identity demand is contradictory is unreachable;
       indexed recursive premises remain deliberately omitted.
+- [x] Retain every staged constructor feasibility query in Rainfall as an exact
+      result-index/identity-premise term and solver status. Replay closes the
+      complete constructor set against the selected or impossible value match.
 
 Transfer exit test: one dead runtime branch preserves a compile-time value, one
 live join of distinct constants becomes runtime, a mutually recursive

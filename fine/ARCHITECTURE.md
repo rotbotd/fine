@@ -494,6 +494,14 @@ The head cover cannot make an impossible recursive premise look inhabited; by
 omitting indexed proof premises it can only refuse some valid empty eliminations
 until a stronger source-owned analysis exists.
 
+Rainfall does not reduce this decision to the final constructor name. Every
+source constructor emits one feasibility observation containing the exact live
+condition formed from result-index equalities and identity premises, the number
+of identity constraints, the absorbed-context size, and the solver result. The
+closing value-match event states how many constructors were considered and how
+many were feasible. Replay requires a complete, name-distinct set of observations
+and recomputes the selected constructor from their statuses.
+
 ## Rainfall boundary
 
 The existing manager-local term registry and `fine.generated-term.v1` renderer

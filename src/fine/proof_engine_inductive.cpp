@@ -489,14 +489,31 @@ namespace fine::elaboration {
             z3::solver solver(values_.context());
             for (auto const &assumption : absorbed)
                 solver.add(assumption);
+            z3::expr condition = values_.context().bool_val(true);
             for (std::size_t i = 0; i < scrutinee->indices.size(); ++i)
-                solver.add(result_indices->indices[i].expression == scrutinee->indices[i].expression);
-            for (auto const &constraint : constructor_identity_constraints(constructor, constructor_values))
-                solver.add(constraint);
+                condition = condition && result_indices->indices[i].expression == scrutinee->indices[i].expression;
+            std::vector<z3::expr> identity_constraints =
+                constructor_identity_constraints(constructor, constructor_values);
+            for (auto const &constraint : identity_constraints)
+                condition = condition && constraint;
+            solver.add(condition);
             z3::check_result status = solver.check();
             if (status == z3::unknown)
                 reject(expression.span,
                        "constructor availability for proof match was unknown: " + solver.reason_unknown());
+            if (rainfall_) {
+                std::string condition_term = rainfall_->term(condition, "proof-constructor-feasibility");
+                rainfall_->record(
+                    "observe", "proof.inductive.constructor-feasibility",
+                    {"staged-proof-match:" + std::to_string(expression.node_id)}, "fine.staged-proof-elimination",
+                    "One source constructor is tested under its exact result-index and identity-premise condition",
+                    {RainfallRecorder::string_field("family", family.name),
+                     RainfallRecorder::string_field("constructor", constructor.name),
+                     RainfallRecorder::string_field("condition", condition_term),
+                     RainfallRecorder::number_field("identity_constraints", identity_constraints.size()),
+                     RainfallRecorder::number_field("absorbed_assumptions", absorbed.size()),
+                     RainfallRecorder::string_field("status", status == z3::sat ? "sat" : "unsat")});
+            }
             if (status == z3::sat) {
                 std::set<std::string> determined_names;
                 for (auto const &[name, value] : determined)
@@ -529,6 +546,7 @@ namespace fine::elaboration {
                     {RainfallRecorder::string_field("scrutinee", proof_name),
                      RainfallRecorder::string_field("family", family.name),
                      RainfallRecorder::string_field("constructor", ""),
+                     RainfallRecorder::number_field("considered_constructors", family.constructors.size()),
                      RainfallRecorder::number_field("feasible_constructors", 0),
                      RainfallRecorder::boolean_field("constructor_unique", false),
                      RainfallRecorder::boolean_field("context_unsat", true),
@@ -609,6 +627,7 @@ namespace fine::elaboration {
                               {RainfallRecorder::string_field("scrutinee", proof_name),
                                RainfallRecorder::string_field("family", family.name),
                                RainfallRecorder::string_field("constructor", constructor.name),
+                               RainfallRecorder::number_field("considered_constructors", family.constructors.size()),
                                RainfallRecorder::number_field("feasible_constructors", feasible_names.size()),
                                RainfallRecorder::boolean_field("constructor_unique", true),
                                RainfallRecorder::boolean_field("runtime_proof_value_created", false),

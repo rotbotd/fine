@@ -6794,3 +6794,72 @@ implementation commit:
 - ordinary Wasm: `/nix/store/lw1h9qq0d6z8jgli3ji76x3h9l9cjhvr-fine-playground-wasm-0.1.0`
 - pthread Wasm: `/nix/store/5mac4rgsia1lyfyig3fi46va2fszdsmy-fine-playground-wasm-pthreads-0.1.0`
 - playground: `/nix/store/z6y0c0zv6yf2j3bzs2a3ybxq7f6ajrvq-fine-playground-0.1.0`
+
+## 2026-09-05 — Rainfall closes staged constructor feasibility
+
+The preceding reachability slice made identity-shaped constructor premises affect
+selection, but its trace retained only the final feasible-constructor count. That
+made the new decision invisible whenever the absorbed family head simplified to
+`false`: Rainfall could say that no constructor survived without preserving the
+source-owned condition that killed it.
+
+Every staged value-level proof match now emits one
+`proof.inductive.constructor-feasibility` observation for each source
+constructor before its closing `proof.inductive.value-match`. The observation
+retains the exact live Z3 term formed from all constructor-result index equalities
+and every identity-shaped explicit or `takes` premise, plus the identity-premise
+count, absorbed-assumption count, constructor name, family, and `sat`/`unsat`
+result. The closing event adds `considered_constructors`. This keeps the compiler
+condition distinct from the ambient absorbed context and from the final choice.
+For `IdentityGuarded(on)`, the retained diagnostic term visibly contains both
+`on == on` and `on == off` rather than only the simplified false family cover.
+
+Rainfall replay accumulates name-distinct feasibility observations by staged-match
+scope, requires their conditions to name registered exact terms, and consumes the
+whole set at the closing value match. It checks that the considered count equals
+the number of observations, the feasible count equals the number of `sat`
+results, every observation names the same family, and the selected constructor is
+the sole satisfiable name. A terminal trace may not leave an unclosed feasibility
+set. The flake mutates one closing count and requires replay to reject it, so the
+new completeness fields are not decorative.
+
+The implementation had claimed both identity-shaped explicit proof children and
+proof-irrelevant `takes` demands constrain reachability, while the first fixture
+covered only the latter. `ExplicitIdentityGuarded` now supplies the missing
+independent discriminator. Its explicit `Id(Flag, candidate, off)` child makes
+`ExplicitIdentityGuarded(on)` impossible. The inverse control at
+`ExplicitIdentityGuarded(off)` rejects an empty match and demands the exact
+`explicit_identity_guarded` arm. Rainfall checks both guarded families, requires
+one identity constraint and `unsat` for each, and inspects their registered
+conditions for both `on` and `off`.
+
+Validation commands:
+
+```
+python3 -m py_compile fine/rainfall_replay.py
+clang-format -i src/fine/proof_engine_inductive.cpp
+cmake --build .build -j4
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine rain fine/fixtures/staged-proof-elimination.fine
+python3 fine/rainfall_replay.py fine/fixtures/staged-proof-elimination.fine <rainfall>
+.build/fine rain fine/fixtures/proof-inductive-match.fine
+python3 fine/rainfall_replay.py fine/fixtures/proof-inductive-match.fine <rainfall>
+.build/fine stage-analysis-probe
+.build/fine run --proof-selector z3 fine/fixtures/playground-demo.fine
+python3 fine/check_document_examples.py .
+.build/fine run fine/fixtures/reject-empty-reachable-identity-guard.fine
+.build/fine run fine/fixtures/reject-empty-reachable-explicit-identity-guard.fine
+git diff --check
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All positive checks and the adversarial replay check passed. Both reachable
+identity controls failed at their empty matches with the exact demanded arm.
+Clean dirty-tree artifacts before the implementation commit:
+
+- native: `/nix/store/izvgg8s0vaaaykx3fabp7ryqn62pq06q-fine-0.1.0`
+- ordinary Wasm: `/nix/store/dp9hzhjxgzfsnskwcigzprw2skp46dx3-fine-playground-wasm-0.1.0`
+- pthread Wasm: `/nix/store/zxysk5xs5khxhvhwa98a12jxshw4f5wn-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/020f6i1dasj3y3knv5ip5rw4n4h5r6sn-fine-playground-0.1.0`

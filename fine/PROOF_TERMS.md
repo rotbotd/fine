@@ -314,6 +314,11 @@ zero arms eliminate the impossible evidence into the expected value type. The
 stage transfer records the result as bottom, not as an arbitrary runtime value.
 Zero arms against a reachable constructor are rejected.
 
+Rainfall retains every constructor's exact feasibility condition before closing
+the staged match. Replay requires one observation per declared constructor and
+derives the feasible count and selected name from those statuses; a summary event
+cannot silently omit a failed alternative.
+
 This remains declaration-time checking. Fine does not yet retain a symbolic
 proof match for later call-site specialization, normalize proof applications to
 constructor structure, or recover arbitrary hidden fields from a solver model.

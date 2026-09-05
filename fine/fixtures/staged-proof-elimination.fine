@@ -25,6 +25,11 @@ proof inductive IdentityGuarded(value: Flag) {
     -> IdentityGuarded(candidate);
 }
 
+proof inductive ExplicitIdentityGuarded(value: Flag) {
+  explicit_identity_guarded(candidate: Flag, is_off: Id(Flag, candidate, off))
+    -> ExplicitIdentityGuarded(candidate);
+}
+
 function recover(value: Flag) -> Flag
   takes [evidence: Tagged(value)]
   ensures {
@@ -83,6 +88,17 @@ function eliminate_never_as_argument() -> Bool
 
 function eliminate_failed_constructor_demand() -> Bool
   takes [impossible: IdentityGuarded(on)]
+  ensures {
+    result == true;
+    result == false;
+  }
+{
+  match impossible {
+  }
+}
+
+function eliminate_failed_explicit_constructor_child() -> Bool
+  takes [impossible: ExplicitIdentityGuarded(on)]
   ensures {
     result == true;
     result == false;

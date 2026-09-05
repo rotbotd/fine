@@ -244,6 +244,7 @@
           grep -F "verified function: eliminate_unreachable_index" <<<"$staged_output"
           grep -F "verified function: eliminate_never_as_argument" <<<"$staged_output"
           grep -F "verified function: eliminate_failed_constructor_demand" <<<"$staged_output"
+          grep -F "verified function: eliminate_failed_explicit_constructor_child" <<<"$staged_output"
           grep -F "resolved coeffect: recover.evidence <- tagged_on (lexical search)" <<<"$staged_output"
           grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$staged_output"
           staged_materialized="$(mktemp)"
@@ -256,8 +257,45 @@
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/staged-proof-elimination.fine" "$staged_rain"
           grep -F '"operation":"proof.inductive.value-match"' "$staged_rain"
+          grep -F '"operation":"proof.inductive.constructor-feasibility"' "$staged_rain"
+          grep -F '"identity_constraints":1' "$staged_rain"
           grep -F '"feasible_constructors":0' "$staged_rain"
           grep -F '"context_unsat":true' "$staged_rain"
+          ${pkgs.python3}/bin/python - "$staged_rain" <<'PY'
+          import json, pathlib, sys
+
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          terms = {event["data"]["id"]: event["data"] for event in events
+                   if event["operation"] == "term.declare"}
+          checks = [event["data"] for event in events
+                    if event["operation"] == "proof.inductive.constructor-feasibility"]
+          guarded = [check for check in checks if check["family"] in {
+              "IdentityGuarded", "ExplicitIdentityGuarded"}]
+          assert {check["family"] for check in guarded} == {
+              "IdentityGuarded", "ExplicitIdentityGuarded"}
+          assert all(check["identity_constraints"] == 1 and check["status"] == "unsat"
+                     for check in guarded)
+          assert all("fine.enum.Flag.on" in terms[check["condition"]]["z3_text_diagnostic"] and
+                     "fine.enum.Flag.off" in terms[check["condition"]]["z3_text_diagnostic"]
+                     for check in guarded)
+          PY
+
+          staged_mutated="$(mktemp)"
+          ${pkgs.python3}/bin/python - "$staged_rain" "$staged_mutated" <<'PY'
+          import json, pathlib, sys
+
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          closing = next(event for event in events
+                         if event["operation"] == "proof.inductive.value-match")
+          closing["data"]["considered_constructors"] += 1
+          pathlib.Path(sys.argv[2]).write_text("".join(json.dumps(event) + "\n" for event in events))
+          PY
+          if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+              "$src/fine/fixtures/staged-proof-elimination.fine" "$staged_mutated" \
+              >/dev/null 2>&1; then
+            echo "mutated staged constructor closure unexpectedly replayed" >&2
+            exit 1
+          fi
 
           runtime_proof_elimination="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-runtime-dependent-proof-elimination.fine" \
@@ -294,6 +332,15 @@
           fi
           grep -F 'must contain exactly its uniquely reachable arm `identity_guarded`' \
             "$reachable_identity_guard"
+
+          reachable_explicit_identity_guard="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-empty-reachable-explicit-identity-guard.fine" \
+              >"$reachable_explicit_identity_guard" 2>&1; then
+            echo "reachable explicit identity-guarded constructor was discharged by an empty proof match" >&2
+            exit 1
+          fi
+          grep -F 'must contain exactly its uniquely reachable arm `explicit_identity_guarded`' \
+            "$reachable_explicit_identity_guard"
 
           induction_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-induction.fine")"
           echo "$induction_output"

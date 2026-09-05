@@ -150,6 +150,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     induction_hypothesis_uses: list[dict[str, Any]] = []
     proof_match_branches: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     proof_matches: set[tuple[str, ...]] = set()
+    staged_constructor_checks: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     proof_model_grammars: dict[str, dict[str, Any]] = {}
     proof_model_solves: dict[str, dict[str, Any]] = {}
     proof_model_lifts: dict[str, dict[str, Any]] = {}
@@ -380,17 +381,44 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      data.get("runtime_value_created") is False,
                      f"event {sequence}: malformed or incomplete indexed proof match")
             proof_matches.add(scope)
+        elif operation == "proof.inductive.constructor-feasibility":
+            scope = tuple(within)
+            checks = staged_constructor_checks.setdefault(scope, [])
+            identity_constraints = data.get("identity_constraints")
+            absorbed_assumptions = data.get("absorbed_assumptions")
+            _require(len(scope) == 1 and scope[0].startswith("staged-proof-match:") and
+                     isinstance(data.get("family"), str) and data["family"] and
+                     isinstance(data.get("constructor"), str) and data["constructor"] and
+                     data["constructor"] not in {check["constructor"] for check in checks} and
+                     data.get("condition") in terms and
+                     isinstance(identity_constraints, int) and not isinstance(identity_constraints, bool) and
+                     identity_constraints >= 0 and
+                     isinstance(absorbed_assumptions, int) and not isinstance(absorbed_assumptions, bool) and
+                     absorbed_assumptions >= 0 and
+                     data.get("status") in {"sat", "unsat"},
+                     f"event {sequence}: malformed staged constructor-feasibility observation")
+            checks.append(data)
         elif operation == "proof.inductive.value-match":
+            scope = tuple(within)
+            checks = staged_constructor_checks.pop(scope, [])
             feasible = data.get("feasible_constructors")
+            considered = data.get("considered_constructors")
+            sat_constructors = [check["constructor"] for check in checks if check["status"] == "sat"]
             closed = ((feasible == 1 and
                        isinstance(data.get("constructor"), str) and data["constructor"] and
-                       data.get("constructor_unique") is True) or
+                       data.get("constructor_unique") is True and
+                       sat_constructors == [data["constructor"]]) or
                       (feasible == 0 and data.get("constructor") == "" and
                        data.get("constructor_unique") is False and
+                       sat_constructors == [] and
                        data.get("context_unsat") is True))
-            _require(len(within) == 1 and within[0].startswith("staged-proof-match:") and
+            _require(len(scope) == 1 and scope[0].startswith("staged-proof-match:") and
                      isinstance(data.get("scrutinee"), str) and data["scrutinee"] and
                      isinstance(data.get("family"), str) and data["family"] and
+                     isinstance(considered, int) and not isinstance(considered, bool) and
+                     considered == len(checks) and
+                     all(check["family"] == data["family"] for check in checks) and
+                     feasible == len(sat_constructors) and
                      closed and
                      data.get("runtime_proof_value_created") is False and
                      data.get("proof_field_loaded_at_runtime") is False,
@@ -847,6 +875,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
              "match synthesis replay has no unique verified match witness")
     _require(proof_holes_closed == set(proof_holes),
              "typed proof search replay leaves an open proof hole")
+    _require(not staged_constructor_checks,
+             "staged constructor feasibility observations lack a closing value match")
     _require(set(proof_model_grammars) ==
              {event["data"]["grammar"] for event in proof_model_solves.values()} and
              set(proof_model_solves) == set(proof_model_lifts),
