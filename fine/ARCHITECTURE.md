@@ -491,6 +491,14 @@ throws `StageEvaluationCancelled` when requested. This is still a staging
 prototype rather than accepted document staging, but its permission, ownership,
 exactness, and interruption boundaries are now executable rather than comments.
 
+No accepted document pass consumes these results yet. Fine's current public
+execution verifies the native Z3 definitions and has no runtime code generator
+or source-visible specialization output; inserting stage analysis there would
+only create a second route to the same verification result. Integration waits
+for a concrete compiler action, specialized source view, or diagnostic whose
+observable behavior requires the transfer. This is a closed stop condition, not
+an implicit request for 0-CFA or a generic optimizer.
+
 The checked native-Z3 probe in
 `research/value-recursion-z3-probe.cpp` fixes the likely non-inlining boundary.
 `recfun`/`recdef` evaluates a structural `Nat` size function at a ground term and

@@ -7435,3 +7435,26 @@ documentation follow-up `ca8439927`: native
 Wasm `/nix/store/xi3bcjzr3i9ldhghyiz1dlf1pqzwl2r5-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/gm7hqi5ybpkbyrx48n3wqkcbxv30g1ay-fine-playground-0.1.0`.
+
+## 2026-09-05 — post-staging consumer audit
+
+After certified exact recursion closed, a read-only search traced every
+`StageAnalysisResult`, `build_certified_value_flow`, and
+`evaluate_certified_stage_function` use. They remain confined to
+`stage-analysis-probe`. This is not an accidental missing call in
+`DocumentRunner`: public execution currently elaborates value functions into
+native Z3 definitions and verifies their guarantees. Fine has no runtime code
+generator, specialized-source command, or mixed-stage diagnostic whose behavior
+would improve by rerunning the abstract transfer.
+
+Consequently, inserting staging into ordinary execution now would produce no
+user-visible artifact and would introduce a second semantic route to audit. The
+prototype has already established the representation, cache invalidation,
+proof-elimination residuals, termination handoff, exact recursive evaluation,
+and cancellation boundaries it was built to test. The next integration must be
+pulled by one concrete consumer: a compiler action, a source specialization
+view, or a diagnostic which names a failed staging demand. Until one exists,
+`DocumentRunner` remains independent and the staging API remains explicitly
+prototype-only. The stale TODO sentence saying the evaluator blocked every
+recursive SCC was corrected; only bare, runtime, partial, or already-blocked
+calls remain blocked.

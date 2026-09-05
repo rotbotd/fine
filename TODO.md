@@ -42,8 +42,9 @@ callers synthesize or supply the evidence.
 - [x] Keep “stageable from these inputs” separate from “safe for the compiler to
       execute now.” The current SCC/transfer analysis is exercised only by
       `stage-analysis-probe`; accepted value functions now use native definitions
-      and admit direct structural recursion, but the staging evaluator still
-      blocks every recursive SCC. Close the connection in three named parts:
+      and admit direct structural recursion. Certified exact calls now execute,
+      while bare, runtime, and partial recursive calls remain blocked. The
+      connection closed in three named parts:
       - [x] Signature pass: register every value-function name and native value
             sort before any body. The definition planner schedules acyclic
             dependencies before their callers, so source order does not prohibit
@@ -121,6 +122,13 @@ the considered representation is an existential package
 `exists capture. (capture, (Input, capture) -> Output)`: the closure as a whole
 is not presented as a function type. Only then revisit how indirect callee sets
 are discovered.
+
+There is deliberately no next staging-integration checkbox. Fine currently
+verifies value functions as native Z3 terms; it has neither a runtime code
+generator nor a source-visible specialization action which would consume a
+staged transfer. Feeding the prototype back into `DocumentRunner` now would only
+duplicate verification. Reopen this boundary when a concrete compiler action,
+specialized source view, or mixed-stage error needs the analysis result.
 
 ## Closed: honest top-level declaration surface
 
