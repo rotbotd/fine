@@ -1,0 +1,13 @@
+function identity(value: Int) -> Int
+  ensures { result == normalize(value); }
+{
+  value
+}
+
+function normalize(value: Int) -> Int {
+  value
+}
+
+run value_forward_guarantee {
+  assert identity(7) == 7;
+}

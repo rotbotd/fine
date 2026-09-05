@@ -48,15 +48,15 @@ callers synthesize or supply the evidence.
             sort before any body. The definition planner schedules acyclic
             dependencies before their callers, so source order does not prohibit
             an ordinary forward call.
-      - [ ] Recursive definition rule: calls no longer elaborate a callee body;
-            every checked function is one native `recfun`/`recdef`. Direct
-            self-recursion is accepted only when every changed argument is an
-            exact recursive enum field descended from its corresponding
-            parameter, with at least one strict change. Mutually recursive
-            definition groups remain rejected until one SCC can be checked and
-            installed atomically. Keep induction/proof obligations
-            separate from definitional unfolding: a symbolic nonnegativity fact
-            still times out.
+      - [x] Recursive definition rule: calls no longer elaborate a callee body;
+            every checked function is one native `recfun`/`recdef`. Body-call
+            SCCs are checked and installed atomically. Exact same-parameter and
+            recursive-enum-field relations form size-change matrices; every
+            idempotent self-graph in their closure must have a strict diagonal
+            descent. Mutual parity and argument-permuting descent pass, while a
+            nondecreasing mutual cycle fails before installation. Keep
+            induction/proof obligations separate from definitional unfolding:
+            a symbolic nonnegativity fact still times out.
       - [ ] Staging permission: require Fine-owned structural termination
             evidence or an explicit bound before replacing a blocked recursive
             transfer with compile-time evaluation. Z3 accepts

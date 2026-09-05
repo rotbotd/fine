@@ -121,7 +121,10 @@
             "$src/fine/fixtures/playground-demo.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
             "$src/fine/fixtures/value-structural-recursion.fine" \
+            "$src/fine/fixtures/value-mutual-recursion.fine" \
+            "$src/fine/fixtures/value-cross-parameter-recursion.fine" \
             "$src/fine/fixtures/value-forward-call.fine" \
+            "$src/fine/fixtures/value-forward-guarantee.fine" \
             "$src/fine/fixtures/proof-inductive-match.fine" \
             "$src/fine/fixtures/staged-proof-elimination.fine" \
             "$src/fine/fixtures/proof-inductive-holes.fine" \
@@ -207,7 +210,8 @@
             "$src/fine/fixtures/value-structural-recursion.fine" \
             "$value_recursion_rain"
           grep -F '"operation":"function.signature.declare"' "$value_recursion_rain"
-          grep -F '"operation":"function.recursion.descend"' "$value_recursion_rain"
+          grep -F '"operation":"function.recursion.edge"' "$value_recursion_rain"
+          grep -F '"operation":"function.recursion.group.verify"' "$value_recursion_rain"
           grep -F '"operation":"function.definition.install"' "$value_recursion_rain"
 
           nondecreasing_value_recursion="$(mktemp)"
@@ -217,18 +221,20 @@
             echo "nondecreasing value recursion unexpectedly passed" >&2
             exit 1
           fi
-          grep -F 'recursive call `loop` does not structurally descend' \
+          grep -F 'has a repeatable call cycle with no structural descent' \
             "$nondecreasing_value_recursion"
 
-          cross_parameter_value_recursion="$(mktemp)"
-          if $out/bin/fine run \
-              "$src/fine/fixtures/reject-cross-parameter-value-recursion.fine" \
-              >"$cross_parameter_value_recursion" 2>&1; then
-            echo "cross-parameter value recursion unexpectedly passed" >&2
-            exit 1
-          fi
-          grep -F 'does not structurally descend from parameter `right`' \
-            "$cross_parameter_value_recursion"
+          cross_parameter_value_recursion="$($out/bin/fine run \
+            "$src/fine/fixtures/value-cross-parameter-recursion.fine")"
+          echo "$cross_parameter_value_recursion"
+          grep -F "verified assertion: value_cross_parameter_recursion.0" \
+            <<<"$cross_parameter_value_recursion"
+
+          mutual_value_recursion="$($out/bin/fine run \
+            "$src/fine/fixtures/value-mutual-recursion.fine")"
+          echo "$mutual_value_recursion"
+          grep -F "verified assertion: value_mutual_recursion.2" \
+            <<<"$mutual_value_recursion"
 
           value_forward_output="$($out/bin/fine run \
             "$src/fine/fixtures/value-forward-call.fine")"
@@ -238,6 +244,12 @@
           grep -F "verified assertion: value_forward_call.0" \
             <<<"$value_forward_output"
 
+          value_forward_guarantee="$($out/bin/fine run \
+            "$src/fine/fixtures/value-forward-guarantee.fine")"
+          echo "$value_forward_guarantee"
+          grep -F "verified assertion: value_forward_guarantee.0" \
+            <<<"$value_forward_guarantee"
+
           mutual_value_recursion="$(mktemp)"
           if $out/bin/fine run \
               "$src/fine/fixtures/reject-mutual-value-recursion.fine" \
@@ -245,7 +257,7 @@
             echo "mutual value recursion unexpectedly passed" >&2
             exit 1
           fi
-          grep -F 'cyclic value-function dependency requires a checked recursive definition group' \
+          grep -F 'has a repeatable call cycle with no structural descent' \
             "$mutual_value_recursion"
 
           nonexhaustive_enum="$(mktemp)"

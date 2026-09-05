@@ -165,9 +165,9 @@ namespace fine::elaboration {
             }
             ValueTerm body =
                 elaborate_value(expression.elements[i + 1], branch_values, proofs, proof_order, absorbed, expected);
-            active_structural_descendants_.erase(
-                active_structural_descendants_.begin() + static_cast<std::ptrdiff_t>(descendant_mark),
-                active_structural_descendants_.end());
+            active_structural_descendants_.erase(active_structural_descendants_.begin() +
+                                                     static_cast<std::ptrdiff_t>(descendant_mark),
+                                                 active_structural_descendants_.end());
             branches.emplace_back(constructor.tester(scrutinee.expression), std::move(body));
         }
         if (seen.size() != enumeration.constructors.size()) {
@@ -324,9 +324,8 @@ namespace fine::elaboration {
         ValueKind result_kind = kind_of(declaration.result_type);
         std::string native_name = "fine.function." + declaration.name;
         z3::func_decl native = context_.recfun(native_name.c_str(), domains, sort(result_kind));
-        functions_.emplace(declaration.name,
-                           std::make_unique<RuntimeFunction>(declaration, std::move(parameter_kinds), result_kind,
-                                                             std::move(native)));
+        functions_.emplace(declaration.name, std::make_unique<RuntimeFunction>(declaration, std::move(parameter_kinds),
+                                                                               result_kind, std::move(native)));
         if (rainfall_) {
             std::vector<std::string> parameter_types;
             for (auto const &parameter : declaration.parameters)
@@ -341,108 +340,157 @@ namespace fine::elaboration {
         }
     }
 
-    void ValueElaborator::declare_function(syntax::FunctionDecl const &declaration) {
+    void ValueElaborator::declare_function_group(std::vector<syntax::FunctionDecl const *> const &group) {
+        active_recursive_group_.clear();
+        active_size_change_calls_.clear();
+        for (auto const *declaration : group) {
+            auto registered = functions_.find(declaration->name);
+            if (registered == functions_.end() || registered->second->source != declaration)
+                throw std::logic_error("value function definition was not predeclared");
+            active_recursive_group_.insert(registered->second.get());
+        }
+
+        for (auto const *declaration_pointer : group) {
+            syntax::FunctionDecl const &declaration = *declaration_pointer;
+            RuntimeFunction &runtime = *functions_.at(declaration.name);
+            if (runtime.body_checked)
+                reject(declaration.span, "duplicate function `" + declaration.name + "`");
+            ValueEnvironment values;
+            ProofEnvironment proofs;
+            std::vector<std::string> proof_order;
+            std::vector<z3::expr> absorbed;
+            std::set<std::string> names;
+            for (auto const &parameter : declaration.parameters) {
+                if (parameter.name == "result")
+                    reject(parameter.span, "`result` is reserved for the function body inside `ensures`");
+                if (!names.insert(parameter.name).second)
+                    reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
+                require_known_type(parameter.type);
+                ValueKind kind = kind_of(parameter.type);
+                std::string symbol = "fine." + declaration.name + "." + parameter.name;
+                values.emplace(parameter.name, ValueTerm(kind, context_.constant(symbol.c_str(), sort(kind))));
+            }
+            for (auto const &coeffect : declaration.coeffects) {
+                if (coeffect.name == "result")
+                    reject(coeffect.span, "`result` is reserved for the function body inside `ensures`");
+                if (!names.insert(coeffect.name).second)
+                    reject(coeffect.span, "duplicate parameter `" + coeffect.name + "`");
+                SemanticProofType type =
+                    proofs_->elaborate_proof_type(coeffect.type, values, proofs, proof_order, absorbed);
+                std::string left_source = coeffect.type.kind == syntax::ProofType::Kind::identity
+                                              ? print_value(coeffect.type.left)
+                                              : std::string{};
+                std::string right_source = coeffect.type.kind == syntax::ProofType::Kind::identity
+                                               ? print_value(coeffect.type.right)
+                                               : std::string{};
+                ProofEvidence evidence(coeffect.name, std::move(type), "coeffect", coeffect.span,
+                                       std::move(left_source), std::move(right_source), coeffect.type.arguments);
+                std::string source;
+                if (rainfall_) {
+                    bool identity_type = std::holds_alternative<IdentityType>(evidence.type);
+                    source = rainfall_->source_node(coeffect.type.node_id, coeffect.type.span,
+                                                    identity_type ? "proof-type.identity" : "proof-type.inductive");
+                    std::string proposition;
+                    if (identity_type) {
+                        IdentityType const &identity = std::get<IdentityType>(evidence.type);
+                        proposition = rainfall_->term(identity.left == identity.right, "coeffect-proposition");
+                    }
+                    rainfall_->record("object", "coeffect.demand.declare", {"function:" + declaration.name},
+                                      "fine.two-level-elaborator",
+                                      "Function signature declares exact static evidence required from each caller",
+                                      {RainfallRecorder::string_field("function", declaration.name),
+                                       RainfallRecorder::string_field("coeffect", coeffect.name),
+                                       RainfallRecorder::string_field("proof_type", print_proof_type(coeffect.type)),
+                                       RainfallRecorder::string_field("source", source),
+                                       RainfallRecorder::string_field("proposition", proposition)});
+                }
+                auto [found, inserted] = proofs.emplace(coeffect.name, std::move(evidence));
+                proof_order.push_back(coeffect.name);
+                proofs_->absorb(found->second, absorbed, {"function:" + declaration.name}, "hypothetical-coeffect",
+                                source.empty() ? std::nullopt : std::optional(source));
+            }
+            require_known_type(declaration.result_type);
+            ValueKind result_kind = kind_of(declaration.result_type);
+            active_function_ = &runtime;
+            active_parameter_values_.clear();
+            active_structural_descendants_.clear();
+            active_recursive_calls_ = 0;
+            for (auto const &parameter : declaration.parameters)
+                active_parameter_values_.push_back(values.at(parameter.name));
+            ValueTerm body = elaborate_value(declaration.body, values, proofs, proof_order, absorbed, result_kind);
+            active_function_ = nullptr;
+            active_parameter_values_.clear();
+            active_structural_descendants_.clear();
+            if (body.kind != result_kind)
+                reject(declaration.body.span, "function body does not have declared result type `" +
+                                                  std::string(kind_name(result_kind)) + "`");
+            runtime.definition_values = std::move(values);
+            runtime.definition_proofs = std::move(proofs);
+            runtime.definition_proof_order = std::move(proof_order);
+            runtime.definition_absorbed = std::move(absorbed);
+            runtime.body = std::make_unique<ValueTerm>(std::move(body));
+            runtime.recursive_calls = active_recursive_calls_;
+            runtime.body_checked = true;
+        }
+
+        SizeChangeSummary termination = require_size_change_termination(group, active_size_change_calls_);
+        if (rainfall_ && !active_size_change_calls_.empty()) {
+            std::vector<std::string> names;
+            for (auto const *declaration : group)
+                names.push_back(declaration->name);
+            rainfall_->record("transition", "function.recursion.group.verify", {}, "fine.size-change-termination",
+                              "Every repeatable size-change graph has a strict diagonal descent",
+                              {RainfallRecorder::raw_field("functions", RainfallRecorder::string_array(names)),
+                               RainfallRecorder::number_field("call_graphs", termination.call_graphs),
+                               RainfallRecorder::number_field("closure_graphs", termination.closure_graphs),
+                               RainfallRecorder::number_field("idempotent_loops", termination.idempotent_loops),
+                               RainfallRecorder::boolean_field("well_founded", true)});
+        }
+        for (auto const *declaration : group) {
+            RuntimeFunction &runtime = *functions_.at(declaration->name);
+            z3::expr_vector native_parameters(context_);
+            for (auto const &parameter : declaration->parameters)
+                native_parameters.push_back(runtime.definition_values.at(parameter.name).expression);
+            context_.recdef(runtime.declaration, native_parameters, runtime.body->expression);
+            runtime.definition_installed = true;
+            if (rainfall_) {
+                std::string definition = rainfall_->term(runtime.body->expression, "value-function-definition");
+                rainfall_->record("derive", "function.definition.install", {"function:" + declaration->name},
+                                  "fine.value-elaborator",
+                                  "A checked body becomes one native recursive-function definition after its group's "
+                                  "termination check",
+                                  {RainfallRecorder::string_field("function", declaration->name),
+                                   RainfallRecorder::string_field("definition", definition),
+                                   RainfallRecorder::number_field("recursive_calls", runtime.recursive_calls),
+                                   RainfallRecorder::number_field("recursive_group_size", group.size()),
+                                   RainfallRecorder::boolean_field("native_recfun", true)});
+            }
+        }
+        active_recursive_group_.clear();
+        active_size_change_calls_.clear();
+    }
+
+    void ValueElaborator::verify_function(syntax::FunctionDecl const &declaration) {
         auto registered = functions_.find(declaration.name);
         if (registered == functions_.end() || registered->second->source != &declaration)
             throw std::logic_error("value function definition was not predeclared");
         RuntimeFunction &runtime = *registered->second;
+        if (!runtime.definition_installed || !runtime.body)
+            throw std::logic_error("value function guarantee checked before definition installation");
         if (runtime.verified)
             reject(declaration.span, "duplicate function `" + declaration.name + "`");
-        ValueEnvironment values;
-        ProofEnvironment proofs;
-        std::vector<std::string> proof_order;
-        std::vector<z3::expr> absorbed;
-        std::set<std::string> names;
-        for (auto const &parameter : declaration.parameters) {
-            if (parameter.name == "result")
-                reject(parameter.span, "`result` is reserved for the function body inside `ensures`");
-            if (!names.insert(parameter.name).second)
-                reject(parameter.span, "duplicate parameter `" + parameter.name + "`");
-            require_known_type(parameter.type);
-            ValueKind kind = kind_of(parameter.type);
-            std::string symbol = "fine." + declaration.name + "." + parameter.name;
-            values.emplace(parameter.name, ValueTerm(kind, context_.constant(symbol.c_str(), sort(kind))));
-        }
-        for (auto const &coeffect : declaration.coeffects) {
-            if (coeffect.name == "result")
-                reject(coeffect.span, "`result` is reserved for the function body inside `ensures`");
-            if (!names.insert(coeffect.name).second)
-                reject(coeffect.span, "duplicate parameter `" + coeffect.name + "`");
-            SemanticProofType type =
-                proofs_->elaborate_proof_type(coeffect.type, values, proofs, proof_order, absorbed);
-            std::string left_source = coeffect.type.kind == syntax::ProofType::Kind::identity
-                                          ? print_value(coeffect.type.left)
-                                          : std::string{};
-            std::string right_source = coeffect.type.kind == syntax::ProofType::Kind::identity
-                                           ? print_value(coeffect.type.right)
-                                           : std::string{};
-            ProofEvidence evidence(coeffect.name, std::move(type), "coeffect", coeffect.span, std::move(left_source),
-                                   std::move(right_source), coeffect.type.arguments);
-            std::string source;
-            if (rainfall_) {
-                bool identity_type = std::holds_alternative<IdentityType>(evidence.type);
-                source = rainfall_->source_node(coeffect.type.node_id, coeffect.type.span,
-                                                identity_type ? "proof-type.identity" : "proof-type.inductive");
-                std::string proposition;
-                if (identity_type) {
-                    IdentityType const &identity = std::get<IdentityType>(evidence.type);
-                    proposition = rainfall_->term(identity.left == identity.right, "coeffect-proposition");
-                }
-                rainfall_->record("object", "coeffect.demand.declare", {"function:" + declaration.name},
-                                  "fine.two-level-elaborator",
-                                  "Function signature declares exact static evidence required from each caller",
-                                  {RainfallRecorder::string_field("function", declaration.name),
-                                   RainfallRecorder::string_field("coeffect", coeffect.name),
-                                   RainfallRecorder::string_field("proof_type", print_proof_type(coeffect.type)),
-                                   RainfallRecorder::string_field("source", source),
-                                   RainfallRecorder::string_field("proposition", proposition)});
-            }
-            auto [found, inserted] = proofs.emplace(coeffect.name, std::move(evidence));
-            proof_order.push_back(coeffect.name);
-            proofs_->absorb(found->second, absorbed, {"function:" + declaration.name}, "hypothetical-coeffect",
-                            source.empty() ? std::nullopt : std::optional(source));
-        }
-        require_known_type(declaration.result_type);
-        ValueKind result_kind = kind_of(declaration.result_type);
-        active_function_ = &runtime;
-        active_parameter_values_.clear();
-        active_structural_descendants_.clear();
-        active_recursive_calls_ = 0;
-        for (auto const &parameter : declaration.parameters)
-            active_parameter_values_.push_back(values.at(parameter.name));
-        ValueTerm body = elaborate_value(declaration.body, values, proofs, proof_order, absorbed, result_kind);
-        active_function_ = nullptr;
-        active_parameter_values_.clear();
-        active_structural_descendants_.clear();
-        if (body.kind != result_kind)
-            reject(declaration.body.span,
-                   "function body does not have declared result type `" + std::string(kind_name(result_kind)) + "`");
-        z3::expr_vector native_parameters(context_);
-        for (auto const &parameter : declaration.parameters)
-            native_parameters.push_back(values.at(parameter.name).expression);
-        context_.recdef(runtime.declaration, native_parameters, body.expression);
-        runtime.definition_installed = true;
-        if (rainfall_) {
-            std::string definition = rainfall_->term(body.expression, "value-function-definition");
-            rainfall_->record(
-                "derive", "function.definition.install", {"function:" + declaration.name},
-                "fine.value-elaborator",
-                "A checked body becomes one native recursive-function definition without source-body inlining",
-                {RainfallRecorder::string_field("function", declaration.name),
-                 RainfallRecorder::string_field("definition", definition),
-                 RainfallRecorder::number_field("recursive_calls", active_recursive_calls_),
-                 RainfallRecorder::boolean_field("native_recfun", true)});
-        }
-        values.emplace("result", body);
+        ValueEnvironment values = runtime.definition_values;
+        values.emplace("result", *runtime.body);
         std::vector<z3::expr> ensures;
         for (auto const &clause : declaration.ensures) {
-            ValueTerm proposition = elaborate_value(clause, values, proofs, proof_order, absorbed);
+            ValueTerm proposition = elaborate_value(clause, values, runtime.definition_proofs,
+                                                    runtime.definition_proof_order, runtime.definition_absorbed);
             if (proposition.kind != boolean_kind())
                 reject(clause.span, "function guarantee is not Bool");
             ensures.push_back(proposition.expression);
         }
         z3::solver solver(context_);
-        for (auto const &assumption : absorbed)
+        for (auto const &assumption : runtime.definition_absorbed)
             solver.add(assumption);
         if (!ensures.empty()) {
             z3::expr guarantee = ensures.front();
@@ -465,7 +513,8 @@ namespace fine::elaboration {
                        "function `" + declaration.name + "` guarantee check was unknown: " + solver.reason_unknown());
             }
             if (status == z3::sat)
-                reject_with_counterexample(declaration, values, absorbed, body, guarantee, solver.get_model());
+                reject_with_counterexample(declaration, values, runtime.definition_absorbed, *runtime.body, guarantee,
+                                           solver.get_model());
         }
         runtime.verified = true;
         ++functions_verified_;
@@ -496,8 +545,8 @@ namespace fine::elaboration {
         }
         RuntimeFunction &runtime = *found->second;
         syntax::FunctionDecl const &function = *runtime.source;
-        bool self_call = active_function_ == &runtime;
-        if (!runtime.verified && !runtime.definition_installed && !self_call)
+        bool recursive_group_call = active_function_ && active_recursive_group_.contains(&runtime);
+        if (!runtime.verified && !runtime.definition_installed && !recursive_group_call)
             reject(expression.span, "function `" + expression.name + "` is declared but not yet defined");
         if (expression.elements.size() != function.parameters.size())
             reject(expression.span, "function `" + expression.name + "` expects " +
@@ -517,8 +566,8 @@ namespace fine::elaboration {
             arguments.push_back(argument);
             callee_values.emplace(function.parameters[i].name, std::move(argument));
         }
-        if (self_call)
-            require_structural_self_call(expression, arguments);
+        if (recursive_group_call)
+            record_recursive_group_call(expression, runtime, arguments);
         std::map<std::string, std::string> explicit_arguments;
         for (auto const &argument : expression.using_proofs) {
             if (!explicit_arguments.emplace(argument.coeffect, argument.proof).second)
@@ -626,33 +675,46 @@ namespace fine::elaboration {
         return std::nullopt;
     }
 
-    void ValueElaborator::require_structural_self_call(syntax::ValueExpr const &expression,
-                                                       std::vector<ValueTerm> const &arguments) {
-        bool strict = false;
-        std::vector<std::string> strict_parameters;
-        for (std::size_t i = 0; i < arguments.size(); ++i) {
-            if (same_ast(context_, arguments[i].expression, active_parameter_values_[i].expression))
-                continue;
-            std::optional<std::size_t> root = structural_root(arguments[i].expression);
-            if (!root || *root != i)
-                reject(expression.span, "recursive call `" + expression.name +
-                                            "` does not structurally descend from parameter `" +
-                                            active_function_->source->parameters[i].name + "`");
-            strict = true;
-            strict_parameters.push_back(active_function_->source->parameters[i].name);
+    void ValueElaborator::record_recursive_group_call(syntax::ValueExpr const &expression, RuntimeFunction &callee,
+                                                      std::vector<ValueTerm> const &arguments) {
+        SizeChangeCall call{
+            active_function_->source, callee.source, expression.span,
+            std::vector<std::vector<SizeRelation>>(active_parameter_values_.size(),
+                                                   std::vector<SizeRelation>(arguments.size(), SizeRelation::unknown))};
+        std::vector<std::string> strict_edges;
+        std::vector<std::string> relation_edges;
+        for (std::size_t callee_parameter = 0; callee_parameter < arguments.size(); ++callee_parameter) {
+            for (std::size_t caller_parameter = 0; caller_parameter < active_parameter_values_.size();
+                 ++caller_parameter) {
+                if (same_ast(context_, arguments[callee_parameter].expression,
+                             active_parameter_values_[caller_parameter].expression)) {
+                    call.relation[caller_parameter][callee_parameter] = SizeRelation::nonincreasing;
+                    relation_edges.push_back(callee.source->parameters[callee_parameter].name +
+                                             "<=" + active_function_->source->parameters[caller_parameter].name);
+                    continue;
+                }
+                std::optional<std::size_t> root = structural_root(arguments[callee_parameter].expression);
+                if (root && *root == caller_parameter) {
+                    call.relation[caller_parameter][callee_parameter] = SizeRelation::decreasing;
+                    strict_edges.push_back(active_function_->source->parameters[caller_parameter].name + "->" +
+                                           callee.source->parameters[callee_parameter].name);
+                    relation_edges.push_back(callee.source->parameters[callee_parameter].name + "<" +
+                                             active_function_->source->parameters[caller_parameter].name);
+                }
+            }
         }
-        if (!strict)
-            reject(expression.span, "recursive call `" + expression.name + "` does not structurally descend");
+        active_size_change_calls_.push_back(std::move(call));
         ++active_recursive_calls_;
         if (rainfall_)
             rainfall_->record(
-                "derive", "function.recursion.descend", {"function:" + expression.name},
-                "fine.structural-termination",
-                "Every changed recursive argument is a constructor field descended from its corresponding parameter",
-                {RainfallRecorder::string_field("function", expression.name),
-                 RainfallRecorder::raw_field("strict_parameters",
-                                             RainfallRecorder::string_array(strict_parameters)),
-                 RainfallRecorder::boolean_field("well_founded", true)});
+                "derive", "function.recursion.edge",
+                {"function:" + active_function_->source->name, "function:" + callee.source->name},
+                "fine.size-change-termination",
+                "The recursive call retains exact same-parameter and constructor-field descent relations",
+                {RainfallRecorder::string_field("caller", active_function_->source->name),
+                 RainfallRecorder::string_field("callee", callee.source->name),
+                 RainfallRecorder::raw_field("relations", RainfallRecorder::string_array(relation_edges)),
+                 RainfallRecorder::raw_field("strict_edges", RainfallRecorder::string_array(strict_edges)),
+                 RainfallRecorder::boolean_field("group_checked_later", true)});
     }
-
 }  // namespace fine::elaboration

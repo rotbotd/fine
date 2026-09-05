@@ -1,0 +1,16 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function drain(left: Nat, right: Nat) -> Nat {
+  match left {
+    zero => right,
+    succ(previous) => drain(right, previous),
+  }
+}
+
+run value_cross_parameter_recursion {
+  let result: Nat = drain(succ(succ(zero)), succ(zero));
+  assert result == zero;
+}

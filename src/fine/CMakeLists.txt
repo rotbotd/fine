@@ -7,6 +7,7 @@ add_executable(fine-bin
   runtime.cpp
   document_runner.cpp
   value_definition_plan.cpp
+  value_recursion.cpp
   proof_engine_inductive.cpp
   proof_engine_search.cpp
   proof_engine_types.cpp

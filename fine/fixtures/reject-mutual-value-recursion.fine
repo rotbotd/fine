@@ -3,16 +3,10 @@ enum Nat {
   succ(Nat),
 }
 
-function even(value: Nat) -> Bool {
-  match value {
-    zero => true,
-    succ(previous) => odd(previous),
-  }
+function left(value: Nat) -> Nat {
+  right(value)
 }
 
-function odd(value: Nat) -> Bool {
-  match value {
-    zero => false,
-    succ(previous) => even(previous),
-  }
+function right(value: Nat) -> Nat {
+  left(value)
 }

@@ -4,6 +4,7 @@
 
 #include "proof_model_selector.h"
 #include "rainfall.h"
+#include "value_recursion.h"
 #ifdef FINE_HAS_LIVE_LIFT
 #include "live_lift.h"
 #endif
@@ -136,6 +137,13 @@ namespace fine::elaboration {
         std::vector<ValueKind> parameter_kinds;
         ValueKind result_kind;
         z3::func_decl declaration;
+        ValueEnvironment definition_values;
+        ProofEnvironment definition_proofs;
+        std::vector<std::string> definition_proof_order;
+        std::vector<z3::expr> definition_absorbed;
+        std::unique_ptr<ValueTerm> body;
+        std::size_t recursive_calls = 0;
+        bool body_checked = false;
         bool definition_installed = false;
         bool verified = false;
 
@@ -459,7 +467,8 @@ namespace fine::elaboration {
                                   std::optional<ValueKind> expected = std::nullopt);
         bool match_constructor_index(syntax::ValueExpr const &pattern, z3::expr const &target,
                                      std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings);
-        void declare_function(syntax::FunctionDecl const &declaration);
+        void declare_function_group(std::vector<syntax::FunctionDecl const *> const &group);
+        void verify_function(syntax::FunctionDecl const &declaration);
 
     private:
         z3::context context_;
@@ -474,8 +483,10 @@ namespace fine::elaboration {
         std::size_t functions_verified_ = 0;
         std::size_t coeffects_resolved_ = 0;
         RuntimeFunction *active_function_ = nullptr;
+        std::set<RuntimeFunction *> active_recursive_group_;
         std::vector<ValueTerm> active_parameter_values_;
         std::vector<StructuralDescendant> active_structural_descendants_;
+        std::vector<SizeChangeCall> active_size_change_calls_;
         std::size_t active_recursive_calls_ = 0;
 
         ValueTerm elaborate_constructor(syntax::ValueExpr const &expression, RuntimeEnum &enumeration,
@@ -490,8 +501,8 @@ namespace fine::elaboration {
                                  std::vector<std::string> const &caller_proof_order,
                                  std::vector<z3::expr> const &caller_absorbed);
         std::optional<std::size_t> structural_root(z3::expr const &expression);
-        void require_structural_self_call(syntax::ValueExpr const &expression,
-                                          std::vector<ValueTerm> const &arguments);
+        void record_recursive_group_call(syntax::ValueExpr const &expression, RuntimeFunction &callee,
+                                         std::vector<ValueTerm> const &arguments);
         bool contains_parameter(syntax::ValueExpr const &expression, std::map<std::string, ValueKind> const &parameters,
                                 ValueEnvironment const &bindings);
         syntax::ValueExpr lift_model_value(z3::expr const &expression, ValueKind const &kind) const;

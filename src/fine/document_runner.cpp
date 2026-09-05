@@ -40,8 +40,11 @@ namespace fine::elaboration {
             proofs_.declare_proof_function(function);
         for (auto const &function : document.functions)
             values_.declare_function_signature(function);
-        for (syntax::FunctionDecl const *function : value_definition_order(document.functions))
-            values_.declare_function(*function);
+        auto definition_groups = value_definition_groups(document.functions);
+        for (auto const &group : definition_groups)
+            values_.declare_function_group(group);
+        for (auto const &function : document.functions)
+            values_.verify_function(function);
         if (document.run)
             execute_run(*document.run);
         result_.functions_verified = values_.functions_verified();

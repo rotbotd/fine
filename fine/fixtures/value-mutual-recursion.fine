@@ -1,0 +1,24 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function even(value: Nat) -> Bool {
+  match value {
+    zero => true,
+    succ(previous) => odd(previous),
+  }
+}
+
+function odd(value: Nat) -> Bool {
+  match value {
+    zero => false,
+    succ(previous) => even(previous),
+  }
+}
+
+run value_mutual_recursion {
+  assert even(zero) == true;
+  assert even(succ(zero)) == false;
+  assert odd(succ(succ(zero))) == false;
+}
