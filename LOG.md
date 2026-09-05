@@ -7173,3 +7173,79 @@ nix flake check --no-write-lock-file
 nix build --no-link --print-out-paths .#default .#playground-wasm \
   .#playground-wasm-pthreads .#playground
 ```
+
+## 2026-09-05 — mutually recursive value definitions by size change (`3ecee2780`)
+
+The direct-recursion rule from `b1c053141` was sound but needlessly positional:
+every changed callee argument had to descend from the corresponding caller
+parameter. It rejected a terminating call such as `drain(right, previous)`, where
+the strict decrease moves from the caller's first parameter into the callee's
+second parameter. Merely admitting all SCCs would be unsound because native Z3
+`recfun`/`recdef` accepts non-well-founded equations and can hang before a solver
+timeout is installed.
+
+The replacement is the graph algorithm from Lee, Jones, and Ben-Amram, [*The
+Size-Change Principle for Program
+Termination*](https://doi.org/10.1145/360204.360210). For every call within one
+body-call SCC, Fine records a matrix whose rows are caller parameters and columns
+are callee parameters. An edge is non-strict when the callee argument has exact
+same-manager AST identity with a caller parameter. It is strict when the argument
+is an exact recursive-enum accessor retained from matching that parameter. All
+other cells are unknown. Composition keeps an edge only through known relations
+and makes it strict when either leg is strict; competing paths retain the stronger
+edge. The finite closure is accepted exactly when every idempotent endomorphism
+contains a strict diagonal edge. This handles descent that moves between
+parameters without choosing a privileged lexicographic order.
+
+`value_definition_plan.cpp` now computes Tarjan SCCs from executable body calls,
+then stably schedules the component DAG callee before caller. Calls appearing in
+coeffect indices add preparation-order edges but do not become executable
+recursion; an intra-group or cyclic coeffect preparation dependency is rejected.
+Guarantees are deliberately absent from definition ordering. Every body is
+checked before any member of its SCC is installed, every SCC passes size-change
+closure before `recdef`, all definitions are installed, and only then are
+function guarantees checked. `RuntimeFunction` retains the checked local value
+and proof environments, absorbed coeffects, body, and recursive-call count across
+those phases.
+
+Three positive fixtures distinguish the boundaries. `value-mutual-recursion.fine`
+defines `even` and `odd` in one SCC and evaluates three ground calls. Its two
+direct matrices close to four graphs and two accepted idempotent loops.
+`value-cross-parameter-recursion.fine` proves the non-positional case with
+`drain(right, previous)`. `value-forward-guarantee.fine` places a guarantee-only
+call before the callee declaration and proves that guarantee checking really
+occurs after installation rather than contaminating executable dependency order.
+The former `steal(previous, previous)` rejection was removed because that program
+is terminating: the first parameter strictly decreases on every recursive call.
+
+`reject-mutual-value-recursion.fine` now contains `left(value) -> right(value)`
+and `right(value) -> left(value)`. Its closure contains a repeatable non-strict
+cycle and fails before either native definition is installed. The existing direct
+`loop(value)` control fails through the same criterion. Rainfall now separates
+`function.recursion.edge`, including the complete direct relation list, from
+`function.recursion.group.verify`, including call-graph, closure-graph, and
+idempotent-loop counts, and from each later `function.definition.install`.
+Validation and replay accept the trace without inventing solver evidence for the
+termination proof.
+
+Exact checks:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/value-mutual-recursion.fine
+.build/fine run fine/fixtures/value-cross-parameter-recursion.fine
+.build/fine run fine/fixtures/value-forward-guarantee.fine
+.build/fine run fine/fixtures/reject-mutual-value-recursion.fine
+.build/fine rain fine/fixtures/value-mutual-recursion.fine > /tmp/value-mutual.rain
+python3 fine/rainfall_validate.py fine/fixtures/value-mutual-recursion.fine /tmp/value-mutual.rain
+python3 fine/rainfall_replay.py fine/fixtures/value-mutual-recursion.fine /tmp/value-mutual.rain
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+Clean artifacts for implementation commit `3ecee2780`: native
+`/nix/store/2h95czqshnm33cy7f8nkr6whsa2xnhla-fine-0.1.0`, ordinary Wasm
+`/nix/store/rw21cdnhgbxkffr666c9f7fwj6p9nk82-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/vigqc1ywkc021grcqwqak72nvmw857q4-fine-playground-wasm-pthreads-0.1.0`,
+and playground
+`/nix/store/k8zzvvj33zf1q4b8vll7y80fym3pd0sr-fine-playground-0.1.0`.
