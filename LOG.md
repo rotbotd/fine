@@ -7249,3 +7249,42 @@ Clean artifacts for implementation commit `3ecee2780`: native
 Wasm `/nix/store/vigqc1ywkc021grcqwqak72nvmw857q4-fine-playground-wasm-pthreads-0.1.0`,
 and playground
 `/nix/store/k8zzvvj33zf1q4b8vll7y80fym3pd0sr-fine-playground-0.1.0`.
+
+## 2026-09-05 — staging-permission handoff audit
+
+The first post-size-change audit followed the new termination result into the
+cacheable staging prototype without changing executable code. The apparent next
+move—let `StageTransferTerm::recursive_call` recurse whenever its SCC is marked
+safe—would introduce a trusted duplicate of the source checker. `ValueFlowProgram`
+is built directly from parsed syntax and the probe never passes through
+`ValueElaborator`, so it currently has no evidence that native definitions were
+accepted before installation.
+
+The probe also contains a discriminating counterexample to a casual bridge. Its
+mutual program follows `left(on, value) -> right(off, value) -> left(off,
+value)` and terminates because one call replaces a constructor by the constant
+`off`. Fine's accepted size-change relation recognizes exact parameters and
+recursive enum fields, not constructor resets, so this program is outside the
+accepted recursive source fragment. A boolean permission inserted by the probe
+would certify an object which the language itself rejects.
+
+The safe bridge therefore has three owners. First, successful atomic definition
+checking must export an opaque certificate naming the exact source SCC and its
+checked size-change closure; staging must consume that certificate rather than
+reconstructing a looser fact from `ValueFlowProgram`. Second, recursive transfer
+nodes must resolve through one immutable transfer map for the certified SCC,
+because embedding recursive `callee_root` pointers would require a cyclic
+`shared_ptr` object graph and would corrupt the current structural cache key.
+Third, execution may follow the knot only when the recursive arguments demanded
+by the live arm are exact. Partial/runtime inputs must preserve the existing
+blocked result, and certified exact execution still needs outer cancellation for
+large terminating computations.
+
+The first component is independently startable: replace the probe's rejected
+constructor-reset mutual example with `even`/`odd` or argument-moving `drain`,
+then add a Fine-owned certificate type produced only after
+`require_size_change_termination` succeeds. No evaluator recursion should be
+enabled until that certificate crosses the owner boundary. This keeps “the
+abstract result is computable from these inputs,” “the source recursion was
+accepted,” and “the compiler is allowed to spend time executing it now” as
+three distinct facts.

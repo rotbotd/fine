@@ -62,6 +62,17 @@ callers synthesize or supply the evidence.
             transfer with compile-time evaluation. Z3 accepts
             `loop(x) = loop(x) + 1`, and merely asserting a ground equation about
             `loop(0)` hangs before `solver.check()`, outside the solver timeout.
+            The next slice has three separate parts: (1) export an opaque
+            accepted-SCC certificate from `ValueElaborator` rather than
+            recomputing or trusting termination in the staging probe; (2) tie
+            `recursive_call` nodes to the immutable transfer map for exactly that
+            certified SCC; (3) execute only when every demanded recursive
+            argument is exact, retaining `recursive_call_blocked` otherwise and
+            retaining external cancellation even for certified computations.
+            Replace the probe's current `left(on) -> right(off)` example first:
+            it terminates by a constructor reset which the accepted source
+            size-change checker intentionally cannot certify. A manual “safe”
+            bit on that example would test a program Fine rejects.
 - [x] Use constructor availability for the first staged proof-to-value match.
       The SMT context must leave one feasible constructor, and every value field
       used by the residual arm must be recovered from a runtime index. Ambiguous
