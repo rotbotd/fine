@@ -3,10 +3,12 @@
 #include "parser.h"
 
 #include <cstddef>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -191,6 +193,40 @@ namespace fine::stage {
         std::string key;
     };
 
+    // Owns acyclic transfer roots. Recursive terms retain only a callee name,
+    // so this table can tie an SCC without a cyclic shared_ptr graph.
+    class StageTransferEnvironment {
+    public:
+        bool certifies(std::string const &function) const noexcept {
+            return certified_recursive_functions_.contains(function);
+        }
+        StageTransfer const &function(std::string const &name) const {
+            return functions_.at(name);
+        }
+        std::string const &key() const noexcept {
+            return key_;
+        }
+
+    private:
+        friend class StageAnalysisCache;
+        StageTransferEnvironment() = default;
+        StageTransferEnvironment(StageTransferEnvironment const &) = delete;
+        StageTransferEnvironment &operator=(StageTransferEnvironment const &) = delete;
+
+        std::map<std::string, StageTransfer> functions_;
+        std::set<std::string> certified_recursive_functions_;
+        std::string key_;
+    };
+
+    struct StageEvaluationControl {
+        std::function<bool()> cancelled;
+    };
+
+    class StageEvaluationCancelled : public std::runtime_error {
+    public:
+        StageEvaluationCancelled() : std::runtime_error("stage evaluation cancelled") {}
+    };
+
     struct StageFunctionSummary {
         std::vector<bool> result_parameters;
         // Result inferred when every formal parameter is runtime-unknown. This
@@ -251,13 +287,20 @@ namespace fine::stage {
     struct StageAnalysisResult {
         std::map<std::string, StageFunctionSummary> functions;
         std::vector<StageCacheEvent> cache_events;
+        std::shared_ptr<StageTransferEnvironment const> transfer_environment;
     };
+
+    StageEvaluation evaluate_certified_stage_function(StageAnalysisResult const &analysis,
+                                                       std::string const &function,
+                                                       std::vector<StageAbstractValue> const &arguments,
+                                                       StageEvaluationControl control = {});
 
     // This cache contains Fine-owned summaries only. No source pointers or
     // manager-local Z3 handles cross the boundary.
     class StageAnalysisCache {
     public:
         StageAnalysisResult analyze(ValueFlowProgram const &program);
+        StageAnalysisResult analyze(CertifiedValueFlowProgram const &program);
 
     private:
         struct CachedScc {

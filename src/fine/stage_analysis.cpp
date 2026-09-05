@@ -160,4 +160,22 @@ namespace fine::stage {
         return result;
     }
 
+    StageAnalysisResult StageAnalysisCache::analyze(CertifiedValueFlowProgram const &certified) {
+        StageAnalysisResult result = analyze(certified.program());
+        auto environment = std::shared_ptr<StageTransferEnvironment>(new StageTransferEnvironment());
+        for (auto const &[name, summary] : result.functions)
+            environment->functions_.emplace(name, summary.transfer);
+        std::ostringstream key;
+        key << "fine-stage-transfer-environment-v1";
+        for (std::size_t scc : certified.certified_recursive_sccs()) {
+            for (auto const &name : certified.program().sccs().at(scc).functions) {
+                environment->certified_recursive_functions_.insert(name);
+                key << field(name) << field(result.functions.at(name).transfer.key);
+            }
+        }
+        environment->key_ = key.str();
+        result.transfer_environment = std::move(environment);
+        return result;
+    }
+
 }  // namespace fine::stage

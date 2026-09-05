@@ -231,7 +231,12 @@ namespace fine::stage {
 
         class TransferEvaluator {
         public:
+            TransferEvaluator(StageTransferEnvironment const *environment = nullptr,
+                              StageEvaluationControl const *control = nullptr)
+                : environment_(environment), control_(control) {}
+
             StageEvaluation evaluate(StageTransfer const &transfer, std::vector<StageAbstractValue> const &arguments) {
+                check_cancelled();
                 if (arguments.size() != transfer.parameters.size())
                     throw std::runtime_error("wrong stage transfer arity");
                 for (std::size_t i = 0; i < arguments.size(); ++i)
@@ -242,8 +247,16 @@ namespace fine::stage {
 
         private:
             std::vector<StageAbstractValue> arguments_;
+            StageTransferEnvironment const *environment_;
+            StageEvaluationControl const *control_;
+
+            void check_cancelled() const {
+                if (control_ && control_->cancelled && control_->cancelled())
+                    throw StageEvaluationCancelled();
+            }
 
             StageEvaluation term(TermPtr const &value, std::map<FlowLocalId, StageAbstractValue> const &bound) {
+                check_cancelled();
                 if (value->kind == Term::Kind::bottom)
                     return {stage_bottom(value->type), {}, false};
                 if (value->kind == Term::Kind::parameter)
@@ -265,8 +278,28 @@ namespace fine::stage {
                     absorb(input);
 
                 if (value->kind == Term::Kind::recursive_call) {
-                    result.result = stage_runtime(value->type);
-                    result.recursive_call_blocked = true;
+                    std::vector<StageAbstractValue> arguments;
+                    bool exact_arguments = true;
+                    for (auto const &input : inputs) {
+                        arguments.push_back(input.result);
+                        exact_arguments = exact_arguments && input.result.exact.has_value() &&
+                                          !input.recursive_call_blocked;
+                    }
+                    if (!environment_ || !environment_->certifies(value->payload) || !exact_arguments) {
+                        result.result = stage_runtime(value->type);
+                        result.recursive_call_blocked = true;
+                        return result;
+                    }
+                    StageTransfer const *callee = nullptr;
+                    try {
+                        callee = &environment_->function(value->payload);
+                    }
+                    catch (std::out_of_range const &) {
+                        throw std::logic_error("certified recursive stage callee is absent: " + value->payload);
+                    }
+                    StageEvaluation called = TransferEvaluator(environment_, control_).evaluate(*callee, arguments);
+                    absorb(called);
+                    result.result = called.result;
                     return result;
                 }
                 if (value->kind == Term::Kind::call) {
@@ -274,7 +307,7 @@ namespace fine::stage {
                     for (auto const &input : inputs)
                         arguments.push_back(input.result);
                     StageTransfer callee{value->callee_parameters, value->type, value->callee_root, value->callee_key};
-                    StageEvaluation called = TransferEvaluator().evaluate(callee, arguments);
+                    StageEvaluation called = TransferEvaluator(environment_, control_).evaluate(callee, arguments);
                     absorb(called);
                     result.result = called.result;
                     return result;
@@ -353,6 +386,19 @@ namespace fine::stage {
     StageEvaluation evaluate_stage_transfer(StageTransfer const &transfer,
                                             std::vector<StageAbstractValue> const &arguments) {
         return TransferEvaluator().evaluate(transfer, arguments);
+    }
+
+    StageEvaluation evaluate_certified_stage_function(StageAnalysisResult const &analysis,
+                                                       std::string const &function,
+                                                       std::vector<StageAbstractValue> const &arguments,
+                                                       StageEvaluationControl control) {
+        auto summary = analysis.functions.find(function);
+        if (summary == analysis.functions.end())
+            throw std::runtime_error("unknown function in certified stage analysis: " + function);
+        if (!analysis.transfer_environment)
+            throw std::logic_error("certified stage evaluation requires a transfer environment");
+        return TransferEvaluator(analysis.transfer_environment.get(), &control).evaluate(summary->second.transfer,
+                                                                                          arguments);
     }
 
 }  // namespace fine::stage

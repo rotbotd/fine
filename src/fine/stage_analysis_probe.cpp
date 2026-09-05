@@ -251,6 +251,7 @@ function even(value: Nat) -> Bool {
 function odd(value: Nat) -> Bool {
   match value { zero => false, succ(previous) => even(previous), }
 }
+function four_even() -> Bool { even(succ(succ(succ(succ(zero))))) }
 )fine";
         syntax::ConcreteSyntaxTree mutual_tree = syntax::parse_tree(mutual_source);
         std::ostringstream checked_output;
@@ -258,7 +259,7 @@ function odd(value: Nat) -> Bool {
         CertifiedValueFlowProgram certified_mutual =
             build_certified_value_flow(mutual_tree.ast, mutual_execution);
         ValueFlowProgram const &mutual = certified_mutual.program();
-        StageAnalysisResult mutual_result = cache.analyze(mutual);
+        StageAnalysisResult mutual_result = cache.analyze(certified_mutual);
         std::size_t even_scc = mutual.function_sccs().at("even");
         output << "mutual-scc-size: " << mutual.sccs()[even_scc].functions.size() << '\n';
         output << "mutual-recursion-certificates: " << mutual_execution.value_recursion_certificates.size() << '\n';
@@ -271,6 +272,15 @@ function odd(value: Nat) -> Bool {
                        ? "true"
                        : "false")
                << '\n';
+        bool bare_permission_rejected = false;
+        try {
+            StageAnalysisResult bare_mutual = StageAnalysisCache().analyze(mutual);
+            (void)evaluate_certified_stage_function(bare_mutual, "even", {});
+        }
+        catch (std::logic_error const &) {
+            bare_permission_rejected = true;
+        }
+        output << "bare-recursion-permission-rejected: " << (bare_permission_rejected ? "true" : "false") << '\n';
         bool copied_source_rejected = false;
         try {
             syntax::ConcreteSyntaxTree copied_tree = syntax::parse_tree(mutual_source);
@@ -282,10 +292,34 @@ function odd(value: Nat) -> Bool {
         output << "copied-source-certificate-rejected: " << (copied_source_rejected ? "true" : "false") << '\n';
         output << "mutual-even-dependencies: " << bits(mutual_result.functions.at("even").result_parameters) << '\n';
         output << "mutual-odd-dependencies: " << bits(mutual_result.functions.at("odd").result_parameters) << '\n';
-        StageEvaluation mutual_stage = evaluate_stage_transfer(
-            mutual_result.functions.at("even").transfer,
-            {stage_runtime({syntax::ValueType::Kind::enumeration, "Nat"})});
-        output << "mutual-recursion-blocked: " << (mutual_stage.recursive_call_blocked ? "true" : "false") << '\n';
+        FlowType nat_type{syntax::ValueType::Kind::enumeration, "Nat"};
+        auto natural = [&](std::size_t value) {
+            StageAbstractValue result = stage_constructor(nat_type, "zero", {});
+            while (value-- > 0)
+                result = stage_constructor(nat_type, "succ", {std::move(result)});
+            return result;
+        };
+        StageEvaluation exact_mutual = evaluate_certified_stage_function(mutual_result, "even", {natural(4)});
+        output << "mutual-exact-result: " << render_stage_value(exact_mutual.result) << '\n';
+        output << "mutual-exact-recursion-blocked: "
+               << (exact_mutual.recursive_call_blocked ? "true" : "false") << '\n';
+        StageEvaluation exact_caller = evaluate_certified_stage_function(mutual_result, "four_even", {});
+        output << "certified-recursive-callee-result: " << render_stage_value(exact_caller.result) << '\n';
+        StageEvaluation mutual_stage =
+            evaluate_certified_stage_function(mutual_result, "even", {stage_runtime(nat_type)});
+        output << "mutual-runtime-recursion-blocked: " << (mutual_stage.recursive_call_blocked ? "true" : "false")
+               << '\n';
+        std::size_t cancellation_polls = 0;
+        bool cancellation_observed = false;
+        try {
+            (void)evaluate_certified_stage_function(
+                mutual_result, "even", {natural(8)},
+                StageEvaluationControl{[&] { return ++cancellation_polls > 12; }});
+        }
+        catch (StageEvaluationCancelled const &) {
+            cancellation_observed = true;
+        }
+        output << "mutual-exact-cancellation: " << (cancellation_observed ? "true" : "false") << '\n';
         return 0;
     }
 

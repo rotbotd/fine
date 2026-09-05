@@ -101,10 +101,15 @@
           grep -F "mutual-recursion-certificates: 1" <<<"$stage_analysis"
           grep -F "mutual-certificate-closure: 2/4/2" <<<"$stage_analysis"
           grep -F "mutual-recursion-certified: true" <<<"$stage_analysis"
+          grep -F "bare-recursion-permission-rejected: true" <<<"$stage_analysis"
           grep -F "copied-source-certificate-rejected: true" <<<"$stage_analysis"
           grep -F "mutual-even-dependencies: 1" <<<"$stage_analysis"
           grep -F "mutual-odd-dependencies: 1" <<<"$stage_analysis"
-          grep -F "mutual-recursion-blocked: true" <<<"$stage_analysis"
+          grep -F "mutual-exact-result: comptime(true)" <<<"$stage_analysis"
+          grep -F "mutual-exact-recursion-blocked: false" <<<"$stage_analysis"
+          grep -F "certified-recursive-callee-result: comptime(true)" <<<"$stage_analysis"
+          grep -F "mutual-runtime-recursion-blocked: true" <<<"$stage_analysis"
+          grep -F "mutual-exact-cancellation: true" <<<"$stage_analysis"
 
           ${pkgs.python3}/bin/python "$src/fine/check_document_examples.py" "$src"
 
