@@ -7355,3 +7355,11 @@ The probe reports `mutual-recursion-certificates: 1`,
 `mutual-recursion-blocked: true`. The next boundary is not another certificate:
 it is an immutable SCC transfer environment which lets `recursive_call` refer
 back to peer roots without cyclic ownership.
+
+Clean artifacts for the certificate handoff implementation `9907521d1` and its
+documentation follow-up `a25013eeb`: native
+`/nix/store/8xgmadrk5xxdlcrw8lylfylyci0ydy7n-fine-0.1.0`, ordinary Wasm
+`/nix/store/xsajv55q2ica3vdwm23vb5hl846w0sfm-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/3q6yipq892kv3h7rgaqlzkxrgilswn69-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/gbmbqpfkh28pwp22hjfxhnmfa7iy21kv-fine-playground-0.1.0`.
