@@ -33,7 +33,7 @@ namespace fine::stage {
 
     Dependencies evaluate_node(ValueFlowProgram const &program, ValueFlowFunction const &function, FlowNodeId id,
                                LocalDependencies const &locals,
-                               std::map<std::string, StageDependencySummary> const &summaries) {
+                               std::map<std::string, StageFunctionSummary> const &summaries) {
         FlowNode const &node = function.nodes()[id];
         std::size_t arity = function.parameters().size();
         if (node.kind == FlowNode::Kind::local)
@@ -70,10 +70,10 @@ namespace fine::stage {
         return result;
     }
 
-    std::map<std::string, StageDependencySummary>
+    std::map<std::string, StageFunctionSummary>
     solve_scc(ValueFlowProgram const &program, CallScc const &scc,
-              std::map<std::string, StageDependencySummary> const &available) {
-        std::map<std::string, StageDependencySummary> summaries = available;
+              std::map<std::string, StageFunctionSummary> const &available) {
+        std::map<std::string, StageFunctionSummary> summaries = available;
         for (auto const &name : scc.functions) {
             std::size_t arity = program.functions().at(name).parameters().size();
             summaries[name] = {Dependencies(arity, false), {}};
@@ -96,10 +96,33 @@ namespace fine::stage {
                 }
             }
         }
-        std::map<std::string, StageDependencySummary> result;
+        std::map<std::string, StageFunctionSummary> result;
         for (auto const &name : scc.functions) {
-            StageDependencySummary summary = summaries.at(name);
-            summary.fingerprint = "fine-stage-deps-v1:" + bits(summary.result_parameters);
+            StageFunctionSummary summary = summaries.at(name);
+            ValueFlowFunction const &function = program.functions().at(name);
+            std::vector<StageAbstractValue> runtime_arguments;
+            for (auto const &type : function.parameters())
+                runtime_arguments.push_back(stage_runtime(type));
+            StageEvaluation evaluation = infer_stage(program, name, runtime_arguments);
+            summary.runtime_input_result = evaluation.result;
+            summary.recursive_call_blocked = evaluation.recursive_call_blocked;
+            std::ostringstream fingerprint;
+            fingerprint << "fine-stage-summary-v3:" << bits(summary.result_parameters) << ':'
+                        << stage_value_key(summary.runtime_input_result) << ':'
+                        << (summary.recursive_call_blocked ? '1' : '0');
+            if (summary.runtime_input_result.kind != StageAbstractValue::Kind::comptime ||
+                summary.recursive_call_blocked) {
+                // A flat runtime result does not describe how exact arguments
+                // transform. Until that full relational transformer is cached,
+                // retain the SCC graph and imported fingerprints so a changed
+                // nonconstant callee cannot leave a constant-argument caller
+                // stale. A constant result at top is already an exact transfer.
+                fingerprint << ':' << field(scc.semantic_key);
+                for (std::size_t dependency : scc.dependencies)
+                    for (auto const &dependency_name : program.sccs()[dependency].functions)
+                        fingerprint << field(dependency_name) << field(available.at(dependency_name).fingerprint);
+            }
+            summary.fingerprint = fingerprint.str();
             result.emplace(name, std::move(summary));
         }
         return result;
@@ -124,7 +147,7 @@ namespace fine::stage {
                 cache_slot += field(name);
             auto found = entries_.find(cache_slot);
             bool hit = found != entries_.end() && found->second.key == key.str();
-            std::map<std::string, StageDependencySummary> summaries;
+            std::map<std::string, StageFunctionSummary> summaries;
             if (hit)
                 summaries = found->second.summaries;
             else {

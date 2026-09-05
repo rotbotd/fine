@@ -4,9 +4,11 @@
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 namespace fine::stage {
@@ -24,6 +26,7 @@ namespace fine::stage {
     struct FlowMatchArm {
         std::string constructor;
         std::vector<FlowLocalId> binders;
+        std::vector<FlowType> binder_types;
         FlowNodeId body = 0;
     };
 
@@ -100,10 +103,66 @@ namespace fine::stage {
 
     ValueFlowProgram build_value_flow(syntax::Document const &document);
 
-    struct StageDependencySummary {
+    struct StageExactValue {
+        enum class Kind { integer, boolean, constructor };
+
+        Kind kind = Kind::integer;
+        FlowType type;
+        std::string payload;
+        std::vector<StageExactValue> fields;
+
+        friend bool operator==(StageExactValue const &, StageExactValue const &) = default;
+    };
+
+    struct StageAbstractValue {
+        enum class Kind { bottom, comptime, runtime };
+
+        Kind kind = Kind::bottom;
+        FlowType type;
+        std::optional<StageExactValue> exact;
+
+        friend bool operator==(StageAbstractValue const &, StageAbstractValue const &) = default;
+    };
+
+    struct StageFunctionSummary {
         std::vector<bool> result_parameters;
+        // Result inferred when every formal parameter is runtime-unknown. This
+        // is part of the exported cache fingerprint: two constant functions
+        // returning different values are not interchangeable even though both
+        // have the same empty parameter-dependency relation.
+        StageAbstractValue runtime_input_result;
+        bool recursive_call_blocked = false;
         std::string fingerprint;
     };
+
+    struct StageMatchEdge {
+        std::string function;
+        FlowNodeId match = 0;
+        std::size_t arm = 0;
+        std::string constructor;
+
+        friend bool operator<(StageMatchEdge const &left, StageMatchEdge const &right) {
+            return std::tie(left.function, left.match, left.arm, left.constructor) <
+                   std::tie(right.function, right.match, right.arm, right.constructor);
+        }
+    };
+
+    struct StageEvaluation {
+        StageAbstractValue result;
+        std::set<StageMatchEdge> executable_edges;
+        // A recursive call is not executed merely because its values happen to
+        // look static. Termination permission is a separate analysis.
+        bool recursive_call_blocked = false;
+    };
+
+    StageAbstractValue stage_bottom(FlowType type);
+    StageAbstractValue stage_runtime(FlowType type);
+    StageAbstractValue stage_boolean(bool value);
+    StageAbstractValue stage_integer(std::string_view value);
+    StageEvaluation infer_stage(ValueFlowProgram const &program, std::string const &function,
+                                std::vector<StageAbstractValue> const &arguments);
+    std::string render_stage_value(StageAbstractValue const &value);
+    std::string stage_value_key(StageAbstractValue const &value);
 
     struct StageCacheEvent {
         std::size_t scc = 0;
@@ -112,7 +171,7 @@ namespace fine::stage {
     };
 
     struct StageAnalysisResult {
-        std::map<std::string, StageDependencySummary> functions;
+        std::map<std::string, StageFunctionSummary> functions;
         std::vector<StageCacheEvent> cache_events;
     };
 
@@ -125,7 +184,7 @@ namespace fine::stage {
     private:
         struct CachedScc {
             std::string key;
-            std::map<std::string, StageDependencySummary> summaries;
+            std::map<std::string, StageFunctionSummary> summaries;
         };
         std::map<std::string, CachedScc> entries_;
     };

@@ -13,6 +13,7 @@ add_executable(fine-bin
   value_elaborator.cpp
   value_flow.cpp
   stage_analysis.cpp
+  stage_evaluation.cpp
   stage_analysis_probe.cpp
   source.cpp
 )

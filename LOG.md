@@ -6366,3 +6366,91 @@ The open edge is now narrow: enrich `StageDependencySummary` with exact abstract
 values and effects, track live match edges, and include that larger exported
 summary in the same SCC cache protocol. This slice does not claim staging,
 compile-time execution, or permission to inspect proof constructors.
+
+## 2026-09-05 — caller-specific abstract values and executable match edges
+
+The second staging slice adds the flat abstract-value pass without connecting it
+to proof elimination. `src/fine/stage_evaluation.cpp` interprets the immutable
+Fine-owned value-flow graph over `bottom | comptime(exact) | runtime`. Exact
+values retain their ordinary Fine type and recursively contain arbitrary-size
+integer text, Booleans, or native-enum constructor fields. Integer spelling is
+normalized before exact comparison, so `-0 == 0` produces `comptime(true)`
+without asking Z3. There are still no manager-local ASTs in the analysis or
+cache.
+
+The evaluator is caller-specific. A call to identity with `comptime(true)`
+returns that same exact Boolean, while a separate call with a runtime argument
+returns runtime. Constructors become exact only when all fields are exact;
+bottom fields keep the constructor bottom, and runtime fields make it runtime.
+An exact enum scrutinee selects exactly one match edge and installs its exact
+fields in the arm binders. A runtime scrutinee selects every arm and joins their
+results. This makes the discriminating control work: a runtime local in a dead
+`on` arm does not contaminate the `comptime(true)` result of an exact `off`
+scrutinee, while a live `off => true` / `on => false` join rises to runtime.
+Each executable edge retains the function name, match-node ID, arm ordinal, and
+constructor name.
+
+Match binder types had to be added explicitly to `FlowMatchArm`. Recovering a
+binder type by finding a local use would make unused payload binders impossible
+to analyze and would let an implementation accident determine whether a valid
+match had a type. The types now also enter the canonical flow key.
+
+Recursive calls are deliberately not executed by this pass. Encountering an
+active function yields runtime and sets `recursive_call_blocked`; the probe's
+mutual group still reaches its dependency fixed point, but its caller-specific
+evaluation reports the block. This is not a termination checker. It preserves
+the design boundary that static-looking arguments do not authorize compile-time
+execution of recursion.
+
+The function cache fingerprint now includes the exact result inferred with all
+formals runtime-unknown. Constant `true` and constant `false` therefore no longer
+share the old empty dependency fingerprint. A constant result at top is an exact
+transfer summary for the current pure value language and still permits
+summary-stable stopping: changing `false` to the semantically equal
+`false == true` misses the leaf but leaves its caller cached.
+
+The first attempted wider fingerprint used only dependency bits plus the
+runtime-input result. That was unsound for constant arguments. `leaf(value) {
+value }` and `leaf(value) { value == false }` both export one dependency and a
+runtime result, but unchanged `exact_caller() { leaf(true) }` changes from true
+to false. A dedicated cache probe reproduced the stale-caller case before the
+implementation was accepted. Until the cache contains a complete relational
+abstract transformer, every nonconstant summary now additionally fingerprints
+its SCC semantic graph and imported summaries. This is deliberately conservative:
+it may rebuild more reverse callers, but it cannot reuse one across a transfer
+change it has not proved irrelevant. The control now misses `exact_caller` and
+recomputes `comptime(false)`.
+
+The expanded `stage-analysis-probe` checks exact identity at two call sites,
+dead and live edge counts, constructor-field propagation through a called
+unpacker, negative-zero normalization, constant-result invalidation,
+constant-result semantic stopping, nonconstant-transform invalidation, and the
+explicit recursive block. `flake.nix` install checks assert each line.
+
+Validation commands:
+
+```
+clang-format -i src/fine/value_flow.h src/fine/value_flow.cpp \
+  src/fine/stage_analysis.cpp src/fine/stage_evaluation.cpp \
+  src/fine/stage_analysis_probe.cpp
+cmake --build .build -j4
+.build/fine stage-analysis-probe
+.build/fine run fine/fixtures/runtime-enum.fine
+.build/fine run --proof-selector z3 fine/fixtures/playground-demo.fine
+python3 fine/check_document_examples.py .
+git diff --check
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All passed. Clean dirty-tree artifacts before the implementation commit:
+
+- native: `/nix/store/nm2bj8hy627i4rhwn68rbj711ymf45il-fine-0.1.0`
+- ordinary Wasm: `/nix/store/vk6lhph59fsq844hmf48ysngwhz87ay4-fine-playground-wasm-0.1.0`
+- pthread Wasm: `/nix/store/acdfcvry2cjvd0ac0qdjviarnpbym5p2-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/96azx7d0x1zmbqllr1pi47z4m6fsb2ks-fine-playground-0.1.0`
+
+The remaining staging edge is a cached exact relational transfer rather than the
+current safe graph fallback, plus effects. Only after those summaries exist
+should inferred proof-constructor availability become an elimination rule.

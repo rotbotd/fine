@@ -26,16 +26,17 @@ callers synthesize or supply the evidence.
       SCCs, solve relational parameter-dependency summaries by monotone
       iteration, and cache each SCC by its graph plus imported summary
       fingerprints. The cache contains no source pointers or Z3 handles.
-- [ ] Infer availability rather than asking for a trusted `comptime` annotation.
+- [x] Infer availability rather than asking for a trusted `comptime` annotation.
       Use the finite-height abstract value shape `bottom | comptime(value) |
       runtime`; different constants join to `runtime` rather than changing from
       one constant to another.
-- [ ] Track executable control-flow edges together with values, as in SCCP, so a
+- [x] Track executable control-flow edges together with values, as in SCCP, so a
       dead runtime arm cannot contaminate a compile-time result and phi-like
       joins inspect only live predecessors.
-- [ ] Extend the relational SCC summaries from parameter dependencies to exact
-      abstract values and effects. Do not collapse a function such as identity
-      to one global compile-time/runtime bit.
+- [ ] Extend the cached relational SCC summaries from dependency bits and their
+      runtime-input result to a reusable exact abstract transfer and effects.
+      Caller-specific inference already distinguishes `identity(true)` from
+      `identity(runtime)`; do not collapse that into one global stage bit.
 - [ ] Keep “stageable from these inputs” separate from “safe for the compiler to
       execute now.” Recursive compile-time evaluation still requires Fine's
       structural termination evidence or an explicit bounded policy.

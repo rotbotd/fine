@@ -10,32 +10,32 @@ namespace fine::stage {
 
     namespace {
 
-    std::string type_key(FlowType const &type) {
-        switch (type.kind) {
-        case syntax::ValueType::Kind::integer: return "I";
-        case syntax::ValueType::Kind::boolean: return "B";
-        case syntax::ValueType::Kind::enumeration: return "E" + std::to_string(type.name.size()) + ':' + type.name;
+        std::string type_key(FlowType const &type) {
+            switch (type.kind) {
+            case syntax::ValueType::Kind::integer: return "I";
+            case syntax::ValueType::Kind::boolean: return "B";
+            case syntax::ValueType::Kind::enumeration: return "E" + std::to_string(type.name.size()) + ':' + type.name;
+            }
+            throw std::logic_error("unknown Fine value type");
         }
-        throw std::logic_error("unknown Fine value type");
-    }
 
-    FlowType flow_type(syntax::ValueType const &type) {
-        return {type.kind, type.kind == syntax::ValueType::Kind::enumeration ? type.name : std::string{}};
-    }
+        FlowType flow_type(syntax::ValueType const &type) {
+            return {type.kind, type.kind == syntax::ValueType::Kind::enumeration ? type.name : std::string{}};
+        }
 
-    std::string field(std::string_view value) {
-        return std::to_string(value.size()) + ':' + std::string(value);
-    }
+        std::string field(std::string_view value) {
+            return std::to_string(value.size()) + ':' + std::string(value);
+        }
 
-    struct ConstructorSignature {
-        std::string enumeration;
-        std::vector<FlowType> fields;
-    };
+        struct ConstructorSignature {
+            std::string enumeration;
+            std::vector<FlowType> fields;
+        };
 
-    struct FunctionSignature {
-        std::vector<FlowType> parameters;
-        FlowType result;
-    };
+        struct FunctionSignature {
+            std::vector<FlowType> parameters;
+            FlowType result;
+        };
 
     }  // namespace
 
@@ -179,6 +179,7 @@ namespace fine::stage {
                     FlowLocalId local = state.next_local++;
                     state.locals[name] = {local, constructor->second.fields[field_index]};
                     arm.binders.push_back(local);
+                    arm.binder_types.push_back(constructor->second.fields[field_index]);
                 }
                 arm.body = lower(expression.elements[i + 1], state);
                 FlowType body_type = state.function.nodes_[arm.body].type;
@@ -208,7 +209,10 @@ namespace fine::stage {
                 key << field(arm.constructor) << '[';
                 for (FlowLocalId binder : arm.binders)
                     key << binder << ',';
-                key << ']' << field(node_key(function, arm.body));
+                key << "](";
+                for (auto const &type : arm.binder_types)
+                    key << field(type_key(type));
+                key << ')' << field(node_key(function, arm.body));
             }
             return key.str() + '}';
         }

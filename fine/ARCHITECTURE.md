@@ -378,20 +378,41 @@ local spelling, streams, Rainfall identities, pointers, and manager-local Z3
 handles.
 
 The exact named-call graph is partitioned into strongly connected components.
-`stage_analysis.cpp` currently computes the first exported summary: which
-parameters may affect a function's result. Mutually recursive components reach
-their least dependency summaries by monotone iteration. Each SCC cache key is
-its own semantic graph plus the fingerprints of imported summaries. A changed
-callee therefore revisits reverse callers only when its exported dependency
-summary changes; an unrelated SCC remains reusable. The cache owns only Fine
-data, so a later session can replay a hit into a fresh Z3 manager rather than
-retaining an invalid `z3::expr`.
+`stage_analysis.cpp` computes which parameters may affect a function's result;
+mutually recursive components reach their least dependency summaries by
+monotone iteration. Each function also exports its result under wholly
+runtime-unknown arguments. This makes two constant functions returning
+different values distinct cache dependencies. A constant result at top is a
+complete transfer summary in the current pure value language. A nonconstant
+result is not, so its fingerprint conservatively includes the SCC graph and
+imported fingerprints until a reusable relational transformer exists. This
+prevents a cached `caller() { leaf(true) }` from surviving when `leaf` changes
+from identity to a different nonconstant operation.
 
-This is the cache and call-graph substrate, not the completed staging pass.
-`bottom | comptime(value) | runtime`, executable match edges, effect summaries,
-and the proof-elimination consumer remain open. `stage-analysis-probe` checks a
-cold and warm run, semantic invalidation, local-renaming stability, unrelated
-reuse, and a mutually recursive dependency fixed point.
+`stage_evaluation.cpp` carries the caller-specific flat domain
+`bottom | comptime(exact Fine value) | runtime` through locals, arbitrary-size
+integers, Booleans, nested native-enum constructors, equality, direct calls, and
+matches. A known constructor makes exactly one match edge executable. A runtime
+scrutinee makes every arm executable and joins only their results; distinct
+constants rise to runtime. Thus a dead arm containing a runtime local cannot
+contaminate a constant live arm, while `identity(true)` and
+`identity(runtime)` remain distinct. Executable edges retain function, match
+node, arm, and constructor identity.
+
+Recursive calls are deliberately marked blocked and yield runtime in this
+caller-specific evaluator. Stageability does not grant permission to execute a
+recursive function: structural termination evidence or an explicit bound must
+be connected separately. The cache and every exact value remain Fine-owned, so
+a later session can replay a hit into a fresh Z3 manager rather than retaining
+an invalid `z3::expr`.
+
+This is still not the completed staging pass. Cached exact relational transfers,
+effects, recursive evaluation under termination evidence, and the
+proof-elimination consumer remain open. `stage-analysis-probe` checks cache
+invalidation, alpha/trivia stability, exact constant stopping, a changed
+nonconstant transfer, caller-specific identity, dead and live match edges,
+constructor-field propagation, integer normalization, and the mutually
+recursive dependency fixed point and execution block.
 
 ## Rainfall boundary
 
