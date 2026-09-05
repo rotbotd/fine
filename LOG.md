@@ -7458,3 +7458,46 @@ view, or a diagnostic which names a failed staging demand. Until one exists,
 prototype-only. The stale TODO sentence saying the evaluator blocked every
 recursive SCC was corrected; only bare, runtime, partial, or already-blocked
 calls remain blocked.
+
+## 2026-09-05 — identity-constrained hidden-field residualization boundary
+
+The mixed proof-to-value eliminator already rejected a constructor value field
+absent from the proof family's runtime indices, but the control used a completely
+unconstrained integer. A sharper case now gives the hidden enum field an exact
+identity coeffect:
+
+```
+proof inductive HiddenOff() {
+  hidden_off(candidate: Flag)
+    takes [is_off: Id(Flag, candidate, off)]
+    -> HiddenOff();
+}
+```
+
+`reject-identity-determined-hidden-field-elimination.fine` matches this evidence
+and attempts to return `candidate`. Constructor feasibility is unique and the
+identity premise fixes the hidden value propositionally, but the value is still
+not carried by any runtime family index. Fine rejects the use with
+`proof match field candidate is not determined by a runtime index and cannot
+enter runtime code`.
+
+This preserves a deliberate boundary rather than denying that the optimization
+is valid. Supporting the case later requires an explicit residualization rule
+which replaces the erased binder with a checked source value (here `off`) and
+records that substitution. Merely retaining the solver equality as a branch
+assumption would leave generated runtime code referring to a value that was
+never represented. Arbitrary hidden model extraction remains excluded.
+
+The two stale unchecked proof-term TODOs were also reconciled with the
+implementation: proof-only match and `proof inductive` have long been closed;
+value-level proof match is the later unique-constructor/runtime-index rule rather
+than the former blanket prohibition.
+
+Exact checks:
+
+```
+nix run . -- run fine/fixtures/reject-identity-determined-hidden-field-elimination.fine
+# exits 1 with the expected hidden-field diagnostic
+nix flake check
+# all checks passed
+```

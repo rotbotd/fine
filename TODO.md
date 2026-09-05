@@ -334,11 +334,16 @@ retains the unchosen `refl` in Rainfall, and materializes byte-for-byte;
       Rainfall, validate its type/cost/score recurrence during replay, and name
       the graph minus the lifted tree as the compact complete residual.
 
-- [ ] Add proof-only elimination only when a proof consumer cannot be expressed
-      by context absorption and a checked proof function; reject elimination
-      from proofs into runtime values.
-- [ ] Design inductive propositions with derivation terms from birth. Do not
-      retrofit the old Bool-valued `predicate` declaration.
+- [x] Add proof-only elimination through checked proof functions while retaining
+      exact constructor fields. Value-level elimination is the later, narrower
+      rule: the SMT context must select one constructor and every used value
+      field must be structurally recoverable from a runtime family index. Even an
+      identity premise fixing a hidden field to a source constant does not yet
+      recover that field; accepting it would require an explicit residualization
+      rule rather than treating solver equality as a runtime load.
+- [x] Design indexed propositions with derivation terms from birth as
+      `proof inductive`; the old Bool-valued `predicate` declaration remains
+      quarantined on `pre-pat-1d7222a23`.
 - [x] Recover closed ordinary datatypes and runtime matching against the new
       value representation.
 - [x] Add `proof inductive` as an indexed, static constructor family; do not

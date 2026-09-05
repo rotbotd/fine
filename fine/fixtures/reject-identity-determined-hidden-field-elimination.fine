@@ -1,0 +1,18 @@
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive HiddenOff() {
+  hidden_off(candidate: Flag)
+    takes [is_off: Id(Flag, candidate, off)]
+    -> HiddenOff();
+}
+
+function reveal_hidden_off() -> Flag
+  takes [evidence: HiddenOff()]
+{
+  match evidence {
+    hidden_off(candidate) => candidate,
+  }
+}

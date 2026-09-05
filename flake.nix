@@ -398,6 +398,16 @@
           grep -F 'is not determined by a runtime index and cannot enter runtime code' \
             "$hidden_proof_field"
 
+          identity_determined_hidden_field="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-identity-determined-hidden-field-elimination.fine" \
+              >"$identity_determined_hidden_field" 2>&1; then
+            echo "identity-constrained hidden field unexpectedly entered runtime code" >&2
+            exit 1
+          fi
+          grep -F 'proof match field `candidate` is not determined by a runtime index and cannot enter runtime code' \
+            "$identity_determined_hidden_field"
+
           reachable_empty_match="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-empty-reachable-proof-elimination.fine" \
               >"$reachable_empty_match" 2>&1; then
