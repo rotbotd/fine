@@ -7427,3 +7427,11 @@ The new probe discriminators are
 `certified-recursive-callee-result: comptime(true)`,
 `mutual-runtime-recursion-blocked: true`, and
 `mutual-exact-cancellation: true`.
+
+Clean artifacts for recursive staging implementation `69353af44` and its
+documentation follow-up `ca8439927`: native
+`/nix/store/j46xnkq35iyr004i1wlsax21vlmq6xm1-fine-0.1.0`, ordinary Wasm
+`/nix/store/r1w03a6gapg3m1j8539cibcb535ypga4-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/xi3bcjzr3i9ldhghyiz1dlf1pqzwl2r5-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/gm7hqi5ybpkbyrx48n3wqkcbxv30g1ay-fine-playground-0.1.0`.
