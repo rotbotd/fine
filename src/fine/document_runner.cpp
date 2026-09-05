@@ -100,9 +100,9 @@ namespace fine::elaboration {
                                            ValueEnvironment &values, ProofEnvironment &proofs,
                                            std::vector<std::string> &proof_order, std::vector<z3::expr> &absorbed) {
         ensure_fresh(declaration.name, declaration.span, values, proofs);
-        ValueTerm value = values_.elaborate_value(declaration.value, values, proofs, proof_order, absorbed);
         values_.require_known_type(declaration.type);
         ValueKind expected = kind_of(declaration.type);
+        ValueTerm value = values_.elaborate_value(declaration.value, values, proofs, proof_order, absorbed, expected);
         if (value.kind != expected)
             reject(declaration.span, "value binding `" + declaration.name + "` has the wrong type");
         if (rainfall_)
@@ -174,7 +174,8 @@ namespace fine::elaboration {
                                            std::size_t &assertion_index, ValueEnvironment &values,
                                            ProofEnvironment &proofs, std::vector<std::string> &proof_order,
                                            std::vector<z3::expr> &absorbed) {
-        ValueTerm proposition = values_.elaborate_value(declaration.proposition, values, proofs, proof_order, absorbed);
+        ValueTerm proposition =
+            values_.elaborate_value(declaration.proposition, values, proofs, proof_order, absorbed, boolean_kind());
         if (proposition.kind != boolean_kind())
             reject(declaration.span, "assertion is not Bool");
         z3::solver solver(values_.context());
@@ -188,7 +189,7 @@ namespace fine::elaboration {
             rainfall_->source_term(declaration.proposition.node_id, declaration.proposition.span, "value.assertion",
                                    proposition.expression, "exact", {"run:" + run});
             rainfall_->record("transition", "assert.verify", {"run:" + run}, "fine.two-level-elaborator",
-                              "Assertion refuted under all previously absorbed identity propositions",
+                              "Assertion refuted under all previously absorbed proof constraints",
                               {RainfallRecorder::string_field("status", "unsat")});
         }
     }

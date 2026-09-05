@@ -46,6 +46,10 @@ callers synthesize or supply the evidence.
       The SMT context must leave one feasible constructor, and every value field
       used by the residual arm must be recovered from a runtime index. Ambiguous
       runtime-dependent evidence and proof-only hidden fields are rejected.
+- [x] Let an impossible indexed coeffect discharge an expected value type with
+      zero arms. Indexed evidence contributes a necessary existential
+      constructor-head cover; the empty branch checks the resulting context is
+      unsatisfiable and lowers to staging bottom.
 
 Transfer exit test: one dead runtime branch preserves a compile-time value, one
 live join of distinct constants becomes runtime, a mutually recursive
@@ -55,7 +59,8 @@ argument. A known constructor with a runtime payload crosses a function call and
 selects one caller match arm. A strict argument's blocked recursion survives
 even when the callee ignores its value. The proof controls reject elimination
 when its constructor choice depends on runtime data and reject a used field that
-exists only inside erased evidence.
+exists only inside erased evidence. Empty `Never()` and unreachable-index value
+matches produce bottom, while an empty match with a reachable constructor fails.
 
 Do not add 0-CFA, first-class function types, closures, or existential closure
 packages for this slice. If closures are ever demanded by a concrete program,

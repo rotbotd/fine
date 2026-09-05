@@ -410,7 +410,8 @@ namespace fine::elaboration {
     ValueTerm ProofEngine::elaborate_staged_value_match(syntax::ValueExpr const &expression,
                                                         ValueEnvironment const &values, ProofEnvironment const &proofs,
                                                         std::vector<std::string> const &proof_order,
-                                                        std::vector<z3::expr> const &absorbed) {
+                                                        std::vector<z3::expr> const &absorbed,
+                                                        std::optional<ValueKind> expected) {
         if (expression.elements.empty() || expression.elements.front().kind != syntax::ValueExpr::Kind::name)
             reject(expression.span, "a staged proof match requires one local proof name");
         std::string const &proof_name = expression.elements.front().name;
@@ -483,6 +484,36 @@ namespace fine::elaboration {
             }
         }
 
+        if (candidates.empty()) {
+            if (!expression.match_constructors.empty())
+                reject(expression.span, "impossible staged proof match must have zero arms");
+            if (!expected)
+                reject(expression.span, "empty staged proof match needs an expected runtime value type");
+            z3::solver impossible(values_.context());
+            for (auto const &assumption : absorbed)
+                impossible.add(assumption);
+            z3::check_result status = impossible.check();
+            if (status == z3::unknown)
+                reject(expression.span, "proof-match impossibility was unknown: " + impossible.reason_unknown());
+            if (status != z3::unsat)
+                throw std::logic_error("proof match has no feasible constructor in a satisfiable evidence context");
+            std::string symbol = "fine.staged-proof-match.impossible." + std::to_string(expression.node_id);
+            ValueTerm result(*expected, values_.context().constant(symbol.c_str(), values_.sort(*expected)));
+            if (rainfall_)
+                rainfall_->record(
+                    "derive", "proof.inductive.value-match",
+                    {"staged-proof-match:" + std::to_string(expression.node_id)}, "fine.staged-proof-elimination",
+                    "An impossible static evidence context discharges a value result without a runtime branch",
+                    {RainfallRecorder::string_field("scrutinee", proof_name),
+                     RainfallRecorder::string_field("family", family.name),
+                     RainfallRecorder::string_field("constructor", ""),
+                     RainfallRecorder::number_field("feasible_constructors", 0),
+                     RainfallRecorder::boolean_field("constructor_unique", false),
+                     RainfallRecorder::boolean_field("context_unsat", true),
+                     RainfallRecorder::boolean_field("runtime_proof_value_created", false),
+                     RainfallRecorder::boolean_field("proof_field_loaded_at_runtime", false)});
+            return result;
+        }
         if (candidates.size() != 1) {
             std::ostringstream message;
             message << "proof match cannot produce a runtime value: constructor is not uniquely determined";
@@ -547,7 +578,7 @@ namespace fine::elaboration {
             bind_proof(parameter, parameter.name, "staged-proof-match-coeffect:" + proof_name);
 
         ValueTerm result =
-            values_.elaborate_value(body, branch_values, branch_proofs, branch_proof_order, branch_absorbed);
+            values_.elaborate_value(body, branch_values, branch_proofs, branch_proof_order, branch_absorbed, expected);
         if (rainfall_)
             rainfall_->record("derive", "proof.inductive.value-match",
                               {"staged-proof-match:" + std::to_string(expression.node_id)},
@@ -801,30 +832,65 @@ namespace fine::elaboration {
         return elaborate_inductive_proof(expression, expected_syntax, std::move(std::get<InductiveType>(expected)),
                                          values, proofs, proof_order, absorbed, std::move(name), run);
     }
+    z3::expr ProofEngine::inductive_head_cover(InductiveType const &type, std::string const &evidence_name) {
+        auto family_found = proof_inductives_.find(type.family);
+        if (family_found == proof_inductives_.end())
+            throw std::logic_error("proof evidence names an undeclared family");
+        z3::expr cover = values_.context().bool_val(false);
+        for (auto const &constructor : family_found->second->constructors) {
+            ValueEnvironment constructor_values;
+            z3::expr_vector witnesses(values_.context());
+            for (auto const &parameter : constructor.parameters) {
+                ValueKind kind = kind_of(parameter.type);
+                std::string symbol = "fine.proof-head." + evidence_name + "." + constructor.name + "." + parameter.name;
+                z3::expr witness = values_.context().constant(symbol.c_str(), values_.sort(kind));
+                witnesses.push_back(witness);
+                constructor_values.emplace(parameter.name, ValueTerm(kind, std::move(witness)));
+            }
+            ProofEnvironment no_proofs;
+            std::vector<std::string> no_proof_order;
+            std::vector<z3::expr> no_absorbed;
+            SemanticProofType result = elaborate_proof_type(constructor.result_type, constructor_values, no_proofs,
+                                                            no_proof_order, no_absorbed);
+            auto result_type = std::get_if<InductiveType>(&result);
+            if (!result_type || result_type->family != type.family ||
+                result_type->indices.size() != type.indices.size())
+                throw std::logic_error("checked proof constructor changed family or arity");
+            z3::expr head = values_.context().bool_val(true);
+            for (std::size_t i = 0; i < type.indices.size(); ++i)
+                head = head && result_type->indices[i].expression == type.indices[i].expression;
+            if (!witnesses.empty())
+                head = z3::exists(witnesses, head);
+            cover = cover || head;
+        }
+        return cover.simplify();
+    }
     void ProofEngine::absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed,
                              std::vector<std::string> within, std::string_view role,
                              std::optional<std::string> source) {
         if (!proof.complete)
             throw std::logic_error("open proof evidence cannot enter an SMT context");
         auto identity = std::get_if<IdentityType>(&proof.type);
-        if (!identity)
-            return;
-        z3::expr proposition = identity->left == identity->right;
+        z3::expr proposition = identity ? identity->left == identity->right
+                                        : inductive_head_cover(std::get<InductiveType>(proof.type), proof.name);
         absorbed.push_back(proposition);
         if (!rainfall_)
             return;
-        std::string term = rainfall_->term(proposition, "identity-proposition");
+        std::string term = rainfall_->term(proposition, identity ? "identity-proposition" : "proof-family-head-cover");
         std::vector<RainfallField> data = {
             RainfallRecorder::string_field("proof", proof.name),
             RainfallRecorder::string_field("proposition", term),
+            RainfallRecorder::string_field("proof_kind", identity ? "identity" : "inductive"),
             RainfallRecorder::string_field("role", role),
             RainfallRecorder::boolean_field("runtime_value_created", false),
         };
         if (source)
             data.push_back(RainfallRecorder::string_field("source", *source));
         rainfall_->record("derive", "proof.context.absorb", within, "fine.proof-context",
-                          "Identity evidence contributes its proposition to this lexical SMT context without "
-                          "becoming a runtime value",
+                          identity ? "Identity evidence contributes its equality to this lexical SMT context without "
+                                     "becoming a runtime value"
+                                   : "Indexed evidence contributes the necessary outer-constructor head cover to "
+                                     "this lexical SMT context without becoming a runtime value",
                           data);
     }
     void ProofEngine::declare_proof_inductive(syntax::ProofInductiveDecl const &declaration) {

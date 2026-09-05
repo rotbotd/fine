@@ -6639,3 +6639,82 @@ All passed. Clean dirty-tree artifacts before the implementation commit:
 - ordinary Wasm: `/nix/store/fbnbh86y74xxi4203mj176r234brjybc-fine-playground-wasm-0.1.0`
 - pthread Wasm: `/nix/store/b7xhzfhn0cvf8vj17wf8n8c19v5sr51r-fine-playground-wasm-pthreads-0.1.0`
 - playground: `/nix/store/z113rf0393l46a5j6jfvdj4jl6w56ng0-fine-playground-0.1.0`
+
+## 2026-09-05 — impossible indexed evidence eliminates to staging bottom
+
+The next attempted target was call-site specialization of an ambiguous staged
+proof match. It was rejected before implementation: Fine currently verifies and
+inlines source calls but has no emitted generic-call boundary at which it could
+promise that every runtime call was specialized. Allowing a symbolic
+two-constructor proof match now and naming it monomorphization would confuse
+solver inlining with generated-code behavior. The retained smaller boundary is
+the missing zero-constructor case exposed by the first staged eliminator.
+
+Indexed evidence now contributes a necessary outer-constructor head cover when
+it enters a lexical proof context. For every family constructor, Fine elaborates
+its result indices over fresh constructor value parameters, equates them to the
+evidence indices, existentially closes those value parameters, then disjoins the
+constructor heads. Constructor proof parameters and coeffects are deliberately
+omitted. The formula is therefore a sound overapproximation of inhabitance:
+evidence implies that some outer constructor head matches, but a matching head
+does not claim that its recursive premises exist. This makes `Never()` contribute
+`false` and makes `OnlyOff(on)` contribute the false equation `off == on` without
+turning proof families into runtime predicates.
+
+A value-level proof match with zero feasible constructors now requires zero
+source arms and an expected ordinary value type. Fine separately asks Z3 that
+the full absorbed context is unsatisfiable before producing an elaboration-only
+placeholder of that type. The placeholder is never a runtime proof or a selected
+runtime value: the typed staging graph represents the expression with a new
+bottom node, and both the direct abstract evaluator and reusable transfer retain
+bottom through a strict call. Expected value types flow from function results,
+let annotations, constructor fields, call parameters, ordinary match arms,
+proof-family indices, and either known side of equality. Two empty equality
+operands remain correctly underdetermined.
+
+`staged-proof-elimination.fine` now checks three forms. `eliminate_never()`
+returns `Bool` from a zero-arm `Never()` match. `eliminate_unreachable_index()`
+returns `Int` from `OnlyOff(on)` and carries mutually contradictory guarantees,
+which verify only because the evidence head cover makes the entire function
+context impossible. `eliminate_never_as_argument()` passes the empty match to a
+strict `Bool -> Bool` call, proving expected-type propagation and bottom
+retention below the function root. The negative control
+`reject-empty-reachable-proof-elimination.fine` attempts zero arms for
+`OnlyOff(off)` and is rejected with the demanded `only_off` arm.
+
+Rainfall now retains both identity equalities and indexed head covers as exact
+validated terms. A zero-constructor `proof.inductive.value-match` event records
+zero feasible constructors, `context_unsat: true`, no constructor, no runtime
+proof value, and no proof-field load; replay distinguishes this from the existing
+one-unique-constructor event. The reference, architecture, proof-term design,
+roadmap, and staging exit test now state the zero case explicitly.
+
+Validation commands:
+
+```
+clang-format -i src/fine/elaboration_internal.h src/fine/value_elaborator.cpp \
+  src/fine/document_runner.cpp src/fine/proof_engine_types.cpp \
+  src/fine/proof_engine_inductive.cpp src/fine/value_flow.h \
+  src/fine/value_flow.cpp src/fine/stage_evaluation.cpp \
+  src/fine/stage_transfer.cpp src/fine/stage_analysis_probe.cpp
+cmake --build .build -j4
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine stage-analysis-probe
+.build/fine rain fine/fixtures/staged-proof-elimination.fine
+python3 fine/rainfall_replay.py <rainfall-output>
+python3 fine/check_document_examples.py .
+.build/fine run fine/fixtures/reject-empty-reachable-proof-elimination.fine
+git diff --check
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All positive checks passed and the reachable-constructor control failed at the
+empty match as required. Clean dirty-tree artifacts before the implementation
+commit:
+
+- native: `/nix/store/qmy66lvyqgpsf9g95icxrsmklraybwsn-fine-0.1.0`
+- ordinary Wasm: `/nix/store/05rq84jga8582n1l9q3w7ylm4zxfpdcx-fine-playground-wasm-0.1.0`
+- pthread Wasm: `/nix/store/55lki0ndb4npmn7f0mqj1k98lx2wgybn-fine-playground-wasm-pthreads-0.1.0`
+- playground: `/nix/store/ikh6l45i3sgzr1gq85yjz121ci540sq1-fine-playground-0.1.0`

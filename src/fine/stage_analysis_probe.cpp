@@ -209,10 +209,22 @@ enum Flag { off, on }
 proof inductive Tagged(value: Flag) {
   tagged(field: Flag) -> Tagged(field);
 }
+proof inductive Never() {}
 function recover(value: Flag) -> Flag
   takes [evidence: Tagged(value)]
 {
   match evidence { tagged(field) => field, }
+}
+function eliminate_never() -> Bool
+  takes [impossible: Never()]
+{
+  match impossible {}
+}
+function keep_bool(value: Bool) -> Bool { value }
+function eliminate_never_as_argument() -> Bool
+  takes [impossible: Never()]
+{
+  keep_bool(match impossible {})
 }
 )fine");
         StageAnalysisResult staged_proof_analysis = StageAnalysisCache().analyze(staged_proof);
@@ -222,6 +234,12 @@ function recover(value: Flag) -> Flag
         output << "staged-proof-residual-result: " << render_stage_value(staged_proof_result.result) << '\n';
         output << "staged-proof-residual-dependencies: "
                << bits(staged_proof_analysis.functions.at("recover").result_parameters) << '\n';
+        StageEvaluation impossible_result =
+            evaluate_stage_transfer(staged_proof_analysis.functions.at("eliminate_never").transfer, {});
+        output << "impossible-proof-residual-result: " << render_stage_value(impossible_result.result) << '\n';
+        StageEvaluation impossible_argument =
+            evaluate_stage_transfer(staged_proof_analysis.functions.at("eliminate_never_as_argument").transfer, {});
+        output << "impossible-proof-argument-result: " << render_stage_value(impossible_argument.result) << '\n';
 
         ValueFlowProgram mutual = parse(R"fine(
 enum Flag { off, on }

@@ -178,7 +178,9 @@ values. A value function may contain a proof-family match when the current SMT
 context proves exactly one constructor feasible and every constructor value used
 by the residual arm is already recoverable from a runtime index. Fine removes
 the match while compiling. Ambiguous constructors and proof-only hidden fields
-still fail before runtime lowering.
+still fail before runtime lowering. If an indexed evidence head has no feasible
+constructor, zero arms discharge the enclosing expected value type and the stage
+transfer becomes bottom; an empty match against a reachable constructor fails.
 
 Exit conditions:
 
@@ -387,7 +389,8 @@ separate concrete consumer forces each one.
 - no equality between proofs or higher identity types in this roadmap;
 - no runtime proof values and no late erasure pass;
 - no runtime proof tag or field inspection; proof-to-value matching is limited
-  to compile-time reduction of one uniquely feasible constructor;
+  to compile-time reduction of one uniquely feasible constructor or a checked
+  impossible context with zero arms;
 - no global typeclass, instance, or theorem search;
 - no general universe of Fine types encoded as Z3 terms merely to simulate
   dependency;

@@ -132,6 +132,12 @@ namespace fine::stage {
             TermPtr lower(ValueFlowFunction const &function, FlowNodeId id,
                           std::map<FlowLocalId, TermPtr> const &locals) {
                 FlowNode const &node = function.nodes().at(id);
+                if (node.kind == FlowNode::Kind::bottom) {
+                    Term bottom;
+                    bottom.kind = Term::Kind::bottom;
+                    bottom.type = node.type;
+                    return make_term(std::move(bottom));
+                }
                 if (node.kind == FlowNode::Kind::local)
                     return locals.at(node.local);
                 if (node.kind == FlowNode::Kind::integer)
@@ -238,6 +244,8 @@ namespace fine::stage {
             std::vector<StageAbstractValue> arguments_;
 
             StageEvaluation term(TermPtr const &value, std::map<FlowLocalId, StageAbstractValue> const &bound) {
+                if (value->kind == Term::Kind::bottom)
+                    return {stage_bottom(value->type), {}, false};
                 if (value->kind == Term::Kind::parameter)
                     return {arguments_.at(value->local), {}, false};
                 if (value->kind == Term::Kind::bound)

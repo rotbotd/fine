@@ -72,6 +72,8 @@ namespace fine::stage {
             StageEvaluation node(ValueFlowFunction const &function, FlowNodeId id,
                                  std::map<FlowLocalId, AbstractValue> const &locals) {
                 FlowNode const &flow = function.nodes().at(id);
+                if (flow.kind == FlowNode::Kind::bottom)
+                    return {stage_bottom(flow.type), {}, false};
                 if (flow.kind == FlowNode::Kind::local)
                     return {locals.at(flow.local), {}, false};
                 if (flow.kind == FlowNode::Kind::integer)

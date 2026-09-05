@@ -111,7 +111,7 @@
               </tr>
               <tr>
                 <td>staged proof match</td>
-                <td>A value function may return the single residual arm only when the current SMT context proves its proof constructor unique. A used constructor value field must be recovered from a runtime index. Ambiguous constructors and proof-only hidden fields are rejected.</td>
+                <td>A value function may return the single residual arm only when the current SMT context proves its proof constructor unique. Zero reachable constructors accept zero arms and produce staging bottom. A used constructor value field must be recovered from a runtime index. Ambiguous constructors and proof-only hidden fields are rejected.</td>
                 <td><code>function recover(value: Flag) -&gt; Flag<br>&nbsp;&nbsp;takes [evidence: Tagged(value)]<br>&nbsp;&nbsp;ensures {<br>&nbsp;&nbsp;&nbsp;&nbsp;result == value;<br>&nbsp;&nbsp;}<br>{<br>&nbsp;&nbsp;match evidence {<br>&nbsp;&nbsp;&nbsp;&nbsp;tagged(field) =&gt; field,<br>&nbsp;&nbsp;}<br>}</code></td>
               </tr>
               <tr>
@@ -121,7 +121,7 @@
               </tr>
               <tr>
                 <td>empty proof match</td>
-                <td>Evidence with no reachable constructor eliminates into any proof type with zero arms.</td>
+                <td>Evidence with no reachable constructor eliminates into any proof type, or into an expected value type, with zero arms. A reachable constructor makes the empty match an error.</td>
                 <td><code>match impossible { }</code></td>
               </tr>
               <tr>

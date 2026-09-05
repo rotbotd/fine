@@ -32,7 +32,7 @@ namespace fine::stage {
     };
 
     struct FlowNode {
-        enum class Kind { local, integer, boolean, constructor, equal, call, match };
+        enum class Kind { bottom, local, integer, boolean, constructor, equal, call, match };
 
         Kind kind = Kind::local;
         FlowType type;
@@ -141,7 +141,7 @@ namespace fine::stage {
     };
 
     struct StageTransferTerm {
-        enum class Kind { parameter, bound, exact, constructor, equal, match, call, recursive_call };
+        enum class Kind { bottom, parameter, bound, exact, constructor, equal, match, call, recursive_call };
 
         Kind kind = Kind::parameter;
         FlowType type;

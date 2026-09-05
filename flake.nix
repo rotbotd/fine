@@ -95,6 +95,8 @@
           grep -F "transfer-matches-direct-oracle: true" <<<"$stage_analysis"
           grep -F "staged-proof-residual-result: runtime" <<<"$stage_analysis"
           grep -F "staged-proof-residual-dependencies: 1" <<<"$stage_analysis"
+          grep -F "impossible-proof-residual-result: bottom" <<<"$stage_analysis"
+          grep -F "impossible-proof-argument-result: bottom" <<<"$stage_analysis"
           grep -F "mutual-scc-size: 2" <<<"$stage_analysis"
           grep -F "mutual-left-dependencies: 11" <<<"$stage_analysis"
           grep -F "mutual-right-dependencies: 11" <<<"$stage_analysis"
@@ -238,6 +240,9 @@
           echo "$staged_output"
           grep -F "verified function: recover" <<<"$staged_output"
           grep -F "verified function: selected_by_equality" <<<"$staged_output"
+          grep -F "verified function: eliminate_never" <<<"$staged_output"
+          grep -F "verified function: eliminate_unreachable_index" <<<"$staged_output"
+          grep -F "verified function: eliminate_never_as_argument" <<<"$staged_output"
           grep -F "resolved coeffect: recover.evidence <- tagged_on (lexical search)" <<<"$staged_output"
           grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$staged_output"
           staged_materialized="$(mktemp)"
@@ -250,6 +255,8 @@
           ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
             "$src/fine/fixtures/staged-proof-elimination.fine" "$staged_rain"
           grep -F '"operation":"proof.inductive.value-match"' "$staged_rain"
+          grep -F '"feasible_constructors":0' "$staged_rain"
+          grep -F '"context_unsat":true' "$staged_rain"
 
           runtime_proof_elimination="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-runtime-dependent-proof-elimination.fine" \
@@ -268,6 +275,15 @@
           fi
           grep -F 'is not determined by a runtime index and cannot enter runtime code' \
             "$hidden_proof_field"
+
+          reachable_empty_match="$(mktemp)"
+          if $out/bin/fine run "$src/fine/fixtures/reject-empty-reachable-proof-elimination.fine" \
+              >"$reachable_empty_match" 2>&1; then
+            echo "reachable constructor was discharged by an empty proof match" >&2
+            exit 1
+          fi
+          grep -F 'must contain exactly its uniquely reachable arm `only_off`' \
+            "$reachable_empty_match"
 
           induction_output="$($out/bin/fine run "$src/fine/fixtures/proof-inductive-induction.fine")"
           echo "$induction_output"

@@ -12,8 +12,8 @@ namespace fine::elaboration {
             reject(type.span, "expected identity proof type, found `" + print_proof_type(type) + "`");
         values_.require_known_type(type.carrier);
         ValueKind carrier = kind_of(type.carrier);
-        ValueTerm left = values_.elaborate_value(type.left, values, proofs, proof_order, absorbed);
-        ValueTerm right = values_.elaborate_value(type.right, values, proofs, proof_order, absorbed);
+        ValueTerm left = values_.elaborate_value(type.left, values, proofs, proof_order, absorbed, carrier);
+        ValueTerm right = values_.elaborate_value(type.right, values, proofs, proof_order, absorbed, carrier);
         if (left.kind != carrier || right.kind != carrier)
             reject(type.span, "identity endpoints do not have carrier type `" + std::string(kind_name(carrier)) + "`");
         return {carrier, std::move(left.expression), std::move(right.expression)};
@@ -31,9 +31,11 @@ namespace fine::elaboration {
                    "proof inductive `" + type.name + "` expects " + std::to_string(family.indices.size()) + " indices");
         InductiveType result{type.name, {}};
         for (std::size_t i = 0; i < type.arguments.size(); ++i) {
-            ValueTerm index = values_.elaborate_value(type.arguments[i], values, proofs, proof_order, absorbed);
             values_.require_known_type(family.indices[i].type);
-            if (index.kind != kind_of(family.indices[i].type))
+            ValueKind expected = kind_of(family.indices[i].type);
+            ValueTerm index =
+                values_.elaborate_value(type.arguments[i], values, proofs, proof_order, absorbed, expected);
+            if (index.kind != expected)
                 reject(type.arguments[i].span,
                        "index `" + family.indices[i].name + "` of `" + type.name + "` has the wrong value type");
             result.indices.push_back(std::move(index));

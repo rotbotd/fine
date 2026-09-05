@@ -1,0 +1,15 @@
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive OnlyOff(value: Flag) {
+  only_off() -> OnlyOff(off);
+}
+
+function dishonest_empty_match() -> Bool
+  takes [reachable: OnlyOff(off)]
+{
+  match reachable {
+  }
+}

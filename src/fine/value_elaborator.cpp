@@ -112,7 +112,8 @@ namespace fine::elaboration {
                                         std::to_string(constructor.fields.size()) + " fields");
         z3::expr_vector arguments(context_);
         for (std::size_t i = 0; i < expression.elements.size(); ++i) {
-            ValueTerm field = elaborate_value(expression.elements[i], values, proofs, proof_order, absorbed);
+            ValueTerm field =
+                elaborate_value(expression.elements[i], values, proofs, proof_order, absorbed, constructor.fields[i]);
             if (field.kind != constructor.fields[i])
                 reject(expression.elements[i].span,
                        "field " + std::to_string(i) + " of `" + constructor.name + "` has the wrong value type");
@@ -123,10 +124,11 @@ namespace fine::elaboration {
     ValueTerm ValueElaborator::elaborate_match(syntax::ValueExpr const &expression, ValueEnvironment const &values,
                                                ProofEnvironment const &proofs,
                                                std::vector<std::string> const &proof_order,
-                                               std::vector<z3::expr> const &absorbed) {
+                                               std::vector<z3::expr> const &absorbed,
+                                               std::optional<ValueKind> expected) {
         if (!expression.elements.empty() && expression.elements[0].kind == syntax::ValueExpr::Kind::name &&
             proofs.contains(expression.elements[0].name))
-            return proofs_->elaborate_staged_value_match(expression, values, proofs, proof_order, absorbed);
+            return proofs_->elaborate_staged_value_match(expression, values, proofs, proof_order, absorbed, expected);
         ValueTerm scrutinee = elaborate_value(expression.elements[0], values, proofs, proof_order, absorbed);
         if (scrutinee.kind.tag != ValueKind::Tag::enumeration)
             reject(expression.elements[0].span, "match scrutinee is not an enum value");
@@ -157,7 +159,8 @@ namespace fine::elaboration {
                 branch_values.insert_or_assign(
                     binders[j], ValueTerm(constructor.fields[j], constructor.accessors[j](scrutinee.expression)));
             }
-            ValueTerm body = elaborate_value(expression.elements[i + 1], branch_values, proofs, proof_order, absorbed);
+            ValueTerm body =
+                elaborate_value(expression.elements[i + 1], branch_values, proofs, proof_order, absorbed, expected);
             branches.emplace_back(constructor.tester(scrutinee.expression), std::move(body));
         }
         if (seen.size() != enumeration.constructors.size()) {
@@ -177,7 +180,8 @@ namespace fine::elaboration {
     ValueTerm ValueElaborator::elaborate_value(syntax::ValueExpr const &expression, ValueEnvironment const &values,
                                                ProofEnvironment const &proofs,
                                                std::vector<std::string> const &proof_order,
-                                               std::vector<z3::expr> const &absorbed) {
+                                               std::vector<z3::expr> const &absorbed,
+                                               std::optional<ValueKind> expected) {
         switch (expression.kind) {
         case syntax::ValueExpr::Kind::name: {
             auto value = values.find(expression.name);
@@ -203,8 +207,21 @@ namespace fine::elaboration {
             return {integer_kind(), context_.int_val(expression.integer_text.c_str())};
         case syntax::ValueExpr::Kind::boolean: return {boolean_kind(), context_.bool_val(expression.boolean_value)};
         case syntax::ValueExpr::Kind::equal: {
-            ValueTerm left = elaborate_value(expression.elements[0], values, proofs, proof_order, absorbed);
-            ValueTerm right = elaborate_value(expression.elements[1], values, proofs, proof_order, absorbed);
+            auto empty_match = [](syntax::ValueExpr const &value) {
+                return value.kind == syntax::ValueExpr::Kind::match && value.match_constructors.empty();
+            };
+            bool left_needs_type = empty_match(expression.elements[0]);
+            bool right_needs_type = empty_match(expression.elements[1]);
+            if (left_needs_type && right_needs_type)
+                reject(expression.span, "equality between two empty matches has no expected operand type");
+            std::optional<ValueTerm> right_first;
+            if (left_needs_type)
+                right_first = elaborate_value(expression.elements[1], values, proofs, proof_order, absorbed);
+            ValueTerm left = elaborate_value(expression.elements[0], values, proofs, proof_order, absorbed,
+                                             right_first ? std::optional(right_first->kind) : std::nullopt);
+            ValueTerm right =
+                right_first ? std::move(*right_first)
+                            : elaborate_value(expression.elements[1], values, proofs, proof_order, absorbed, left.kind);
             if (left.kind != right.kind)
                 reject(expression.span, "equality operands have different value types");
             return {boolean_kind(), left.expression == right.expression};
@@ -216,7 +233,8 @@ namespace fine::elaboration {
                                              proof_order, absorbed);
             return elaborate_call(expression, values, proofs, proof_order, absorbed);
         }
-        case syntax::ValueExpr::Kind::match: return elaborate_match(expression, values, proofs, proof_order, absorbed);
+        case syntax::ValueExpr::Kind::match:
+            return elaborate_match(expression, values, proofs, proof_order, absorbed, std::move(expected));
         }
         reject(expression.span, "unsupported value expression");
     }
@@ -330,9 +348,9 @@ namespace fine::elaboration {
             proofs_->absorb(found->second, absorbed, {"function:" + declaration.name}, "hypothetical-coeffect",
                             source.empty() ? std::nullopt : std::optional(source));
         }
-        ValueTerm body = elaborate_value(declaration.body, values, proofs, proof_order, absorbed);
         require_known_type(declaration.result_type);
         ValueKind result_kind = kind_of(declaration.result_type);
+        ValueTerm body = elaborate_value(declaration.body, values, proofs, proof_order, absorbed, result_kind);
         if (body.kind != result_kind)
             reject(declaration.body.span,
                    "function body does not have declared result type `" + std::string(kind_name(result_kind)) + "`");
@@ -406,11 +424,11 @@ namespace fine::elaboration {
         std::vector<std::string> callee_proof_order;
         std::vector<z3::expr> callee_absorbed;
         for (std::size_t i = 0; i < expression.elements.size(); ++i) {
-            ValueTerm argument = elaborate_value(expression.elements[i], caller_values, caller_proofs,
-                                                 caller_proof_order, caller_absorbed);
             require_known_type(function.parameters[i].type);
-            ValueKind expected = kind_of(function.parameters[i].type);
-            if (argument.kind != expected)
+            ValueKind parameter_kind = kind_of(function.parameters[i].type);
+            ValueTerm argument = elaborate_value(expression.elements[i], caller_values, caller_proofs,
+                                                 caller_proof_order, caller_absorbed, parameter_kind);
+            if (argument.kind != parameter_kind)
                 reject(expression.elements[i].span,
                        "argument `" + function.parameters[i].name + "` has the wrong value type");
             callee_values.emplace(function.parameters[i].name, std::move(argument));
@@ -485,7 +503,7 @@ namespace fine::elaboration {
                      RainfallRecorder::string_field("mode", explicit_choice ? "explicit" : "exact-local")});
                 rainfall_->record(
                     "derive", "coeffect.use", {"call:" + expression.name}, "fine.proof-context",
-                    "Resolved proof is supplied virtually and only its proposition enters callee checking",
+                    "Resolved proof is supplied virtually and only its static constraints enter callee checking",
                     {RainfallRecorder::string_field("function", expression.name),
                      RainfallRecorder::string_field("coeffect", coeffect.name),
                      RainfallRecorder::string_field("proof", proof_name),

@@ -294,3 +294,24 @@ proof search forbidden.
 
 This is not constructor search. It also does not feed the indexed frontier into
 the current Z3 datatype-model selector; asking for that selector fails explicitly.
+
+## Static evidence selecting a runtime value
+
+A value function may demand indexed evidence and match it only when no runtime
+proof inspection survives. Fine tests each family constructor under the current
+absorbed equalities. One feasible constructor selects one source arm at compile
+time. A value field used by that arm must be structurally recoverable from an
+ordinary runtime family index; a unique but unindexed hidden field is still
+erased and cannot enter the value expression.
+
+An indexed coeffect also contributes the disjunction of its possible outer
+constructor heads to the lexical SMT context, existentially hiding constructor
+value parameters. This is only a necessary condition: recursive proof fields are
+not treated as automatically inhabited. When that head cover is inconsistent,
+zero arms eliminate the impossible evidence into the expected value type. The
+stage transfer records the result as bottom, not as an arbitrary runtime value.
+Zero arms against a reachable constructor are rejected.
+
+This remains declaration-time checking. Fine does not yet retain a symbolic
+proof match for later call-site specialization, normalize proof applications to
+constructor structure, or recover arbitrary hidden fields from a solver model.

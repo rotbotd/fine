@@ -389,7 +389,8 @@ namespace fine::elaboration {
         virtual ValueTerm elaborate_staged_value_match(syntax::ValueExpr const &expression,
                                                        ValueEnvironment const &values, ProofEnvironment const &proofs,
                                                        std::vector<std::string> const &proof_order,
-                                                       std::vector<z3::expr> const &absorbed) = 0;
+                                                       std::vector<z3::expr> const &absorbed,
+                                                       std::optional<ValueKind> expected) = 0;
         virtual void absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed,
                             std::vector<std::string> within, std::string_view role,
                             std::optional<std::string> source = std::nullopt) = 0;
@@ -431,7 +432,8 @@ namespace fine::elaboration {
         void record_boundary();
         ValueTerm elaborate_value(syntax::ValueExpr const &expression, ValueEnvironment const &values,
                                   ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
-                                  std::vector<z3::expr> const &absorbed);
+                                  std::vector<z3::expr> const &absorbed,
+                                  std::optional<ValueKind> expected = std::nullopt);
         bool match_constructor_index(syntax::ValueExpr const &pattern, z3::expr const &target,
                                      std::map<std::string, ValueKind> const &parameters, ValueEnvironment &bindings);
         void declare_function(syntax::FunctionDecl const &declaration);
@@ -455,7 +457,7 @@ namespace fine::elaboration {
                                         std::vector<z3::expr> const &absorbed);
         ValueTerm elaborate_match(syntax::ValueExpr const &expression, ValueEnvironment const &values,
                                   ProofEnvironment const &proofs, std::vector<std::string> const &proof_order,
-                                  std::vector<z3::expr> const &absorbed);
+                                  std::vector<z3::expr> const &absorbed, std::optional<ValueKind> expected);
         ValueTerm elaborate_call(syntax::ValueExpr const &expression, ValueEnvironment const &caller_values,
                                  ProofEnvironment const &caller_proofs,
                                  std::vector<std::string> const &caller_proof_order,
@@ -516,7 +518,8 @@ namespace fine::elaboration {
         ValueTerm elaborate_staged_value_match(syntax::ValueExpr const &expression, ValueEnvironment const &values,
                                                ProofEnvironment const &proofs,
                                                std::vector<std::string> const &proof_order,
-                                               std::vector<z3::expr> const &absorbed) override;
+                                               std::vector<z3::expr> const &absorbed,
+                                               std::optional<ValueKind> expected) override;
 
     private:
         ValueElaborator &values_;
@@ -534,6 +537,8 @@ namespace fine::elaboration {
         std::size_t holes_filled_ = 0;
         std::size_t holes_checkpointed_ = 0;
         std::size_t coeffects_resolved_ = 0;
+
+        z3::expr inductive_head_cover(InductiveType const &type, std::string const &evidence_name);
 
         syntax::ValueExpr proof_syntax_as_value(syntax::ProofExpr const &expression);
         syntax::ValueExpr positional_value_argument(syntax::ProofExpr const &expression, std::size_t position);

@@ -12,6 +12,13 @@ proof inductive Selected(value: Flag) {
   selected_on() -> Selected(on);
 }
 
+proof inductive Never() {
+}
+
+proof inductive OnlyOff(value: Flag) {
+  only_off() -> OnlyOff(off);
+}
+
 function recover(value: Flag) -> Flag
   takes [evidence: Tagged(value)]
   ensures {
@@ -37,6 +44,35 @@ function selected_by_equality(value: Flag) -> Bool
   match evidence {
     selected_off() => true,
   }
+}
+
+function eliminate_never() -> Bool
+  takes [impossible: Never()]
+{
+  match impossible {
+  }
+}
+
+function eliminate_unreachable_index() -> Int
+  takes [impossible: OnlyOff(on)]
+  ensures {
+    result == 0;
+    result == 1;
+  }
+{
+  match impossible {
+  }
+}
+
+function keep_bool(value: Bool) -> Bool {
+  value
+}
+
+function eliminate_never_as_argument() -> Bool
+  takes [impossible: Never()]
+{
+  keep_bool(match impossible {
+  })
 }
 
 run staged_proof_elimination {

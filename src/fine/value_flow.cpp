@@ -107,15 +107,8 @@ namespace fine::stage {
             return state.function.nodes_.size() - 1;
         }
 
-        FlowNodeId lower(syntax::ValueExpr const &expression, FunctionState &state) {
-            auto lower_children = [&] {
-                std::vector<FlowNodeId> result;
-                result.reserve(expression.elements.size());
-                for (auto const &element : expression.elements)
-                    result.push_back(lower(element, state));
-                return result;
-            };
-
+        FlowNodeId lower(syntax::ValueExpr const &expression, FunctionState &state,
+                         std::optional<FlowType> expected = std::nullopt) {
             if (expression.kind == syntax::ValueExpr::Kind::name) {
                 if (auto alias = state.aliases.find(expression.name); alias != state.aliases.end())
                     return alias->second;
@@ -135,7 +128,20 @@ namespace fine::stage {
                                       {syntax::ValueType::Kind::boolean, {}},
                                       expression.boolean_value ? "true" : "false"});
             if (expression.kind == syntax::ValueExpr::Kind::equal) {
-                std::vector<FlowNodeId> inputs = lower_children();
+                auto empty_match = [](syntax::ValueExpr const &value) {
+                    return value.kind == syntax::ValueExpr::Kind::match && value.match_constructors.empty();
+                };
+                if (empty_match(expression.elements[0]) && empty_match(expression.elements[1]))
+                    throw std::runtime_error("value-flow equality between empty matches has no operand type");
+                std::vector<FlowNodeId> inputs(2);
+                if (empty_match(expression.elements[0])) {
+                    inputs[1] = lower(expression.elements[1], state);
+                    inputs[0] = lower(expression.elements[0], state, state.function.nodes_[inputs[1]].type);
+                }
+                else {
+                    inputs[0] = lower(expression.elements[0], state);
+                    inputs[1] = lower(expression.elements[1], state, state.function.nodes_[inputs[0]].type);
+                }
                 if (inputs.size() != 2 ||
                     state.function.nodes_[inputs[0]].type != state.function.nodes_[inputs[1]].type)
                     throw std::runtime_error("ill-typed equality in value-flow input");
@@ -143,10 +149,12 @@ namespace fine::stage {
                     state, {FlowNode::Kind::equal, {syntax::ValueType::Kind::boolean, {}}, {}, 0, std::move(inputs)});
             }
             if (expression.kind == syntax::ValueExpr::Kind::call) {
-                std::vector<FlowNodeId> inputs = lower_children();
                 if (auto constructor = constructors_.find(expression.name); constructor != constructors_.end()) {
-                    if (inputs.size() != constructor->second.fields.size())
+                    if (expression.elements.size() != constructor->second.fields.size())
                         throw std::runtime_error("wrong constructor arity in value-flow input: " + expression.name);
+                    std::vector<FlowNodeId> inputs;
+                    for (std::size_t i = 0; i < expression.elements.size(); ++i)
+                        inputs.push_back(lower(expression.elements[i], state, constructor->second.fields[i]));
                     for (std::size_t i = 0; i < inputs.size(); ++i)
                         if (state.function.nodes_[inputs[i]].type != constructor->second.fields[i])
                             throw std::runtime_error("wrong constructor field type in value-flow input: " +
@@ -158,8 +166,11 @@ namespace fine::stage {
                 auto signature = signatures_.find(expression.name);
                 if (signature == signatures_.end())
                     throw std::runtime_error("unresolved value-flow call: " + expression.name);
-                if (inputs.size() != signature->second.parameters.size())
+                if (expression.elements.size() != signature->second.parameters.size())
                     throw std::runtime_error("wrong function arity in value-flow input: " + expression.name);
+                std::vector<FlowNodeId> inputs;
+                for (std::size_t i = 0; i < expression.elements.size(); ++i)
+                    inputs.push_back(lower(expression.elements[i], state, signature->second.parameters[i]));
                 for (std::size_t i = 0; i < inputs.size(); ++i)
                     if (state.function.nodes_[inputs[i]].type != signature->second.parameters[i])
                         throw std::runtime_error("wrong function argument type in value-flow input: " +
@@ -176,7 +187,7 @@ namespace fine::stage {
             if (expression.elements.front().kind == syntax::ValueExpr::Kind::name) {
                 auto proof = state.proof_locals.find(expression.elements.front().name);
                 if (proof != state.proof_locals.end())
-                    return lower_staged_proof_match(expression, *proof->second, state);
+                    return lower_staged_proof_match(expression, *proof->second, state, expected);
             }
             FlowNodeId scrutinee = lower(expression.elements.front(), state);
             FlowType scrutinee_type = state.function.nodes_[scrutinee].type;
@@ -204,7 +215,7 @@ namespace fine::stage {
                     arm.binders.push_back(local);
                     arm.binder_types.push_back(constructor->second.fields[field_index]);
                 }
-                arm.body = lower(expression.elements[i + 1], state);
+                arm.body = lower(expression.elements[i + 1], state, expected);
                 FlowType body_type = state.function.nodes_[arm.body].type;
                 if (i == 0)
                     match.type = body_type;
@@ -249,9 +260,14 @@ namespace fine::stage {
         }
 
         FlowNodeId lower_staged_proof_match(syntax::ValueExpr const &expression, syntax::ProofType const &proof,
-                                            FunctionState &state) {
+                                            FunctionState &state, std::optional<FlowType> expected) {
             if (proof.kind != syntax::ProofType::Kind::inductive)
                 throw std::runtime_error("value-flow proof match scrutinee is not indexed evidence");
+            if (expression.match_constructors.empty()) {
+                if (!expected)
+                    throw std::runtime_error("empty proof match has no expected value-flow type");
+                return append(state, {FlowNode::Kind::bottom, *expected});
+            }
             if (expression.match_constructors.size() != 1)
                 throw std::runtime_error("unresolved proof match reached value-flow lowering");
             auto signature = proof_constructors_.find(expression.match_constructors.front());
@@ -324,7 +340,7 @@ namespace fine::stage {
             }
             for (auto const &coeffect : declaration.coeffects)
                 state.proof_locals.emplace(coeffect.name, &coeffect.type);
-            state.function.root_ = lower(declaration.body, state);
+            state.function.root_ = lower(declaration.body, state, state.function.result_type_);
             if (state.function.nodes_[state.function.root_].type != state.function.result_type_)
                 throw std::runtime_error("value-flow function result type mismatch: " + declaration.name);
             std::ostringstream key;

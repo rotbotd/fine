@@ -432,7 +432,7 @@ execution block.
 
 An indexed-family coeffect may select runtime code, but its evidence still has
 no runtime representation. At a value-level `match`, `ProofEngine` checks each
-family constructor under the function's absorbed identity constraints. The
+family constructor under the function's absorbed proof constraints. The
 match is admitted only when exactly one constructor is satisfiable. It returns
 that branch environment to `ValueElaborator`, which elaborates only the residual
 value arm. There is no runtime tag test and no proof value in the result.
@@ -466,11 +466,34 @@ runtime index, an arm returning `value` is rejected. Unused hidden fields and
 proof-only branch evidence remain harmless. Constructor choice is compile-time
 data; constructor storage is never manufactured.
 
+Zero reachable constructors are the other closed result. Absorbing indexed
+evidence contributes a necessary outer-constructor head cover to the lexical
+SMT context. The cover existentially hides constructor value parameters and
+deliberately ignores recursive proof premises, so it is a sound overapproximation
+rather than a fabricated decision procedure for inhabitation. For `Never()` the
+cover is false; for `OnlyOff(on)` it reduces to `off == on`. In either case an
+empty value match receives its result kind from the enclosing function, checks
+that the evidence context is unsatisfiable, and residualizes to staging bottom:
+
+```fine
+function eliminate_never() -> Bool
+  takes [impossible: Never()]
+{
+  match impossible {
+  }
+}
+```
+
+An empty match on `OnlyOff(off)` is rejected because `only_off` is reachable.
+The head cover cannot make an impossible recursive premise look inhabited; by
+omitting proof premises it can only refuse some valid empty eliminations until a
+stronger source-owned analysis exists.
+
 ## Rainfall boundary
 
 The existing manager-local term registry and `fine.generated-term.v1` renderer
-survive the cut. Every absorbed identity proposition is a strong Z3 term and is
-reparsed/reified to exact AST identity before run closure. Proof formation,
+survive the cut. Every absorbed identity equality and indexed head cover is a
+strong Z3 term and is reparsed/reified to exact AST identity before run closure. Proof formation,
 context absorption, coeffect declaration, demand instantiation, caller
 resolution, and callee use are separate events. The run begins with an explicit
 `proof.erasure.boundary` event and closes with `runtime_proof_values: 0`.
