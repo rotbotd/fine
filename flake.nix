@@ -398,15 +398,76 @@
           grep -F 'is not determined by a runtime index and cannot enter runtime code' \
             "$hidden_proof_field"
 
-          identity_determined_hidden_field="$(mktemp)"
-          if $out/bin/fine run \
-              "$src/fine/fixtures/reject-identity-determined-hidden-field-elimination.fine" \
-              >"$identity_determined_hidden_field" 2>&1; then
-            echo "identity-constrained hidden field unexpectedly entered runtime code" >&2
+          identity_residualized_output="$($out/bin/fine run \
+            "$src/fine/fixtures/identity-residualized-hidden-field.fine")"
+          echo "$identity_residualized_output"
+          grep -F 'verified function: recover_hidden' <<<"$identity_residualized_output"
+          grep -F 'verified function: recover_off' <<<"$identity_residualized_output"
+          grep -F 'formed proof: copied : HiddenCopy(off) (virtual)' <<<"$identity_residualized_output"
+          grep -F 'verified assertion: identity_residualized_hidden_field.0' \
+            <<<"$identity_residualized_output"
+          grep -F 'verified assertion: identity_residualized_hidden_field.1' \
+            <<<"$identity_residualized_output"
+
+          identity_residualized_rain="$(mktemp)"
+          $out/bin/fine rain \
+            "$src/fine/fixtures/identity-residualized-hidden-field.fine" \
+            > "$identity_residualized_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/identity-residualized-hidden-field.fine" \
+            "$identity_residualized_rain"
+          grep -F '"operation":"proof.inductive.field-residualize"' \
+            "$identity_residualized_rain"
+          grep -F '"residualized_fields":1' "$identity_residualized_rain"
+          ${pkgs.python3}/bin/python - "$identity_residualized_rain" <<'PY'
+          import json, pathlib, sys
+
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          residualizations = [event["data"] for event in events
+                              if event["operation"] == "proof.inductive.field-residualize"]
+          assert {(item["field"], item["source"], item["identity_demand"])
+                  for item in residualizations} == {
+              ("hidden", "visible", "same"),
+              ("candidate", "off", "is_off"),
+          }
+          assert all(item["source_substitution"] and not item["runtime_field_loaded"] and
+                     not item["solver_model_used"] for item in residualizations)
+          PY
+
+          identity_residualized_mutated="$(mktemp)"
+          ${pkgs.python3}/bin/python - \
+            "$identity_residualized_rain" "$identity_residualized_mutated" <<'PY'
+          import json, pathlib, sys
+
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          removed = False
+          mutated = []
+          for event in events:
+              if not removed and event["operation"] == "proof.inductive.field-residualize":
+                  removed = True
+                  continue
+              event["sequence"] = len(mutated)
+              event["event_id"] = f"event:{len(mutated)}"
+              mutated.append(event)
+          assert removed
+          pathlib.Path(sys.argv[2]).write_text("".join(json.dumps(event) + "\n" for event in mutated))
+          PY
+          if ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+              "$src/fine/fixtures/identity-residualized-hidden-field.fine" \
+              "$identity_residualized_mutated" >/dev/null 2>&1; then
+            echo "Rainfall replay accepted an omitted hidden-field residualization" >&2
             exit 1
           fi
-          grep -F 'proof match field `candidate` is not determined by a runtime index and cannot enter runtime code' \
-            "$identity_determined_hidden_field"
+
+          mutually_hidden_identity="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-mutually-hidden-identity-field-elimination.fine" \
+              >"$mutually_hidden_identity" 2>&1; then
+            echo "one erased field was reconstructed from another erased field" >&2
+            exit 1
+          fi
+          grep -F 'proof match field `left` is not determined by a runtime index and cannot enter runtime code' \
+            "$mutually_hidden_identity"
 
           reachable_empty_match="$(mktemp)"
           if $out/bin/fine run "$src/fine/fixtures/reject-empty-reachable-proof-elimination.fine" \

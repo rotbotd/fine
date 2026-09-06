@@ -151,6 +151,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     proof_match_branches: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     proof_matches: set[tuple[str, ...]] = set()
     staged_constructor_checks: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    staged_field_residualizations: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     proof_model_grammars: dict[str, dict[str, Any]] = {}
     proof_model_solves: dict[str, dict[str, Any]] = {}
     proof_model_lifts: dict[str, dict[str, Any]] = {}
@@ -398,9 +399,30 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      data.get("status") in {"sat", "unsat"},
                      f"event {sequence}: malformed staged constructor-feasibility observation")
             checks.append(data)
+        elif operation == "proof.inductive.field-residualize":
+            scope = tuple(within)
+            residualizations = staged_field_residualizations.setdefault(scope, [])
+            matching_checks = [check for check in staged_constructor_checks.get(scope, [])
+                               if check["constructor"] == data.get("constructor")]
+            _require(len(scope) == 1 and scope[0].startswith("staged-proof-match:") and
+                     isinstance(data.get("constructor"), str) and data["constructor"] and
+                     isinstance(data.get("field"), str) and data["field"] and
+                     isinstance(data.get("binder"), str) and data["binder"] and
+                     data["binder"] not in {item["binder"] for item in residualizations} and
+                     isinstance(data.get("source"), str) and data["source"] and
+                     data.get("replacement_source") in source_nodes and
+                     isinstance(data.get("identity_demand"), str) and data["identity_demand"] and
+                     len(matching_checks) == 1 and matching_checks[0]["status"] == "sat" and
+                     matching_checks[0]["identity_constraints"] > 0 and
+                     data.get("source_substitution") is True and
+                     data.get("runtime_field_loaded") is False and
+                     data.get("solver_model_used") is False,
+                     f"event {sequence}: malformed staged hidden-field residualization")
+            residualizations.append(data)
         elif operation == "proof.inductive.value-match":
             scope = tuple(within)
             checks = staged_constructor_checks.pop(scope, [])
+            residualizations = staged_field_residualizations.pop(scope, [])
             feasible = data.get("feasible_constructors")
             considered = data.get("considered_constructors")
             sat_constructors = [check["constructor"] for check in checks if check["status"] == "sat"]
@@ -419,6 +441,11 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      considered == len(checks) and
                      all(check["family"] == data["family"] for check in checks) and
                      feasible == len(sat_constructors) and
+                     data.get("residualized_fields", 0) == len(residualizations) and
+                     data.get("residualized_binders", []) ==
+                     [item["binder"] for item in residualizations] and
+                     all(item["constructor"] == data.get("constructor")
+                         for item in residualizations) and
                      closed and
                      data.get("runtime_proof_value_created") is False and
                      data.get("proof_field_loaded_at_runtime") is False,
@@ -877,6 +904,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
              "typed proof search replay leaves an open proof hole")
     _require(not staged_constructor_checks,
              "staged constructor feasibility observations lack a closing value match")
+    _require(not staged_field_residualizations,
+             "staged hidden-field residualizations lack a closing value match")
     _require(set(proof_model_grammars) ==
              {event["data"]["grammar"] for event in proof_model_solves.values()} and
              set(proof_model_solves) == set(proof_model_lifts),

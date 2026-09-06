@@ -559,13 +559,19 @@ absorbed `Id(Flag, value, off)` to leave `selected_off` as the only satisfiable
 constructor, proving that availability comes from the SMT context rather than
 the spelling of the index.
 
-Two controls define the refusal boundary. `Selected(value)` with unconstrained
+Three cases define the residualization boundary. `Selected(value)` with unconstrained
 runtime `value` leaves both `selected_off` and `selected_on` feasible, so the
 match is rejected at its source span. A one-constructor `Hidden()` family is not
 enough by itself: if `hidden(value: Int)` does not expose `value` through a
-runtime index, an arm returning `value` is rejected. Unused hidden fields and
-proof-only branch evidence remain harmless. Constructor choice is compile-time
-data; constructor storage is never manufactured.
+runtime index, an arm returning `value` is rejected. `HiddenCopy(value)` is the
+narrow positive case: its constructor identity demand equates the erased hidden
+field to the visible field used as the family index. Fine binds the arm's hidden
+name directly to that already-elaborated visible value. The same fixture also
+replaces a hidden field with the nullary source constructor `off`. An equality
+between two hidden fields is still rejected because it gives no runtime source
+expression.
+Unused hidden fields and proof-only branch evidence remain harmless. Constructor
+choice is compile-time data; constructor storage is never manufactured.
 
 Zero reachable constructors are the other closed result. Absorbing indexed
 evidence contributes a necessary outer-constructor head cover to the lexical
@@ -602,8 +608,11 @@ source constructor emits one feasibility observation containing the exact live
 condition formed from result-index equalities and identity premises, the number
 of identity constraints, the absorbed-context size, and the solver result. The
 closing value-match event states how many constructors were considered and how
-many were feasible. Replay requires a complete, name-distinct set of observations
-and recomputes the selected constructor from their statuses.
+many were feasible. Each identity-directed hidden-field replacement is a
+separate event naming its source expression and declaring that no model or
+runtime field load supplied it. Replay requires a complete, name-distinct set of
+constructor observations, recomputes the selected constructor from their
+statuses, and closes the ordered residualized-binder list.
 
 ## Rainfall boundary
 

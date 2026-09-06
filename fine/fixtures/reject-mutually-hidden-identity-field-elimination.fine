@@ -1,0 +1,18 @@
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive HiddenPair() {
+  hidden_pair(left: Flag, right: Flag)
+    takes [same: Id(Flag, left, right)]
+    -> HiddenPair();
+}
+
+function reveal_left() -> Flag
+  takes [evidence: HiddenPair()]
+{
+  match evidence {
+    hidden_pair(left, right) => left,
+  }
+}

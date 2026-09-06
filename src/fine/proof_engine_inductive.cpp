@@ -575,21 +575,105 @@ namespace fine::elaboration {
             reject(expression.match_arm_spans.front(), "proof match arm `" + constructor.name + "` expects " +
                                                            std::to_string(positional_binders) + " positional binders");
 
+        struct ResidualizedField {
+            ValueTerm value;
+            std::string source;
+            std::string identity_demand;
+            std::size_t source_node;
+            syntax::SourceSpan source_span;
+        };
+        std::map<std::string, ValueKind> parameter_kinds;
+        std::set<std::string> undetermined_parameters;
+        for (auto const &parameter : constructor.parameters) {
+            parameter_kinds.emplace(parameter.name, kind_of(parameter.type));
+            if (!selected.determined_parameters.contains(parameter.name))
+                undetermined_parameters.insert(parameter.name);
+        }
+        std::map<std::string, ResidualizedField> residualized_fields;
+        std::set<std::string> conflicting_residualizations;
+        ProofEnvironment no_proofs;
+        std::vector<std::string> no_proof_order;
+        std::vector<z3::expr> no_absorbed;
+        auto consider_residualization = [&](syntax::ValueExpr const &field,
+                                            syntax::ValueExpr const &replacement,
+                                            std::string const &identity_demand) {
+            if (field.kind != syntax::ValueExpr::Kind::name ||
+                !undetermined_parameters.contains(field.name) ||
+                conflicting_residualizations.contains(field.name))
+                return;
+            for (auto const &undetermined : undetermined_parameters)
+                if (uses_free_value_name(replacement, undetermined))
+                    return;
+            ValueKind kind = parameter_kinds.at(field.name);
+            ValueTerm value = values_.elaborate_value(replacement, selected.values, no_proofs, no_proof_order,
+                                                      no_absorbed, kind);
+            auto found = residualized_fields.find(field.name);
+            if (found == residualized_fields.end()) {
+                residualized_fields.emplace(field.name,
+                                            ResidualizedField{std::move(value), print_value(replacement),
+                                                              identity_demand, replacement.node_id,
+                                                              replacement.span});
+                return;
+            }
+            if (!same_ast(values_.context(), found->second.value.expression, value.expression)) {
+                residualized_fields.erase(found);
+                conflicting_residualizations.insert(field.name);
+            }
+        };
+        auto inspect_identity_demand = [&](syntax::CoeffectParameter const &parameter) {
+            if (parameter.type.kind != syntax::ProofType::Kind::identity)
+                return;
+            consider_residualization(parameter.type.left, parameter.type.right, parameter.name);
+            consider_residualization(parameter.type.right, parameter.type.left, parameter.name);
+        };
+        for (auto const &parameter : constructor.explicit_proof_parameters)
+            inspect_identity_demand(parameter);
+        for (auto const &parameter : constructor.proof_parameters)
+            inspect_identity_demand(parameter);
+
         ValueEnvironment branch_values = values;
         ProofEnvironment branch_proofs = proofs;
         std::vector<std::string> branch_proof_order = proof_order;
         std::vector<z3::expr> branch_absorbed = absorbed;
         std::set<std::string> arm_names;
+        std::vector<std::string> used_residualized_fields;
         syntax::ValueExpr const &body = expression.elements.at(1);
         for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
             auto const &parameter = constructor.parameters[i];
             std::string const &binder = expression.match_binders.front()[i];
             if (!arm_names.insert(binder).second || branch_values.contains(binder) || branch_proofs.contains(binder))
                 reject(expression.match_arm_spans.front(), "duplicate proof match binder `" + binder + "`");
-            if (!selected.determined_parameters.contains(parameter.name) && uses_free_value_name(body, binder))
+            bool const used = uses_free_value_name(body, binder);
+            auto residualized = residualized_fields.find(parameter.name);
+            if (!selected.determined_parameters.contains(parameter.name) && residualized == residualized_fields.end() &&
+                used)
                 reject(body.span, "proof match field `" + binder +
                                       "` is not determined by a runtime index and cannot enter runtime code");
-            branch_values.emplace(binder, selected.values.at(parameter.name));
+            ValueTerm const &branch_value = residualized == residualized_fields.end()
+                                                ? selected.values.at(parameter.name)
+                                                : residualized->second.value;
+            branch_values.emplace(binder, branch_value);
+            if (used && residualized != residualized_fields.end()) {
+                used_residualized_fields.push_back(binder);
+                if (rainfall_) {
+                    std::string replacement_source = rainfall_->source_node(
+                        residualized->second.source_node, residualized->second.source_span, "value.expression");
+                    rainfall_->record(
+                        "derive", "proof.inductive.field-residualize",
+                        {"staged-proof-match:" + std::to_string(expression.node_id)},
+                        "fine.staged-proof-elimination",
+                        "A hidden erased constructor field is replaced by the exact source value named by an identity demand",
+                        {RainfallRecorder::string_field("constructor", constructor.name),
+                         RainfallRecorder::string_field("field", parameter.name),
+                         RainfallRecorder::string_field("binder", binder),
+                         RainfallRecorder::string_field("source", residualized->second.source),
+                         RainfallRecorder::string_field("replacement_source", replacement_source),
+                         RainfallRecorder::string_field("identity_demand", residualized->second.identity_demand),
+                         RainfallRecorder::boolean_field("source_substitution", true),
+                         RainfallRecorder::boolean_field("runtime_field_loaded", false),
+                         RainfallRecorder::boolean_field("solver_model_used", false)});
+                }
+            }
         }
 
         ProofEnvironment constructor_proofs;
@@ -629,6 +713,10 @@ namespace fine::elaboration {
                                RainfallRecorder::string_field("constructor", constructor.name),
                                RainfallRecorder::number_field("considered_constructors", family.constructors.size()),
                                RainfallRecorder::number_field("feasible_constructors", feasible_names.size()),
+                               RainfallRecorder::number_field("residualized_fields",
+                                                              used_residualized_fields.size()),
+                               RainfallRecorder::raw_field("residualized_binders",
+                                                           RainfallRecorder::string_array(used_residualized_fields)),
                                RainfallRecorder::boolean_field("constructor_unique", true),
                                RainfallRecorder::boolean_field("runtime_proof_value_created", false),
                                RainfallRecorder::boolean_field("proof_field_loaded_at_runtime", false)});

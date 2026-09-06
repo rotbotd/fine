@@ -1,0 +1,49 @@
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive HiddenCopy(value: Flag) {
+  hidden_copy(visible: Flag, hidden: Flag)
+    takes [same: Id(Flag, hidden, visible)]
+    -> HiddenCopy(visible);
+}
+
+proof inductive HiddenOff() {
+  hidden_off(candidate: Flag)
+    takes [is_off: Id(Flag, candidate, off)]
+    -> HiddenOff();
+}
+
+function recover_hidden(value: Flag) -> Flag
+  takes [evidence: HiddenCopy(value)]
+  ensures {
+    result == value;
+  }
+{
+  match evidence {
+    hidden_copy(visible, hidden) => hidden,
+  }
+}
+
+function recover_off() -> Flag
+  takes [evidence: HiddenOff()]
+  ensures {
+    result == off;
+  }
+{
+  match evidence {
+    hidden_off(candidate) => candidate,
+  }
+}
+
+run identity_residualized_hidden_field {
+  proof off_identity: Id(Flag, off, off) = refl(off);
+  proof copied: HiddenCopy(off) = hidden_copy(off, off);
+  let recovered: Flag = recover_hidden(off);
+  assert recovered == off;
+
+  proof hidden_off_value: HiddenOff() = hidden_off(off);
+  let recovered_constant: Flag = recover_off();
+  assert recovered_constant == off;
+}

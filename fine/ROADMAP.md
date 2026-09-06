@@ -168,16 +168,18 @@ recovers the hidden indices from the local proof, and the selected application
 materializes exactly. Do not add an eliminator merely to rename this behavior;
 wait for a proof whose constructor must actually be consumed.
 
-The hard boundary is syntactic: a proof eliminator cannot produce a `ValueTerm`,
-and runtime function bodies cannot inspect constructors of `ProofEvidence`. A
-negative fixture must attempt both and fail before lowering. Rainfall may retain
-which evidence an eliminator used, but generated runtime code remains unchanged.
+The hard boundary is representational: runtime function bodies never receive a
+`ProofEvidence` tag or payload. Proof-only elimination produces only more static
+evidence. The later value-level rule may remove a uniquely selected proof match,
+but it must construct the residual `ValueTerm` entirely from runtime indices or
+exact source substitutions justified by constructor identity demands.
 
 The later staged consumer sharpens this boundary without adding runtime proof
 values. A value function may contain a proof-family match when the current SMT
 context proves exactly one constructor feasible and every constructor value used
-by the residual arm is already recoverable from a runtime index. Fine removes
-the match while compiling. Ambiguous constructors and proof-only hidden fields
+by the residual arm is recoverable from a runtime index or a direct identity
+demand whose replacement uses only such recovered fields. Fine removes the
+match while compiling. Ambiguous constructors and hidden-to-hidden equations
 still fail before runtime lowering. If an indexed evidence head has no feasible
 constructor after its result indices and identity-shaped constructor demands are
 combined, zero arms discharge the enclosing expected value type and the stage

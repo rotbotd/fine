@@ -301,8 +301,10 @@ A value function may demand indexed evidence and match it only when no runtime
 proof inspection survives. Fine tests each family constructor under the current
 absorbed equalities. One feasible constructor selects one source arm at compile
 time. A value field used by that arm must be structurally recoverable from an
-ordinary runtime family index; a unique but unindexed hidden field is still
-erased and cannot enter the value expression.
+ordinary runtime family index or replaced by an exact source expression named
+by a constructor identity demand. That replacement may depend only on fields
+already recovered from runtime indices. Fine never evaluates a model to invent
+the missing value.
 
 An indexed coeffect also contributes the disjunction of its possible outer
 constructor heads to the lexical SMT context, existentially hiding constructor
@@ -320,10 +322,21 @@ constructor reachable; adding `candidate == on` to the same constructor makes
 the existential head inconsistent. The paired fixtures fix this quantifier
 placement independently of result-index matching.
 
+`identity-residualized-hidden-field.fine` exercises both constructive cases. One
+hidden field is equated to a visible constructor field which is itself the
+family's runtime index; another is equated directly to the nullary source
+constructor `off`. The value arms may use the hidden binders because Fine
+substitutes those source terms before elaborating each arm. An equation between
+two erased hidden fields does not help: neither endpoint supplies a runtime
+expression, so the rejecting control remains outside the rule.
+
 Rainfall retains every constructor's exact feasibility condition before closing
-the staged match. Replay requires one observation per declared constructor and
-derives the feasible count and selected name from those statuses; a summary event
-cannot silently omit a failed alternative.
+the staged match. A hidden-field substitution separately names the constructor,
+field, branch binder, identity demand, and replacement source while asserting
+that neither a runtime field load nor a solver model was used. Replay requires
+one observation per declared constructor and closes the exact ordered list of
+residualized binders; a summary event cannot silently omit either kind of
+observation.
 
 This remains declaration-time checking. Fine does not yet retain a symbolic
 proof match for later call-site specialization, normalize proof applications to

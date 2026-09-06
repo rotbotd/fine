@@ -85,8 +85,9 @@ callers synthesize or supply the evidence.
                   and a cancellation callback interrupts a deeper exact input.
 - [x] Use constructor availability for the first staged proof-to-value match.
       The SMT context must leave one feasible constructor, and every value field
-      used by the residual arm must be recovered from a runtime index. Ambiguous
-      runtime-dependent evidence and proof-only hidden fields are rejected.
+      used by the residual arm must be recovered from a runtime index or an exact
+      source substitution described below. Ambiguous runtime-dependent evidence
+      and unrecoverable proof-only hidden fields are rejected.
 - [x] Let an impossible indexed coeffect discharge an expected value type with
       zero arms. Indexed evidence contributes a necessary existential
       constructor-head cover; the empty branch checks the resulting context is
@@ -101,6 +102,11 @@ callers synthesize or supply the evidence.
 - [x] Keep constructor parameters absent from the family result existential in
       the head cover. One identity demand may choose a hidden witness; two
       contradictory demands make that constructor impossible.
+- [x] Residualize a used hidden field when a direct constructor identity demand
+      equates it to an exact source expression depending only on fields already
+      recovered from runtime indices. Rainfall retains the demand and source
+      substitution, and replay closes the residualized binders. Do not evaluate
+      a solver model or reconstruct one erased field from another erased field.
 
 Transfer exit test: one dead runtime branch preserves a compile-time value, one
 live join of distinct constants becomes runtime, a mutually recursive
@@ -110,7 +116,9 @@ compile-time result for a known argument and a runtime result for a runtime
 argument. Certified mutual parity evaluates an exact `Nat`, remains blocked on a
 runtime `Nat`, and is externally cancellable; a nonrecursive caller reaches the
 same certified SCC without losing its environment. A known constructor with a runtime payload crosses a function call and
-selects one caller match arm. A strict argument's blocked recursion survives
+selects one caller match arm. An identity demand may replace one erased hidden
+field with a runtime-indexed source value, while an equality between two hidden
+fields remains unavailable. A strict argument's blocked recursion survives
 even when the callee ignores its value. The proof controls reject elimination
 when its constructor choice depends on runtime data and reject a used field that
 exists only inside erased evidence. Empty `Never()` and unreachable-index value
