@@ -566,9 +566,10 @@ enough by itself: if `hidden(value: Int)` does not expose `value` through a
 runtime index, an arm returning `value` is rejected. `HiddenCopy(value)` is the
 narrow positive case: its constructor identity demand equates the erased hidden
 field to the visible field used as the family index. Fine binds the arm's hidden
-name directly to that already-elaborated visible value. The same fixture also
-replaces a hidden field with the nullary source constructor `off`. An equality
-between two hidden fields is still rejected because it gives no runtime source
+name directly to that already-elaborated visible value. The same fixture tests
+that replacement through an explicit identity proof parameter and replaces a
+third hidden field with the nullary source constructor `off`. An equality between
+two hidden fields is still rejected because it gives no runtime source
 expression.
 Unused hidden fields and proof-only branch evidence remain harmless. Constructor
 choice is compile-time data; constructor storage is never manufactured.

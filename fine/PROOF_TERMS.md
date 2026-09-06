@@ -322,13 +322,15 @@ constructor reachable; adding `candidate == on` to the same constructor makes
 the existential head inconsistent. The paired fixtures fix this quantifier
 placement independently of result-index matching.
 
-`identity-residualized-hidden-field.fine` exercises both constructive cases. One
-hidden field is equated to a visible constructor field which is itself the
-family's runtime index; another is equated directly to the nullary source
-constructor `off`. The value arms may use the hidden binders because Fine
-substitutes those source terms before elaborating each arm. An equation between
-two erased hidden fields does not help: neither endpoint supplies a runtime
-expression, so the rejecting control remains outside the rule.
+`identity-residualized-hidden-field.fine` exercises both constructive shapes and
+both identity-argument positions. One hidden field is equated to a visible
+constructor field which is itself the family's runtime index, once through a
+`takes` demand and once through an explicit proof parameter. Another is equated
+directly to the nullary source constructor `off`. The value arms may use the
+hidden binders because Fine substitutes those source terms before elaborating
+each arm. An equation between two erased hidden fields does not help: neither
+endpoint supplies a runtime expression, so the rejecting control remains
+outside the rule.
 
 Rainfall retains every constructor's exact feasibility condition before closing
 the staged match. A hidden-field substitution separately names the constructor,

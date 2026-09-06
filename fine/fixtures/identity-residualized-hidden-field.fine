@@ -15,6 +15,14 @@ proof inductive HiddenOff() {
     -> HiddenOff();
 }
 
+proof inductive ExplicitHiddenCopy(value: Flag) {
+  explicit_hidden_copy(
+    visible: Flag,
+    hidden: Flag,
+    same: Id(Flag, hidden, visible)
+  ) -> ExplicitHiddenCopy(visible);
+}
+
 function recover_hidden(value: Flag) -> Flag
   takes [evidence: HiddenCopy(value)]
   ensures {
@@ -37,6 +45,17 @@ function recover_off() -> Flag
   }
 }
 
+function recover_explicit_hidden(value: Flag) -> Flag
+  takes [evidence: ExplicitHiddenCopy(value)]
+  ensures {
+    result == value;
+  }
+{
+  match evidence {
+    explicit_hidden_copy(visible, hidden, same) => hidden,
+  }
+}
+
 run identity_residualized_hidden_field {
   proof off_identity: Id(Flag, off, off) = refl(off);
   proof copied: HiddenCopy(off) = hidden_copy(off, off);
@@ -46,4 +65,9 @@ run identity_residualized_hidden_field {
   proof hidden_off_value: HiddenOff() = hidden_off(off);
   let recovered_constant: Flag = recover_off();
   assert recovered_constant == off;
+
+  proof explicit_copied: ExplicitHiddenCopy(off)
+    = explicit_hidden_copy(off, off, off_identity);
+  let recovered_explicit: Flag = recover_explicit_hidden(off);
+  assert recovered_explicit == off;
 }

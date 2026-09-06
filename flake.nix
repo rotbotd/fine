@@ -403,10 +403,13 @@
           echo "$identity_residualized_output"
           grep -F 'verified function: recover_hidden' <<<"$identity_residualized_output"
           grep -F 'verified function: recover_off' <<<"$identity_residualized_output"
+          grep -F 'verified function: recover_explicit_hidden' <<<"$identity_residualized_output"
           grep -F 'formed proof: copied : HiddenCopy(off) (virtual)' <<<"$identity_residualized_output"
           grep -F 'verified assertion: identity_residualized_hidden_field.0' \
             <<<"$identity_residualized_output"
           grep -F 'verified assertion: identity_residualized_hidden_field.1' \
+            <<<"$identity_residualized_output"
+          grep -F 'verified assertion: identity_residualized_hidden_field.2' \
             <<<"$identity_residualized_output"
 
           identity_residualized_rain="$(mktemp)"
@@ -425,11 +428,13 @@
           events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
           residualizations = [event["data"] for event in events
                               if event["operation"] == "proof.inductive.field-residualize"]
-          assert {(item["field"], item["source"], item["identity_demand"])
+          assert {(item["constructor"], item["field"], item["source"], item["identity_demand"])
                   for item in residualizations} == {
-              ("hidden", "visible", "same"),
-              ("candidate", "off", "is_off"),
+              ("hidden_copy", "hidden", "visible", "same"),
+              ("hidden_off", "candidate", "off", "is_off"),
+              ("explicit_hidden_copy", "hidden", "visible", "same"),
           }
+          assert len(residualizations) == 3
           assert all(item["source_substitution"] and not item["runtime_field_loaded"] and
                      not item["solver_model_used"] for item in residualizations)
           PY
