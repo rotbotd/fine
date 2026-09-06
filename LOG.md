@@ -7501,3 +7501,63 @@ nix run . -- run fine/fixtures/reject-identity-determined-hidden-field-eliminati
 nix flake check
 # all checks passed
 ```
+
+## 2026-09-06 — identity-directed hidden-field residualization
+
+The previous boundary control correctly established that an SMT equality alone
+must not turn an erased proof-constructor field into a runtime load. The next
+slice supplied the missing constructive rule instead of weakening that check.
+When a uniquely feasible proof constructor has a direct identity-shaped explicit
+parameter or `takes` demand with one endpoint equal to an undetermined
+constructor field, Fine may replace that field only when the other endpoint is
+an exact parsed value expression containing no undetermined constructor field.
+The other endpoint may therefore be a source constant or depend on parameters
+already recovered from ordinary runtime family indices. It is elaborated through
+the normal `ValueElaborator` in the same manager; no model value is requested.
+
+`identity-residualized-hidden-field.fine` closes both forms. `HiddenCopy(value)`
+has visible and hidden fields with `Id(Flag, hidden, visible)`; `visible` is fixed
+by the runtime family index, and the value arm returns `hidden` after Fine binds
+it to the already-elaborated `visible` term. `HiddenOff()` has no runtime family
+index, but `Id(Flag, candidate, off)` provides the exact nullary source
+constructor, so its arm residualizes to `off`. Both functions verify guarantees,
+both proofs form through ordinary coeffect search, both calls resolve exact local
+evidence, and both run assertions pass with zero runtime proof values.
+
+The negative fixture `reject-mutually-hidden-identity-field-elimination.fine`
+uses `Id(Flag, left, right)` where both endpoints are erased fields absent from
+the family result. Neither endpoint supplies a runtime source expression, so
+returning `left` retains the original diagnostic. Conflicting direct
+residualizations are also conservatively discarded unless their elaborated
+replacement terms have exact same-manager AST identity.
+
+Rainfall operation `proof.inductive.field-residualize` now retains the selected
+constructor, declared field, branch binder, exact replacement source-node ID and
+rendering, identity-demand name, and three negative facts: no runtime field was
+loaded, no solver model was used, and the operation is a source substitution.
+Replay requires the replacement node to belong to the current exact snapshot,
+the named constructor to have one satisfiable feasibility observation containing
+at least one identity constraint, unique binders per match, and an ordered list
+closed by `proof.inductive.value-match`. A mutation deleting one residualization
+while retaining the closing count is rejected.
+
+Implementation and docs: `339bb7787`. Exact checks:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/identity-residualized-hidden-field.fine
+.build/fine rain fine/fixtures/identity-residualized-hidden-field.fine > "$rain"
+python3 fine/rainfall_replay.py fine/fixtures/identity-residualized-hidden-field.fine "$rain"
+.build/fine run fine/fixtures/reject-mutually-hidden-identity-field-elimination.fine
+python3 fine/check_document_examples.py .
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+Clean artifacts: native
+`/nix/store/dhfgcp16jxsr1nx1rpb55cdw62w4bjga-fine-0.1.0`, ordinary Wasm
+`/nix/store/5lspiic0mj13ba1r9fs28vbfxxvmqbig-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/a13m07mb620d5m7bny8zcj9sc2fpb407-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/1jhxam24idyv6w2hjgv9dsnmh9d5ikw8-fine-playground-0.1.0`.
