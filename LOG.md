@@ -7561,3 +7561,37 @@ Clean artifacts: native
 Wasm `/nix/store/a13m07mb620d5m7bny8zcj9sc2fpb407-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/1jhxam24idyv6w2hjgv9dsnmh9d5ikw8-fine-playground-0.1.0`.
+
+## 2026-09-06 — explicit identity-child residualization control
+
+The implementation in `339bb7787` intentionally inspects both constructor
+`takes` demands and explicit identity proof parameters, but its first fixture
+covered only the former. `identity-residualized-hidden-field.fine` now adds
+`ExplicitHiddenCopy(value)`: the constructor carries `same: Id(Flag, hidden,
+visible)` as an actual proof child, the value match binds that child
+positionally, and the residual arm returns `hidden`. Fine replaces it with the
+runtime-indexed `visible` term exactly as in the coeffect case while the explicit
+proof binder remains static.
+
+The run now verifies `recover_hidden`, `recover_off`, and
+`recover_explicit_hidden`, forms the explicit constructor with `off_identity`,
+and closes three assertions with zero runtime proof values. Rainfall contains
+three distinct residualization events keyed by constructor, so the explicit and
+coeffect paths cannot collapse merely because their field/source/demand spellings
+coincide.
+
+Checks:
+
+```
+.build/fine run fine/fixtures/identity-residualized-hidden-field.fine
+.build/fine rain fine/fixtures/identity-residualized-hidden-field.fine > "$rain"
+python3 fine/rainfall_replay.py fine/fixtures/identity-residualized-hidden-field.fine "$rain"
+python3 fine/check_document_examples.py .
+nix build --no-link --print-out-paths .#default
+nix flake check --no-write-lock-file
+```
+
+Coverage commit `304eaf3b0`; clean native artifact
+`/nix/store/3yrjzjg0j5grl0nch7y20wkjlim0pjn2-fine-0.1.0`. The executable
+implementation did not change, so the existing Wasm and deployed playground
+artifacts from `339bb7787` remain exact.
