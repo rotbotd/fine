@@ -12,7 +12,7 @@ function predecessor(value: Nat) -> Nat {
 
 function zero_from_one() -> Nat {
   // This nullary wrapper is the playground's ready-made specialization target.
-  predecessor(succ(zero)) // Keep the explanation after replacement.
+  zero // Keep the explanation after replacement.
 }
 
 proof inductive Even(value: Nat) {

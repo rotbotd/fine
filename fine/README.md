@@ -21,6 +21,11 @@ function predecessor(value: Nat) -> Nat {
   }
 }
 
+function zero_from_one() -> Nat {
+  // This nullary wrapper is the playground's ready-made specialization target.
+  predecessor(succ(zero)) // Keep the explanation after replacement.
+}
+
 proof inductive Even(value: Nat) {
   even_zero() -> Even(zero);
   even_next(previous: Nat)
@@ -68,6 +73,7 @@ proof function trans(left: Bool, middle: Bool, right: Bool)
 run playground {
   let one: Nat = succ(zero);
   assert predecessor(one) == zero;
+  assert zero_from_one() == zero;
 
   proof zero_even: Even(zero) = even_zero();
   proof two_even: Even(succ(succ(zero))) = even_next(zero);
@@ -89,7 +95,9 @@ run playground {
 
 The program exercises the current boundary rather than an early identity-only
 slice. `Nat` is a native Z3 runtime datatype and `predecessor` eliminates it as
-ordinary data. `Even` and `Plus` are static indexed families: matching their
+ordinary data. `zero_from_one` is a nullary exact-input wrapper, so the browser's
+ready-made `specialize body` action can reduce its call to `zero` without a
+second expression parser. `Even` and `Plus` are static indexed families: matching their
 evidence refines indices, and `plus_shift` may call itself only with the exact
 recursive field exposed beneath its `inducts(evidence)` root. Constructor and
 function parameters in `takes` are proof-irrelevant coeffects. Fine selects exact
@@ -213,7 +221,8 @@ one transaction, so one undo restores the pre-action document. `specialize
 body` takes the name of a nullary wrapper, asks the Wasm CLI to write its checked
 specialized source to MEMFS, and installs those exact bytes through the same
 one-undo boundary. A failed or non-exact specialization leaves the editor
-unchanged.
+unchanged. The checked default names `zero_from_one`, so this action has a valid
+target before the user edits anything.
 
 Checkpoint search uses a dedicated Web Worker. On cross-origin-isolated clients,
 a pthread producer runs open-ended iterative deepening while a separate Fine

@@ -7926,3 +7926,49 @@ All passed. Clean artifacts: native
 Wasm `/nix/store/44s1a810b6j5hghqs8zcy8z4ykibh4mc-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/9k4iy4r3al95s2djdjf1vg92vd4x6hpw-fine-playground-0.1.0`.
+
+## 2026-09-11 — the default playground earns its specialization control
+
+The browser specialization action was correct but the untouched public demo had
+no nullary value wrapper, so its freshly visible control could only fail until a
+user edited the program. The public fixture now declares `zero_from_one()`, whose
+body is `predecessor(succ(zero))`, and the run block checks that it returns
+`zero`. Comments immediately before and after that body make its edit boundary
+visible.
+
+The primary README remains byte-identical to `playground-demo.fine`, and the
+explicit proof-materialization companion contains the same wrapper. A new
+`playground-demo-specialized.fine` changes only the wrapper body to `zero`; the
+proof hole remains open and both adjacent comments survive. Native install
+checks now generate and compare both the proof-materialized and value-specialized
+companions. The browser preselects `zero_from_one`, and the served-page smoke
+rejects a default target which drifts from that checked source.
+
+The ordinary Wasm smoke also specializes the exact untouched `sample.fine` and
+compares it byte-for-byte with the new companion. This is separate from the
+composed hidden-field control: one proves that the public first click works, the
+other still forces a nested certified residualization and one-undo behavior.
+
+Checks:
+
+```
+python3 fine/check_document_examples.py .
+.build/fine run --proof-selector z3 fine/fixtures/playground-demo.fine
+.build/fine materialize --proof-selector z3 --output "$explicit" \
+  fine/fixtures/playground-demo.fine
+cmp fine/fixtures/playground-demo-materialized.fine "$explicit"
+.build/fine specialize zero_from_one --output "$specialized" \
+  fine/fixtures/playground-demo.fine
+cmp fine/fixtures/playground-demo-specialized.fine "$specialized"
+.build/fine run --proof-selector z3 "$specialized"
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All passed. Clean artifacts: native
+`/nix/store/cq5p44i8hnvdc0zbc0qljxx7pww3870v-fine-0.1.0`, ordinary Wasm
+`/nix/store/431dym8a1vl4kli09lmql495i5wczfjl-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/44s1a810b6j5hghqs8zcy8z4ykibh4mc-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/gr1hdjay6s4dwd7kg3jx0k6x55jm6csn-fine-playground-0.1.0`.

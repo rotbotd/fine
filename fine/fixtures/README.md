@@ -8,6 +8,9 @@
 - `playground-demo-materialized.fine` is the exact explicit-coeffect and
   explicit-proof output of materializing that introduction; install checks
   require the generated source to match it byte-for-byte and rerun cleanly.
+- `playground-demo-specialized.fine` is the exact default browser specialization:
+  the nullary `zero_from_one` wrapper changes from a call to `zero`, while its
+  adjacent comments and the still-open proof hole remain byte-identical.
 - `runtime-enum.fine` declares recursive `Nat` as a runtime enum, constructs it,
   eliminates it with an exhaustive payload-binding match, verifies a symbolic
   reconstruction function, and uses `Nat` as the carrier of virtual identity

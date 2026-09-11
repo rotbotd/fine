@@ -17,6 +17,7 @@ const completeCheckpointPath = process.argv[8] ? path.resolve(process.argv[8]) :
 const definitionsPath = process.argv[9] ? path.resolve(process.argv[9]) : null;
 const specializePath = process.argv[10] ? path.resolve(process.argv[10]) : null;
 const expectedSpecializedPath = process.argv[11] ? path.resolve(process.argv[11]) : null;
+const expectedDefaultSpecializedPath = process.argv[12] ? path.resolve(process.argv[12]) : null;
 const createFine = (await import(pathToFileURL(path.join(root, "fine.mjs")))).default;
 const stdout = [];
 const stderr = [];
@@ -199,6 +200,28 @@ if (specializePath && expectedSpecializedPath) {
     throw new Error("one undo did not restore the exact pre-specialization bytes");
   if (!undo(view) || state.doc.toString() !== original || undo(view))
     throw new Error("specialization merged with prior editor history or created extra transactions");
+
+  if (expectedDefaultSpecializedPath) {
+    stdout.length = 0;
+    stderr.length = 0;
+    fine.FS.writeFile("/default-specialize.fine", source);
+    try {
+      code = fine.callMain([
+        "specialize", "zero_from_one", "--output", "/default-specialized.fine",
+        "/default-specialize.fine",
+      ]) ?? 0;
+    } catch (error) {
+      if (typeof error?.status === "number")
+        code = error.status;
+      else
+        throw error;
+    }
+    if (code !== 0)
+      throw new Error(`default Fine specialization exited ${code}: ${stderr.join("\n")}`);
+    const defaultSpecialized = fine.FS.readFile("/default-specialized.fine", { encoding: "utf8" });
+    if (defaultSpecialized !== await readFile(expectedDefaultSpecializedPath, "utf8"))
+      throw new Error("untouched playground source did not produce its exact default specialization");
+  }
 
   stdout.length = 0;
   stderr.length = 0;

@@ -10,6 +10,11 @@ function predecessor(value: Nat) -> Nat {
   }
 }
 
+function zero_from_one() -> Nat {
+  // This nullary wrapper is the playground's ready-made specialization target.
+  predecessor(succ(zero)) // Keep the explanation after replacement.
+}
+
 proof inductive Even(value: Nat) {
   even_zero() -> Even(zero);
   even_next(previous: Nat)
@@ -57,6 +62,7 @@ proof function trans(left: Bool, middle: Bool, right: Bool)
 run playground {
   let one: Nat = succ(zero);
   assert predecessor(one) == zero;
+  assert zero_from_one() == zero;
 
   proof zero_even: Even(zero) = even_zero();
   proof two_even: Even(succ(succ(zero))) = even_next(zero) using [prior = zero_even];

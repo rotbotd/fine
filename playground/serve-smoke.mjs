@@ -81,7 +81,7 @@ try {
   if (!reference.includes('id="materialize"') || !reference.includes("materialize holes"))
     throw new Error("served playground is missing the materialize action");
   if (!reference.includes('id="specialize-function"') || !reference.includes('id="specialize"')
-      || !reference.includes("specialize body"))
+      || !reference.includes('value="zero_from_one"') || !reference.includes("specialize body"))
     throw new Error("served playground is missing the named source-specialization action");
   for (const control of ['id="checkpoint"', 'id="stop-checkpoint"', 'id="checkpoint-budget"'])
     if (!reference.includes(control))

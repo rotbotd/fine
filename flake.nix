@@ -195,6 +195,10 @@
           $out/bin/fine materialize --proof-selector z3 \
             "$src/fine/fixtures/playground-demo.fine" > "$demo_materialized"
           cmp "$src/fine/fixtures/playground-demo-materialized.fine" "$demo_materialized"
+          demo_specialized="$(mktemp)"
+          $out/bin/fine specialize zero_from_one --output "$demo_specialized" \
+            "$src/fine/fixtures/playground-demo.fine"
+          cmp "$src/fine/fixtures/playground-demo-specialized.fine" "$demo_specialized"
 
           for source in \
             "$src/fine/fixtures/cst-roundtrip-ugly.fine" \
@@ -204,6 +208,7 @@
             "$src/fine/fixtures/staged-residualized-expression.fine" \
             "$src/fine/fixtures/staged-residualized-expression-specialized.fine" \
             "$src/fine/fixtures/playground-demo.fine" \
+            "$src/fine/fixtures/playground-demo-specialized.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
             "$src/fine/fixtures/stage-diagnostic.fine" \
             "$src/fine/fixtures/stage-diagnostic-specialized.fine" \
@@ -1467,7 +1472,8 @@
             ${./fine/fixtures/identity-checkpoint-complete.fine} \
             ${./fine/fixtures/top-level-declarations.fine} \
             ${./fine/fixtures/staged-residualized-expression.fine} \
-            ${./fine/fixtures/staged-residualized-expression-specialized.fine}
+            ${./fine/fixtures/staged-residualized-expression-specialized.fine} \
+            ${./fine/fixtures/playground-demo-specialized.fine}
           cmp ${./fine/fixtures/playground-demo.fine} dist/sample.fine
           node pthread-smoke.mjs ${self.packages.${system}.playground-wasm-pthreads} \
             ${./fine/fixtures/identity-checkpoint.fine} \

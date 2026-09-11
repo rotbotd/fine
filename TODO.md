@@ -178,7 +178,10 @@ Exit test: the ordinary Wasm build specializes `recover_one` in the composed
 hidden-field fixture to the byte-exact checked file containing `succ(zero)`, then
 one undo restores an unsaved prior editor state. `missing_wrapper` exits nonzero
 without creating its requested MEMFS output. The served-page smoke requires the
-name input, action, failure branch, and atomic-edit path.
+name input, action, failure branch, and atomic-edit path. The public demo also
+ships and preselects the checked nullary wrapper `zero_from_one`; specializing
+the untouched default emits its exact companion fixture rather than immediately
+failing for lack of a target.
 
 ## Closed: certified hidden-field staging handoff
 
