@@ -111,6 +111,26 @@
           grep -F "mutual-runtime-recursion-blocked: true" <<<"$stage_analysis"
           grep -F "mutual-exact-cancellation: true" <<<"$stage_analysis"
 
+          stage_diagnostic="$($out/bin/fine stage four_even \
+            "$src/fine/fixtures/stage-diagnostic.fine")"
+          echo "$stage_diagnostic"
+          grep -F 'stage four_even {' <<<"$stage_diagnostic"
+          grep -F 'result: comptime(true);' <<<"$stage_diagnostic"
+          grep -F 'executable-match-edges: 3;' <<<"$stage_diagnostic"
+          grep -F 'match-edge: even#4.0 -> zero;' <<<"$stage_diagnostic"
+          grep -F 'match-edge: even#4.1 -> succ;' <<<"$stage_diagnostic"
+          grep -F 'match-edge: odd#4.1 -> succ;' <<<"$stage_diagnostic"
+          grep -F 'recursive-call-blocked: false;' <<<"$stage_diagnostic"
+
+          parameterized_stage_error="$(mktemp)"
+          if $out/bin/fine stage even "$src/fine/fixtures/stage-diagnostic.fine" \
+              >"$parameterized_stage_error" 2>&1; then
+            echo 'stage diagnostic unexpectedly accepted a parameterized target' >&2
+            exit 1
+          fi
+          grep -F 'write a nullary wrapper containing the exact call' \
+            "$parameterized_stage_error"
+
           ${pkgs.python3}/bin/python "$src/fine/check_document_examples.py" "$src"
 
           demo_output="$($out/bin/fine run --proof-selector z3 \

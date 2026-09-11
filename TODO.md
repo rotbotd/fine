@@ -131,12 +131,21 @@ the considered representation is an existential package
 is not presented as a function type. Only then revisit how indirect callee sets
 are discovered.
 
-There is deliberately no next staging-integration checkbox. Fine currently
-verifies value functions as native Z3 terms; it has neither a runtime code
-generator nor a source-visible specialization action which would consume a
-staged transfer. Feeding the prototype back into `DocumentRunner` now would only
-duplicate verification. Reopen this boundary when a concrete compiler action,
-specialized source view, or mixed-stage error needs the analysis result.
+## Closed: first accepted staging diagnostic
+
+- [x] Make a nullary source wrapper the exact-input request, so exact values
+      remain ordinary Fine syntax rather than acquiring a second CLI parser.
+- [x] Verify the exact same parsed document first and let only its opaque
+      size-change certificates authorize recursive transfer evaluation.
+- [x] Report the abstract result, executable source match edges, and recursive
+      block status without pretending to generate runtime code or specialized
+      source.
+
+Exit test: `fine stage four_even fine/fixtures/stage-diagnostic.fine` crosses
+the certified mutually recursive `even`/`odd` SCC and returns `comptime(true)`
+with three executable match edges and no recursion block. Naming parameterized
+`even` is rejected and asks for a nullary wrapper containing the exact call.
+Source specialization and runtime code generation remain absent.
 
 ## Closed: honest top-level declaration surface
 

@@ -75,6 +75,9 @@
   shadowing the function body's reserved `result` name inside `ensures`.
 - `reject-result-coeffect.fine` applies the same reservation across the static
   coeffect namespace before proof absorption begins.
+- `stage-diagnostic.fine` puts an exact `Nat` argument in the nullary wrapper
+  `four_even`. The public staging diagnostic follows its accepted mutually
+  recursive `even`/`odd` SCC to `comptime(true)` without blocking recursion.
 - `identity-holes.fine` gives a typed identity hole a bounded finite
   grammar. The first hole forms `refl(x)`; the second selects exact local proof
   `self`; an earlier proof of `Id(Int, y, y)` is excluded before enumeration.

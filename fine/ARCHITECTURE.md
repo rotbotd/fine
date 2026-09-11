@@ -382,14 +382,15 @@ Implementations are in `value_elaborator.cpp`, `proof_engine_types.cpp`,
 
 ## Cacheable value-flow boundary
 
-This boundary is currently a checked ownership prototype, not part of accepted
-document staging. `stage-analysis-probe` builds nonrecursive synthetic documents
-directly, but its recursive case now passes through the ordinary elaborator.
+This boundary began as a checked ownership prototype. `stage-analysis-probe`
+builds nonrecursive synthetic documents directly, while its recursive case and
+the public `fine stage` diagnostic pass through the ordinary elaborator.
 The public elaborator predeclares every value-function identity, partitions the
 body-call graph into SCCs, checks each recursive group by size-change termination,
 and only then installs the group's native Z3 recursive definitions. The separate
-staging prototype below uses the same SCC boundary for abstract transfers, but
-still refuses to execute recursive transfers during compile-time evaluation.
+staging analysis below uses the same SCC boundary for abstract transfers and
+executes recursive transfers only through a certificate minted for that exact
+parsed document.
 
 Within that prototype, `value_flow.cpp` lowers value functions into an immutable
 graph before staging touches Z3. Every node has a resolved local, constructor, or
@@ -487,17 +488,22 @@ argument evaluation is complete and has an exact Fine value. Runtime, partially
 known, bottom, or already-blocked argument computations retain
 `recursive_call_blocked`; they do not speculate through the SCC. Exact evaluation
 polls a caller-supplied cancellation function throughout the transfer tree and
-throws `StageEvaluationCancelled` when requested. This is still a staging
-prototype rather than accepted document staging, but its permission, ownership,
-exactness, and interruption boundaries are now executable rather than comments.
+throws `StageEvaluationCancelled` when requested. Its permission, ownership,
+exactness, and interruption boundaries are therefore executable rather than
+comments.
 
-No accepted document pass consumes these results yet. Fine's current public
-execution verifies the native Z3 definitions and has no runtime code generator
-or source-visible specialization output; inserting stage analysis there would
-only create a second route to the same verification result. Integration waits
-for a concrete compiler action, specialized source view, or diagnostic whose
-observable behavior requires the transfer. This is a closed stop condition, not
-an implicit request for 0-CFA or a generic optimizer.
+The first accepted consumer is deliberately diagnostic. `fine stage NAME FILE`
+first verifies the exact parsed document, hands its opaque recursion
+certificates to `build_certified_value_flow`, and evaluates the named nullary
+value function. A nullary wrapper keeps the exact-input request in Fine source rather
+than introducing a second expression parser in the CLI. The output names the
+abstract result, the set of executable source match edges, and whether any
+recursive call remained blocked. `stage-diagnostic.fine` closes the important
+case: a nullary wrapper enters accepted mutually recursive parity at the exact
+value four, reaches `comptime(true)`, and reports no blocked recursion. Naming
+the parameterized `even` directly is rejected with an instruction to write the
+wrapper. This action does not specialize source or generate runtime code; those
+remain absent until they have their own concrete output contract.
 
 The checked native-Z3 probe in
 `research/value-recursion-z3-probe.cpp` fixes the likely non-inlining boundary.

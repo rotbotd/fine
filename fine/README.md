@@ -158,6 +158,22 @@ negative literals, and recursively constructed values of every declared runtime
 enum. Rainfall retains each model evaluation, the checked source witness, the
 fresh refutation check, and a distinct counterexample terminal event.
 
+## Staging diagnostic
+
+`fine stage NAME file.fine` runs one nullary value function through the
+Fine-owned staging transfer after the ordinary elaborator has accepted the exact
+same document. The nullary function is the exact-input request: write the
+arguments in ordinary source, then name that wrapper on the command line. The
+diagnostic reports its `bottom | comptime(value) | runtime` result, every source
+match edge that remained executable, and whether recursion had to be blocked.
+
+For example, `fine stage four_even fine/fixtures/stage-diagnostic.fine` follows
+the size-change-certified mutual recursion between `even` and `odd`, reports
+`comptime(true)`, and says recursion was not blocked. A parameterized target is
+rejected rather than silently treating its inputs as runtime; add a nullary
+wrapper when the exact inputs are known. This is an inspection action, not a
+second verifier or a runtime code generator.
+
 ## Search and checkpoints
 
 An ordinary proof hole is closed only by a complete typed candidate. `fine

@@ -7,6 +7,7 @@
 #include "runtime.h"
 #include "source.h"
 #include "stage_analysis_probe.h"
+#include "stage_diagnostic.h"
 
 #include "c++/z3++.h"
 
@@ -119,6 +120,20 @@ namespace {
             else
                 std::cout << materialized;
             return EXIT_SUCCESS;
+        } catch (fine::syntax::ParseError const &error) {
+            std::cerr << error.format(path, source) << '\n';
+            return EXIT_FAILURE;
+        } catch (fine::SemanticError const &error) {
+            std::cerr << error.format(path, source) << '\n';
+            return EXIT_FAILURE;
+        }
+    }
+
+    int stage_file(char const *path, std::string const &function) {
+        std::string source = read_file(path);
+        try {
+            fine::syntax::ConcreteSyntaxTree tree = fine::syntax::parse_tree(source);
+            return fine::stage::run_stage_diagnostic(tree.ast, function, std::cout);
         } catch (fine::syntax::ParseError const &error) {
             std::cerr << error.format(path, source) << '\n';
             return EXIT_FAILURE;
@@ -250,6 +265,8 @@ int main(int argc, char **argv) try {
     }
     if (argc == 3 && std::string_view(argv[1]) == "run")
         return run_file(argv[2]);
+    if (argc == 4 && std::string_view(argv[1]) == "stage")
+        return stage_file(argv[3], argv[2]);
     if (argc == 3 && std::string_view(argv[1]) == "rain")
         return run_file(argv[2], true);
     if (argc == 3 && std::string_view(argv[1]) == "materialize")
@@ -343,6 +360,7 @@ int main(int argc, char **argv) try {
         return run_file(argv[10], true, &request, options);
     }
     std::cerr << "usage: fine run <source.fine>\n"
+                 "       fine stage <nullary-function> <source.fine>\n"
                  "       fine rain <source.fine>\n"
                  "       fine materialize <source.fine>\n"
                  "       fine materialize [--proof-selector z3] --output <output.fine> <source.fine>\n"

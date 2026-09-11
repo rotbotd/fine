@@ -7595,3 +7595,77 @@ Coverage commit `304eaf3b0`; clean native artifact
 `/nix/store/3yrjzjg0j5grl0nch7y20wkjlim0pjn2-fine-0.1.0`. The executable
 implementation did not change, so the existing Wasm and deployed playground
 artifacts from `339bb7787` remain exact.
+
+## 2026-09-11 — first public consumer of the staging analysis
+
+The staging subsystem had reached an awkward closed boundary: its exact recursion
+certificate, transfer cache, and evaluator were all real, but only the synthetic
+`stage-analysis-probe` could observe them. Feeding the result back through
+`DocumentRunner` would still duplicate verification, and Fine has no runtime code
+generator or source-specialization contract. The smaller honest consumer is now
+a diagnostic:
+
+```
+fine stage <nullary-function> <source.fine>
+```
+
+A nullary Fine wrapper is the exact-input request. This deliberately avoids a
+second CLI expression parser and keeps constructor syntax, negative integer
+normalization, name resolution, and typing inside the language. The command
+first executes the exact parsed document through the ordinary elaborator. Only
+then does it pass the resulting opaque `ValueRecursionCertificate`s with that
+same AST into `build_certified_value_flow`, analyze the transfers, and evaluate
+the named wrapper. A parameterized target is rejected with an instruction to
+write a nullary wrapper; it is not silently analyzed with runtime inputs.
+
+`stage_diagnostic.cpp` owns this integration rather than extending `main.cpp` or
+`DocumentRunner` with staging semantics. Its output has three separate parts:
+the `bottom | comptime(value) | runtime` result, the set of Fine-owned executable
+match edges, and the recursive-call block bit. If ordinary verification emits a
+typed counterexample before failing, the diagnostic preserves that output rather
+than swallowing it in its silent verification stream.
+
+The new `stage-diagnostic.fine` fixture defines structurally accepted mutual
+`even`/`odd` recursion and a nullary `four_even` wrapper containing the exact
+`Nat` argument. The diagnostic produces:
+
+```
+stage four_even {
+  result: comptime(true);
+  executable-match-edges: 3;
+  match-edge: even#4.0 -> zero;
+  match-edge: even#4.1 -> succ;
+  match-edge: odd#4.1 -> succ;
+  recursive-call-blocked: false;
+}
+```
+
+This is the first public command to prove that an ordinary accepted document can
+hand its structural termination permission to the cached evaluator and cross a
+recursive SCC. The three edges are a set of source arms reached, not a fabricated
+dynamic trace; repeated recursive visits do not create duplicate edges. The
+negative command `fine stage even ...` fails at the declaration because the
+target has a parameter. Source rewriting and runtime code generation remain
+absent.
+
+Updated the CLI usage, primary README, architecture, TODO boundary, fixture
+index, CMake source list, and native install checks. Exact checks:
+
+```
+cmake --build .build -j2
+.build/fine stage four_even fine/fixtures/stage-diagnostic.fine
+.build/fine run fine/fixtures/stage-diagnostic.fine
+.build/fine roundtrip fine/fixtures/stage-diagnostic.fine | cmp fine/fixtures/stage-diagnostic.fine -
+python3 fine/check_document_examples.py .
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default
+nix build --no-link --print-out-paths .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All passed. Clean artifacts: native
+`/nix/store/lzrnghhfhqzl0crhjnpd34k1i4c28lp8-fine-0.1.0`, ordinary Wasm
+`/nix/store/0rkwgyq4xvzwr9ras61qqg67a2j4jya7-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/vjgz679p4vwq0spdsfcqvhxdrmp6rd6m-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/70zws92h6gqxybdywp95i26mcm8zxpkh-fine-playground-0.1.0`.
