@@ -9,6 +9,8 @@ import { selectedProofHoles } from "./rainfall.js";
 const sourceHost = document.querySelector("#source");
 const run = document.querySelector("#run");
 const materialize = document.querySelector("#materialize");
+const specialize = document.querySelector("#specialize");
+const specializeFunction = document.querySelector("#specialize-function");
 const checkpoint = document.querySelector("#checkpoint");
 const stopCheckpoint = document.querySelector("#stop-checkpoint");
 const checkpointBudget = document.querySelector("#checkpoint-budget");
@@ -201,6 +203,8 @@ function showRainfall(lines) {
 async function execute() {
   run.disabled = true;
   materialize.disabled = true;
+  specialize.disabled = true;
+  specializeFunction.disabled = true;
   checkpoint.disabled = true;
   checkpointBudget.disabled = true;
   status.textContent = "running…";
@@ -235,6 +239,8 @@ async function execute() {
     fine.FS.unlink(path);
     run.disabled = false;
     materialize.disabled = false;
+    specialize.disabled = false;
+    specializeFunction.disabled = false;
     checkpoint.disabled = false;
     checkpointBudget.disabled = false;
   }
@@ -243,6 +249,8 @@ async function execute() {
 async function materializeSource() {
   run.disabled = true;
   materialize.disabled = true;
+  specialize.disabled = true;
+  specializeFunction.disabled = true;
   checkpoint.disabled = true;
   checkpointBudget.disabled = true;
   status.textContent = "materializing…";
@@ -281,6 +289,64 @@ async function materializeSource() {
     }
     run.disabled = false;
     materialize.disabled = false;
+    specialize.disabled = false;
+    specializeFunction.disabled = false;
+    checkpoint.disabled = false;
+    checkpointBudget.disabled = false;
+  }
+}
+
+async function specializeSource() {
+  const functionName = specializeFunction.value.trim();
+  if (!functionName) {
+    status.textContent = "specialization needs a function name";
+    return;
+  }
+
+  run.disabled = true;
+  materialize.disabled = true;
+  specialize.disabled = true;
+  specializeFunction.disabled = true;
+  checkpoint.disabled = true;
+  checkpointBudget.disabled = true;
+  status.textContent = `specializing ${functionName}…`;
+  result.textContent = "";
+  rainfall.textContent = "";
+
+  const inputPath = `/playground-${nextInput++}.fine`;
+  const outputPath = `/playground-${nextInput++}-specialized.fine`;
+  fine.FS.writeFile(inputPath, editor.state.doc.toString());
+  try {
+    const completed = invoke([
+      "specialize", functionName, "--output", outputPath, inputPath,
+    ]);
+    if (completed.code !== 0) {
+      result.textContent = [...completed.stdout, ...completed.stderr].join("\n")
+        || `(exit ${completed.code})`;
+      status.textContent = "specialization failed";
+      return;
+    }
+
+    const source = fine.FS.readFile(outputPath, { encoding: "utf8" });
+    const changed = replaceDocument(editor, source);
+    result.textContent = changed
+      ? `${functionName} specialized\nbody replacement committed as one undoable editor transaction`
+      : `${functionName} already contains its exact staged result`;
+    status.textContent = changed ? "specialized" : "unchanged";
+  } catch (error) {
+    result.textContent = error?.stack ?? String(error);
+    status.textContent = "specialization crashed";
+  } finally {
+    fine.FS.unlink(inputPath);
+    try {
+      fine.FS.unlink(outputPath);
+    } catch {
+      // A failed specialization does not create or edit source.
+    }
+    run.disabled = false;
+    materialize.disabled = false;
+    specialize.disabled = false;
+    specializeFunction.disabled = false;
     checkpoint.disabled = false;
     checkpointBudget.disabled = false;
   }
@@ -299,6 +365,8 @@ function resetCheckpointControls() {
   completedHole = null;
   run.disabled = false;
   materialize.disabled = false;
+  specialize.disabled = false;
+  specializeFunction.disabled = false;
   checkpoint.disabled = false;
   checkpointBudget.disabled = false;
   stopCheckpoint.disabled = true;
@@ -420,6 +488,8 @@ function beginCheckpointSearch() {
 
   run.disabled = true;
   materialize.disabled = true;
+  specialize.disabled = true;
+  specializeFunction.disabled = true;
   checkpoint.disabled = true;
   checkpointBudget.disabled = true;
   stopCheckpoint.disabled = false;
@@ -494,11 +564,14 @@ function interruptCheckpointSearch() {
 
 run.disabled = false;
 materialize.disabled = false;
+specialize.disabled = false;
+specializeFunction.disabled = false;
 checkpoint.disabled = false;
 checkpointBudget.disabled = false;
 stopCheckpoint.disabled = true;
 status.textContent = "ready";
 run.addEventListener("click", execute);
 materialize.addEventListener("click", materializeSource);
+specialize.addEventListener("click", specializeSource);
 checkpoint.addEventListener("click", beginCheckpointSearch);
 stopCheckpoint.addEventListener("click", interruptCheckpointSearch);

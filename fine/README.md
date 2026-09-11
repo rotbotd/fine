@@ -179,8 +179,9 @@ exact and no recursive call remained blocked. It replaces that wrapper's body
 through its concrete source range, preserving every surrounding comment and
 whitespace run, then reparses, re-verifies, and re-runs staging on the edited
 document. The exact result must survive that round trip. Output is the complete
-specialized source on stdout. `bottom` and `runtime` results are rejected rather
-than being turned into plausible-looking code.
+specialized source on stdout, or in the exact file named by `--output`.
+`bottom` and `runtime` results are rejected rather than being turned into
+plausible-looking code, and a failed file-output request creates no output.
 
 If the wrapper reaches a value-level proof match whose erased field was fixed by
 a constructor identity demand, staging uses the exact substitution certified by
@@ -208,7 +209,11 @@ Z3 model selector do not yet apply to indexed holes.
 `https://fine.shit.yachts` runs the same C++ executable and local Z3 fork as an
 11 MiB WebAssembly module. CodeMirror is only an editor and lexical highlighter;
 it is not a second parser. `materialize holes` installs the CLI's exact source as
-one transaction, so one undo restores the pre-action document.
+one transaction, so one undo restores the pre-action document. `specialize
+body` takes the name of a nullary wrapper, asks the Wasm CLI to write its checked
+specialized source to MEMFS, and installs those exact bytes through the same
+one-undo boundary. A failed or non-exact specialization leaves the editor
+unchanged.
 
 Checkpoint search uses a dedicated Web Worker. On cross-origin-isolated clients,
 a pthread producer runs open-ended iterative deepening while a separate Fine

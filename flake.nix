@@ -1465,7 +1465,9 @@
             ${./fine/fixtures/identity-checkpoint.fine} \
             ${./fine/fixtures/identity-checkpoint-materialized.fine} \
             ${./fine/fixtures/identity-checkpoint-complete.fine} \
-            ${./fine/fixtures/top-level-declarations.fine}
+            ${./fine/fixtures/top-level-declarations.fine} \
+            ${./fine/fixtures/staged-residualized-expression.fine} \
+            ${./fine/fixtures/staged-residualized-expression-specialized.fine}
           cmp ${./fine/fixtures/playground-demo.fine} dist/sample.fine
           node pthread-smoke.mjs ${self.packages.${system}.playground-wasm-pthreads} \
             ${./fine/fixtures/identity-checkpoint.fine} \

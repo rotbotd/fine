@@ -80,6 +80,9 @@ try {
   const reference = page.body.toString("utf8");
   if (!reference.includes('id="materialize"') || !reference.includes("materialize holes"))
     throw new Error("served playground is missing the materialize action");
+  if (!reference.includes('id="specialize-function"') || !reference.includes('id="specialize"')
+      || !reference.includes("specialize body"))
+    throw new Error("served playground is missing the named source-specialization action");
   for (const control of ['id="checkpoint"', 'id="stop-checkpoint"', 'id="checkpoint-budget"'])
     if (!reference.includes(control))
       throw new Error(`served playground is missing checkpoint control: ${control}`);
@@ -114,6 +117,9 @@ try {
   if (!bundleText.includes("validate-checkpoint") || !bundleText.includes("fineLiveSequence")
       || !bundleText.includes("Atomics"))
     throw new Error("application bundle omits live mailbox source validation");
+  if (!bundleText.includes("specialization failed") || !bundleText.includes("-specialized.fine")
+      || !bundleText.includes("one undoable editor transaction"))
+    throw new Error("application bundle omits atomic named source specialization");
   if (!reference.includes("two distinct IH edges"))
     throw new Error("language reference omits branching structural induction");
   console.log(`serve smoke passed: ${plain.body.length} -> ${compressed.body.length} bytes`);

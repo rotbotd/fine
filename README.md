@@ -38,6 +38,9 @@ again resumes those nested holes.
 The browser playground's `materialize holes` action now performs the checked
 source rewrite as one CodeMirror transaction. Failed checks do not edit the
 document, and one undo restores the exact prior comments, spacing, and holes.
+Its named `specialize body` action applies the same boundary to a nullary value
+wrapper: the Wasm executable emits an exact verified source file, and only a
+successful result reaches the editor as one undoable transaction.
 Checkpoint search runs successive source epochs in a disposable worker. Stop
 terminates the current epoch first, then installs only the last completely
 validated snapshot through that same atomic edit. Rainfall beside the editor is

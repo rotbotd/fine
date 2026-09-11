@@ -7865,3 +7865,64 @@ not change, so the ordinary Wasm
 Wasm `/nix/store/qhw76zg1qqgrqg77w1fcmr9xpl1z99qi-fine-playground-wasm-pthreads-0.1.0`,
 and playground `/nix/store/dkfpf3sh3456s7kgjfdrcdhbdivvjzdf-fine-playground-0.1.0`
 remain exact.
+
+## 2026-09-11 — atomic browser source specialization
+
+The source specializer already returned a fully reparsed, reverified, and
+restaged document on stdout, but line-oriented Emscripten output is the wrong
+browser edit boundary: joining printed lines can lose the source's terminal
+newline. `fine specialize NAME --output OUTPUT INPUT` now writes the complete
+bytes only after `materialize_stage_result` succeeds. The old stdout form remains
+unchanged. An unknown function or non-exact result therefore creates no output
+file.
+
+The playground now has a nullary-wrapper name input and `specialize body`
+action. It writes the current editor bytes to MEMFS, asks the actual Wasm CLI for
+an output file, and reads that file only after a zero exit. A successful source
+uses the existing isolated CodeMirror replacement transaction; one undo restores
+the precise pre-action document. Failure prints the CLI diagnostic and never
+calls the editor transaction. Run, hole materialization, checkpoint search, and
+specialization disable one another while active.
+
+The ordinary Wasm smoke uses `staged-residualized-expression.fine`, whose checked
+replacement is the nested enum term `succ(zero)`. It compares the output file
+byte-for-byte to the checked specialized fixture, makes an unsaved editor change,
+installs the specialized source, and proves one undo restores that unsaved state
+without merging its history. A missing target exits nonzero and leaves its
+requested MEMFS path absent. Emscripten propagates an expected failed `callMain`
+into Node's eventual `process.exitCode`, so the multi-call smoke explicitly
+clears that harness-only status after checking the failure. The first Nix
+playground build exposed precisely this issue: its last visible line was the
+successful ordinary Wasm smoke, but the derivation exited one before the next
+check. Clearing the expected status made the full package close.
+
+Checks:
+
+```
+cmake --build .build -j2
+.build/fine specialize recover_one --output "$out" \
+  fine/fixtures/staged-residualized-expression.fine
+cmp fine/fixtures/staged-residualized-expression-specialized.fine "$out"
+# missing_wrapper exits nonzero and creates no requested output
+node playground/smoke.mjs \
+  /nix/store/431dym8a1vl4kli09lmql495i5wczfjl-fine-playground-wasm-0.1.0 \
+  fine/fixtures/playground-demo.fine \
+  fine/fixtures/cst-roundtrip-ugly.fine \
+  fine/fixtures/cst-roundtrip-ugly-materialized.fine \
+  fine/fixtures/identity-checkpoint.fine \
+  fine/fixtures/identity-checkpoint-materialized.fine \
+  fine/fixtures/identity-checkpoint-complete.fine \
+  fine/fixtures/top-level-declarations.fine \
+  fine/fixtures/staged-residualized-expression.fine \
+  fine/fixtures/staged-residualized-expression-specialized.fine
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All passed. Clean artifacts: native
+`/nix/store/qvmd6lm5w3v0x87bcwj1av39agca02fv-fine-0.1.0`, ordinary Wasm
+`/nix/store/431dym8a1vl4kli09lmql495i5wczfjl-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/44s1a810b6j5hghqs8zcy8z4ykibh4mc-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/9k4iy4r3al95s2djdjf1vg92vd4x6hpw-fine-playground-0.1.0`.

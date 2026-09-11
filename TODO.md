@@ -162,6 +162,24 @@ specialized document verifies and stages to the same exact value with zero match
 edges. Specializing the bottom result of `eliminate_never()` fails without
 emitting source. General runtime code generation remains absent.
 
+## Closed: atomic browser source specialization
+
+- [x] Add `specialize NAME --output OUTPUT INPUT`; write the output only after
+      exact staging, CST replacement, full reparse, verification, and restaging
+      have all succeeded.
+- [x] Give the playground a named nullary-wrapper action which passes the editor
+      bytes through that Wasm file boundary rather than reconstructing source
+      from line-oriented stdout.
+- [x] Install only successful output as one isolated CodeMirror transaction.
+      One undo restores the exact pre-action bytes, and an unknown target creates
+      no output and makes no edit.
+
+Exit test: the ordinary Wasm build specializes `recover_one` in the composed
+hidden-field fixture to the byte-exact checked file containing `succ(zero)`, then
+one undo restores an unsaved prior editor state. `missing_wrapper` exits nonzero
+without creating its requested MEMFS output. The served-page smoke requires the
+name input, action, failure branch, and atomic-edit path.
+
 ## Closed: certified hidden-field staging handoff
 
 - [x] When ordinary function-body elaboration residualizes a used erased proof

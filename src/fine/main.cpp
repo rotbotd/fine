@@ -143,11 +143,15 @@ namespace {
         }
     }
 
-    int specialize_file(char const *path, std::string const &function) {
+    int specialize_file(char const *path, std::string const &function, char const *output_path = nullptr) {
         std::string source = read_file(path);
         try {
             fine::syntax::ConcreteSyntaxTree tree = fine::syntax::parse_tree(source);
-            std::cout << fine::stage::materialize_stage_result(tree, function, std::cout);
+            std::string specialized = fine::stage::materialize_stage_result(tree, function, std::cout);
+            if (output_path)
+                write_file(output_path, specialized);
+            else
+                std::cout << specialized;
             return EXIT_SUCCESS;
         } catch (fine::syntax::ParseError const &error) {
             std::cerr << error.format(path, source) << '\n';
@@ -284,6 +288,8 @@ int main(int argc, char **argv) try {
         return stage_file(argv[3], argv[2]);
     if (argc == 4 && std::string_view(argv[1]) == "specialize")
         return specialize_file(argv[3], argv[2]);
+    if (argc == 6 && std::string_view(argv[1]) == "specialize" && std::string_view(argv[3]) == "--output")
+        return specialize_file(argv[5], argv[2], argv[4]);
     if (argc == 3 && std::string_view(argv[1]) == "rain")
         return run_file(argv[2], true);
     if (argc == 3 && std::string_view(argv[1]) == "materialize")
@@ -379,6 +385,7 @@ int main(int argc, char **argv) try {
     std::cerr << "usage: fine run <source.fine>\n"
                  "       fine stage <nullary-function> <source.fine>\n"
                  "       fine specialize <nullary-function> <source.fine>\n"
+                 "       fine specialize <nullary-function> --output <output.fine> <source.fine>\n"
                  "       fine rain <source.fine>\n"
                  "       fine materialize <source.fine>\n"
                  "       fine materialize [--proof-selector z3] --output <output.fine> <source.fine>\n"

@@ -3,7 +3,7 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { history, undo } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
-import { terminateAndReplace } from "./atomic-edit.js";
+import { replaceDocument, terminateAndReplace } from "./atomic-edit.js";
 import { runCheckpointEpoch } from "./checkpoint-epoch.js";
 import { selectedProofHoles } from "./rainfall.js";
 
@@ -15,6 +15,8 @@ const checkpointPath = process.argv[6] ? path.resolve(process.argv[6]) : null;
 const partialCheckpointPath = process.argv[7] ? path.resolve(process.argv[7]) : null;
 const completeCheckpointPath = process.argv[8] ? path.resolve(process.argv[8]) : null;
 const definitionsPath = process.argv[9] ? path.resolve(process.argv[9]) : null;
+const specializePath = process.argv[10] ? path.resolve(process.argv[10]) : null;
+const expectedSpecializedPath = process.argv[11] ? path.resolve(process.argv[11]) : null;
 const createFine = (await import(pathToFileURL(path.join(root, "fine.mjs")))).default;
 const stdout = [];
 const stderr = [];
@@ -158,4 +160,70 @@ if (definitionsPath) {
     throw new Error("definition-only Wasm document did not close without a fabricated run");
 }
 
-console.log(`wasm smoke passed with ${events.length} Rainfall events, atomic materialization, and paired checkpoint epochs`);
+if (specializePath && expectedSpecializedPath) {
+  stdout.length = 0;
+  stderr.length = 0;
+  const original = await readFile(specializePath, "utf8");
+  const expected = await readFile(expectedSpecializedPath, "utf8");
+  fine.FS.writeFile("/specialize.fine", original);
+  try {
+    code = fine.callMain([
+      "specialize", "recover_one", "--output", "/specialized.fine", "/specialize.fine",
+    ]) ?? 0;
+  } catch (error) {
+    if (typeof error?.status === "number")
+      code = error.status;
+    else
+      throw error;
+  }
+  if (code !== 0)
+    throw new Error(`Fine specialize exited ${code}: ${stderr.join("\n")}`);
+  const specialized = fine.FS.readFile("/specialized.fine", { encoding: "utf8" });
+  if (specialized !== expected)
+    throw new Error("Wasm specialization did not preserve the exact expected concrete source");
+
+  let state = EditorState.create({ doc: original, extensions: [history()] });
+  const view = {
+    get state() {
+      return state;
+    },
+    dispatch(...specs) {
+      state = state.update(...specs).state;
+    },
+  };
+  view.dispatch({ changes: { from: state.doc.length, insert: "// unsaved prior edit" } });
+  const beforeSpecialization = state.doc.toString();
+  if (!replaceDocument(view, specialized) || state.doc.toString() !== expected)
+    throw new Error("atomic editor replacement did not install the specialized source");
+  if (!undo(view) || state.doc.toString() !== beforeSpecialization)
+    throw new Error("one undo did not restore the exact pre-specialization bytes");
+  if (!undo(view) || state.doc.toString() !== original || undo(view))
+    throw new Error("specialization merged with prior editor history or created extra transactions");
+
+  stdout.length = 0;
+  stderr.length = 0;
+  try {
+    code = fine.callMain([
+      "specialize", "missing_wrapper", "--output", "/failed-specialized.fine", "/specialize.fine",
+    ]) ?? 0;
+  } catch (error) {
+    if (typeof error?.status === "number")
+      code = error.status;
+    else
+      throw error;
+  }
+  if (code === 0)
+    throw new Error("missing specialization target unexpectedly succeeded");
+  // Emscripten mirrors the expected CLI failure into Node's eventual process
+  // status even though callMain returned control to this multi-call smoke.
+  process.exitCode = 0;
+  try {
+    fine.FS.readFile("/failed-specialized.fine");
+    throw new Error("failed specialization created source output");
+  } catch (error) {
+    if (error.message === "failed specialization created source output")
+      throw error;
+  }
+}
+
+console.log(`wasm smoke passed with ${events.length} Rainfall events, atomic materialization/specialization, and paired checkpoint epochs`);

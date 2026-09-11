@@ -266,6 +266,13 @@ no edit, and one undo restores the exact prior bytes. That same transaction
 primitive receives completed checkpoint epochs without inspecting a solver's
 in-flight state.
 
+Named source specialization crosses the identical file boundary. The page writes
+the editor bytes to MEMFS, invokes `specialize NAME --output OUTPUT INPUT`, and
+reads the output only after a zero exit. The native command has already reparsed,
+reverified, and restaged that complete source. CodeMirror receives the result as
+one transaction; a missing target, a runtime/bottom result, or any failed check
+creates no output file and therefore cannot edit the document.
+
 Checkpoint interruption uses process ownership rather than solver-private
 state. On a pthread-capable client, the dedicated Web Worker runs one
 `live-checkpoint` command whose producer increases the exact bounded proof cost
@@ -512,8 +519,10 @@ reverified, and staged again; its exact abstract result must equal the original.
 The checked fixture retains comments immediately before and after the replaced
 expression, proving the operation is a CST edit rather than a pretty-printer.
 The impossible `eliminate_never()` wrapper produces staging bottom and is
-rejected. This remains compile-time source reduction in the current pure value
-language, not a runtime code generator.
+rejected. `--output OUTPUT` makes this an exact file boundary for the browser:
+the file is written only after the whole validation succeeds. This remains
+compile-time source reduction in the current pure value language, not a runtime
+code generator.
 
 Proof-field residualization crosses into that flow graph only through an opaque
 `StagedValueMatchCertificate` produced while `ValueElaborator` is checking the
