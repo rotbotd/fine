@@ -8417,3 +8417,12 @@ pthread Wasm
 `/nix/store/x4wp281ndsa56cbdh96ahv4ic4s5zf2p-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/szzxapli0apd1c95rgap0n7shnvy9r5s-fine-playground-0.1.0`.
+
+Post-commit validation of implementation `ceceab240` repeated the flake check and
+all four declared builds from a clean tree. Clean artifacts: native
+`/nix/store/c1mbdmhwwzjlrkg7p7c2jcdrlif40sqh-fine-0.1.0`, ordinary Wasm
+`/nix/store/v9lzlinl7mkyw16cylrnkvl9l2vaznkr-fine-playground-wasm-0.1.0`,
+pthread Wasm
+`/nix/store/x4wp281ndsa56cbdh96ahv4ic4s5zf2p-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/szzxapli0apd1c95rgap0n7shnvy9r5s-fine-playground-0.1.0`.
