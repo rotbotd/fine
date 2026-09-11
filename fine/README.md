@@ -96,7 +96,7 @@ run playground {
 The program exercises the current boundary rather than an early identity-only
 slice. `Nat` is a native Z3 runtime datatype and `predecessor` eliminates it as
 ordinary data. `zero_from_one` is a nullary exact-input wrapper, so the browser's
-ready-made `specialize body` action can reduce its call to `zero` without a
+ready-made `specialize exact islands` action can reduce its call to `zero` without a
 second expression parser. `Even` and `Plus` are static indexed families: matching their
 evidence refines indices, and `plus_shift` may call itself only with the exact
 recursive field exposed beneath its `inducts(evidence)` root. Constructor and

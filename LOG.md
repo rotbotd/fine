@@ -8473,3 +8473,14 @@ pthread Wasm
 `/nix/store/dvdcfwi76jbjrc4mcr48s7drdgfzping-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/f3kilpvdfbd0kh10vyr09vhwby24fs4n-fine-playground-0.1.0`.
+
+## 2026-09-11 — browser wording follows expression specialization
+
+After the expression pass landed, the browser still labeled its action
+`specialize body` and reported a singular body replacement. The command now
+reduces disjoint exact islands inside parameterized functions as well as complete
+nullary bodies, so that text had become a false description of the live action.
+The button now says `specialize exact islands`, and successful output reports
+exact source reductions committed as one undoable editor transaction. The served
+page smoke checks the new label; command arguments, transaction isolation, and
+undo behavior are unchanged.

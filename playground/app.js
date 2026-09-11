@@ -333,7 +333,7 @@ async function specializeSource() {
 
     const changed = replaceDocument(editor, specialized.source);
     result.textContent = changed
-      ? `${functionName} specialized\nbody replacement committed as one undoable editor transaction`
+      ? `${functionName} specialized\nexact source reductions committed as one undoable editor transaction`
       : `${functionName} already contains its exact staged result`;
     status.textContent = changed ? "specialized" : "unchanged";
   } catch (error) {

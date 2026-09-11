@@ -38,7 +38,7 @@ again resumes those nested holes.
 The browser playground's `materialize holes` action now performs the checked
 source rewrite as one CodeMirror transaction. Failed checks do not edit the
 document, and one undo restores the exact prior comments, spacing, and holes.
-Its named `specialize body` action runs the staging dataflow with the named
+Its named `specialize exact islands` action runs the staging dataflow with the named
 function's parameters marked runtime and replaces every outermost exact island
 which has no blocked recursion. The Wasm executable emits an exact verified
 source file, and only a successful result reaches the editor as one undoable
