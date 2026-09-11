@@ -8484,3 +8484,8 @@ The button now says `specialize exact islands`, and successful output reports
 exact source reductions committed as one undoable editor transaction. The served
 page smoke checks the new label; command arguments, transaction isolation, and
 undo behavior are unchanged.
+
+Clean implementation `6ec99d44b` passes the flake evaluation and the complete
+static-playground build, including served-page and real browser actions. Clean
+playground artifact:
+`/nix/store/0jw178m4r8f83w4qdfxd00d482fivg37-fine-playground-0.1.0`.
