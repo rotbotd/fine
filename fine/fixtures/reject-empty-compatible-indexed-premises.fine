@@ -1,0 +1,21 @@
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive OnlyOff(value: Flag) {
+  only_off() -> OnlyOff(off);
+}
+
+proof inductive CompatiblePremises() {
+  compatible_premises(candidate: Flag)
+    takes [first: OnlyOff(candidate), second: OnlyOff(candidate)]
+    -> CompatiblePremises();
+}
+
+function reject_empty_compatible_premises() -> Bool
+  takes [evidence: CompatiblePremises()]
+{
+  match evidence {
+  }
+}

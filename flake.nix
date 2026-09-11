@@ -406,6 +406,7 @@
           grep -F "verified function: eliminate_ungrounded_cycle" <<<"$staged_output"
           grep -F "verified function: eliminate_blocked_premise_index" <<<"$staged_output"
           grep -F "verified function: eliminate_blocked_premise_identity" <<<"$staged_output"
+          grep -F "verified function: eliminate_blocked_joint_premises" <<<"$staged_output"
           grep -F "verified function: eliminate_unreachable_index" <<<"$staged_output"
           grep -F "verified function: eliminate_never_as_argument" <<<"$staged_output"
           grep -F "verified function: eliminate_failed_constructor_demand" <<<"$staged_output"
@@ -474,6 +475,12 @@
                      check["impossible_indexed_premises"] == 0 and
                      check["expanded_indexed_premises"] == 1 and
                      check["status"] == "unsat" for check in nested_premises)
+          joint = next(check for check in checks
+                       if check["family"] == "BlockedByJointPremises")
+          assert joint["indexed_premises"] == 2
+          assert joint["impossible_indexed_premises"] == 0
+          assert joint["expanded_indexed_premises"] == 2
+          assert joint["status"] == "unsat"
           PY
 
           reachable_indexed_premise="$(mktemp)"
@@ -485,6 +492,16 @@
           fi
           grep -F 'staged proof match must contain exactly its uniquely reachable arm `needs_only_off`' \
             "$reachable_indexed_premise"
+
+          compatible_indexed_premises="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-empty-compatible-indexed-premises.fine" \
+              >"$compatible_indexed_premises" 2>&1; then
+            echo 'compatible indexed premises unexpectedly made an empty match valid' >&2
+            exit 1
+          fi
+          grep -F 'staged proof match must contain exactly its uniquely reachable arm `compatible_premises`' \
+            "$compatible_indexed_premises"
 
           staged_mutated="$(mktemp)"
           ${pkgs.python3}/bin/python - "$staged_rain" "$staged_mutated" <<'PY'

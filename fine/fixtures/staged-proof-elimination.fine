@@ -31,6 +31,10 @@ proof inductive OnlyOff(value: Flag) {
   only_off() -> OnlyOff(off);
 }
 
+proof inductive OnlyOn(value: Flag) {
+  only_on() -> OnlyOn(on);
+}
+
 proof inductive IdentityGuarded(value: Flag) {
   identity_guarded(candidate: Flag)
     takes [is_off: Id(Flag, candidate, off)]
@@ -47,6 +51,12 @@ proof inductive BlockedByPremiseIdentity() {
   blocked_by_premise_identity()
     takes [impossible: IdentityGuarded(on)]
     -> BlockedByPremiseIdentity();
+}
+
+proof inductive BlockedByJointPremises() {
+  blocked_by_joint_premises(candidate: Flag)
+    takes [at_off: OnlyOff(candidate), at_on: OnlyOn(candidate)]
+    -> BlockedByJointPremises();
 }
 
 proof inductive ExplicitIdentityGuarded(value: Flag) {
@@ -124,6 +134,13 @@ function eliminate_blocked_premise_index() -> Bool
 
 function eliminate_blocked_premise_identity() -> Bool
   takes [impossible: BlockedByPremiseIdentity()]
+{
+  match impossible {
+  }
+}
+
+function eliminate_blocked_joint_premises() -> Bool
+  takes [impossible: BlockedByJointPremises()]
 {
   match impossible {
   }

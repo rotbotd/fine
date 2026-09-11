@@ -8227,3 +8227,51 @@ constructor in general while remaining impossible at one particular index only
 after several recursive steps. Repeated-family expansion does not decide that.
 There is still no general proof normalization, constructor search, or indexed
 inhabitation solver in staged elimination.
+
+## 2026-09-11 — joint indexed premises keep one hidden witness
+
+The acyclic cover expansion was implemented by conjoining each premise cover in
+the outer constructor's existing value environment, but the first fixtures each
+had only one indexed premise. That left the most important conjunctive boundary
+untested: two premise families may each be inhabited while no one value supports
+both demands.
+
+`OnlyOff(off)` and `OnlyOn(on)` are separately inhabited.
+`BlockedByJointPremises()` has one hidden constructor value `candidate` and
+demands both `OnlyOff(candidate)` and `OnlyOn(candidate)`. Fine retains the same
+Z3 expression for `candidate` while expanding both covers, conjoins `candidate
+== off` with `candidate == on`, and only then existentially closes the hidden
+field. The constructor is therefore infeasible and its zero-arm value match
+verifies. Rainfall reports two indexed premises, zero globally impossible
+premises, two expanded covers, and `unsat`; the result is not attributable to
+the finite-spine shortcut.
+
+The rejecting fixture supplies the adjacent control. Its hidden candidate is
+demanded by two copies of `OnlyOff(candidate)`. Both covers are compatible, the
+outer constructor stays reachable, and the empty match fails by naming the
+missing `compatible_premises` arm. Thus neither multiple demands nor hidden
+existential fields cause blanket rejection.
+
+Exact validation:
+
+```
+cmake --build .build --target fine-bin -j2
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine rain fine/fixtures/staged-proof-elimination.fine \
+  | python3 fine/rainfall_replay.py fine/fixtures/staged-proof-elimination.fine
+.build/fine run fine/fixtures/reject-empty-compatible-indexed-premises.fine
+nix flake check --no-write-lock-file
+git diff --check
+nix build -L --no-link --print-out-paths \
+  .#default .#playground-wasm .#playground-wasm-pthreads .#playground
+```
+
+All native checks pass. Because this slice adds only checked source fixtures and
+documentation, the three browser outputs reuse their prior clean artifacts.
+Clean artifacts: native
+`/nix/store/cqppx0iyqfc411m0y9b992mm665chbc5-fine-0.1.0`, ordinary Wasm
+`/nix/store/28j2nwxlygzrdsdmp35yvlgx2qpq3dif-fine-playground-wasm-0.1.0`,
+pthread Wasm
+`/nix/store/j1rdsck48pl0ah6c5d439gcndw98948h-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/v221bg2wdiv62nl5nl0cj8b9n3v72lmd-fine-playground-0.1.0`.

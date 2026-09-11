@@ -640,7 +640,10 @@ fabricated decision procedure.
 For `Never()` the cover is false; for `OnlyOff(on)` it reduces to `off == on`.
 For `IdentityGuarded(on)`, the result head fixes the constructor's candidate to
 `on` while its coeffect demands `Id(Flag, candidate, off)`, so the head is
-likewise false. A candidate absent from the result remains genuinely existential:
+likewise false. Multiple premise covers share the outer constructor's value
+environment and are conjoined before its hidden values become existential, so
+two premise families cannot silently choose different values for one shared
+field. A candidate absent from the result remains genuinely existential:
 one demand fixing it to `off` is satisfiable, while simultaneous `off` and `on`
 demands make the constructor impossible. In each impossible case an
 empty value match receives its result kind from the enclosing function, checks
@@ -665,7 +668,10 @@ control `NeedsOnlyOff()` requires the reachable index `OnlyOff(off)` and therefo
 remains reachable. `BlockedByPremiseIndex()` instead requires `OnlyOff(on)`, and
 `BlockedByPremiseIdentity()` requires the contradictory constructor demand
 inside `IdentityGuarded(on)`; expanding those premise covers makes both outer
-families empty. The head cover can still refuse valid empty eliminations which
+families empty. `BlockedByJointPremises()` requires both `OnlyOff(candidate)` and
+`OnlyOn(candidate)` for the same hidden candidate and is empty even though each
+premise family is separately inhabited. A compatible two-premise control remains
+reachable. The head cover can still refuse valid empty eliminations which
 require following a recursive family through multiple index-changing steps.
 
 Rainfall does not reduce this decision to the final constructor name. Every

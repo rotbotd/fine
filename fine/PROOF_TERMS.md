@@ -352,6 +352,9 @@ wrapper to the nested source term `succ(zero)`.
 Rainfall retains every constructor's exact feasibility condition before closing
 the staged match, including the number of indexed premises and how many have no
 finite constructor spine, plus how many acyclic premise covers were expanded. A
+set of expanded premises retains one shared constructor-value environment and is
+conjoined before hidden values are existentially closed; separate witnesses at
+incompatible indices do not count as joint constructor support. A
 hidden-field substitution separately names the constructor, field, branch
 binder, identity demand, and replacement source while asserting that neither a
 runtime field load nor a solver model was used. Replay requires one observation

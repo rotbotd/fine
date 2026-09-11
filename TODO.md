@@ -103,8 +103,11 @@ callers synthesize or supply the evidence.
       than presenting the coarse check as index-specific inhabitation.
 - [x] Expand exact constructor-head covers through acyclic indexed premise
       dependencies. This propagates an impossible result index or constructor
-      identity demand into the outer constructor while stopping conservatively
-      when a family repeats. Rainfall retains the expanded-premise count.
+      identity demand into the outer constructor, and preserves joint support:
+      two individually inhabited premise families sharing one hidden constructor
+      value must be simultaneously inhabitable at that same value. Stop
+      conservatively when a family repeats. Rainfall retains the expanded-premise
+      count.
 - [x] Retain every staged constructor feasibility query in Rainfall as an exact
       result-index/identity-premise term and solver status. Replay closes the
       complete constructor set against the selected or impossible value match.
