@@ -8275,3 +8275,77 @@ pthread Wasm
 `/nix/store/j1rdsck48pl0ah6c5d439gcndw98948h-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/v221bg2wdiv62nl5nl0cj8b9n3v72lmd-fine-playground-0.1.0`.
+
+## 2026-09-11 — erased identity chains remain source-owned
+
+The first hidden-field residualization accepted one direct identity demand whose
+replacement used only runtime-indexed constructor fields. It deliberately
+rejected every expression mentioning another erased field. That was too narrow
+once an earlier source identity had already fixed the intermediate field.
+
+`ProofEngine` now collects the constructor's identity-shaped explicit and
+coeffect demands, then computes the acyclic closure rooted in runtime-indexed
+fields. A candidate becomes available only after every erased name in its exact
+replacement expression has itself been residualized. Its semantic value is
+elaborated in an environment where those prior fields have been replaced, rather
+than retaining their unconstrained constructor constants. Conflicting equations
+remove the field, and a final dependency sweep removes every downstream result
+which depended on that conflict. A cycle with no runtime root never starts and
+therefore remains unavailable.
+
+The value arm may use only the last field of a chain. Fine consequently computes
+the transitive support closure of body-used fields and retains otherwise-unused
+intermediates. The opaque `StagedValueMatchCertificate` carries those exact
+source expressions in dependency order. Certified flow lowering temporarily
+exposes each resolved constructor parameter while lowering the next expression,
+then removes the entire constructor-scope alias environment before lowering the
+selected arm. Bare flow lowering still has no route to invent any substitution.
+
+`staged-residualized-expression.fine` now contains
+`HiddenChain(visible)`. Its constructor demands
+`middle = succ(visible)` and `hidden = succ(middle)`; the value arm returns only
+the renamed `secret` binder for `hidden`. `recover_two()` stages to
+`comptime(succ(succ(zero)))`. This result requires the unused middle certificate:
+lowering `succ(middle)` before exposing the first source substitution would fail
+with an unresolved constructor-scope name. The checked specialized companion was
+regenerated from the updated source and still differs only at the earlier
+`recover_one` wrapper expression.
+
+Rainfall now marks every field residualization with `body_used`. For the chain it
+retains the ordered pair `middle / succ(visible) / false`, then
+`hidden / succ(middle) / true`; replay requires the flag and closes both events
+against the match's ordered residual list. Existing direct substitutions all
+record `true`. The mutually-hidden control still fails at its first used arm
+binder, proving that closure did not turn an unanchored equality cycle into a
+runtime value.
+
+Exact validation:
+
+```
+cmake --build .build --target fine-bin -j2
+.build/fine run fine/fixtures/identity-residualized-hidden-field.fine
+.build/fine rain fine/fixtures/identity-residualized-hidden-field.fine \
+  | python3 fine/rainfall_replay.py \
+      fine/fixtures/identity-residualized-hidden-field.fine
+.build/fine run fine/fixtures/staged-residualized-expression.fine
+.build/fine rain fine/fixtures/staged-residualized-expression.fine \
+  | python3 fine/rainfall_replay.py \
+      fine/fixtures/staged-residualized-expression.fine
+.build/fine stage recover_two fine/fixtures/staged-residualized-expression.fine
+.build/fine specialize recover_one \
+  fine/fixtures/staged-residualized-expression.fine
+.build/fine run fine/fixtures/reject-mutually-hidden-identity-field-elimination.fine
+nix flake check --no-write-lock-file
+git diff --check
+nix build -L --no-link --print-out-paths \
+  .#default .#playground-wasm .#playground-wasm-pthreads .#playground
+```
+
+Every native install check, ordinary Wasm smoke, pthread shared-memory smoke,
+served-response check, and both real Chromium action paths pass. Clean artifacts:
+native `/nix/store/2hr3iibyfmns65n6jqd6dm0c3jc74vd3-fine-0.1.0`, ordinary
+Wasm `/nix/store/4rdpmfiwy77hghmciwhkr1p4da9g4fcf-fine-playground-wasm-0.1.0`,
+pthread Wasm
+`/nix/store/wqgjg2zavj6aqzpv0vszxbk2fdbj7b3r-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/awwgq00jpa204bfrjbrsbz33axbqmqsq-fine-playground-0.1.0`.

@@ -325,12 +325,18 @@ namespace fine::stage {
             if (auto certified = certified_aliases_.find(&expression); certified != certified_aliases_.end()) {
                 if (!consumed_certificates_.insert(&expression).second)
                     throw std::logic_error("staged value-match certificate was consumed twice");
-                std::vector<std::pair<std::string, std::optional<FlowNodeId>>> saved_parameters;
-                for (auto const &[parameter, source] : resolved_parameters) {
-                    auto old = state.aliases.find(parameter);
-                    saved_parameters.push_back(
-                        {parameter, old == state.aliases.end() ? std::nullopt : std::optional(old->second)});
+                std::map<std::string, std::optional<FlowNodeId>> saved_parameters;
+                auto expose_parameter = [&](std::string const &parameter, FlowNodeId source) {
+                    if (!saved_parameters.contains(parameter)) {
+                        auto old = state.aliases.find(parameter);
+                        saved_parameters.emplace(
+                            parameter, old == state.aliases.end() ? std::nullopt
+                                                                  : std::optional(old->second));
+                    }
                     state.aliases[parameter] = source;
+                };
+                for (auto const &[parameter, source] : resolved_parameters) {
+                    expose_parameter(parameter, source);
                 }
                 for (auto const &[index, source] : certified->second) {
                     if (!source || index >= constructor.parameters.size())
@@ -338,7 +344,9 @@ namespace fine::stage {
                     std::string const &parameter = constructor.parameters[index].name;
                     if (resolved_parameters.contains(parameter))
                         throw std::logic_error("staged value-match certificate replaces a runtime-indexed field");
-                    resolved_parameters.emplace(parameter, lower(*source, state));
+                    FlowNodeId replacement = lower(*source, state);
+                    resolved_parameters.emplace(parameter, replacement);
+                    expose_parameter(parameter, replacement);
                 }
                 for (auto const &[parameter, old] : saved_parameters) {
                     if (old)

@@ -426,6 +426,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      isinstance(data.get("identity_demand"), str) and data["identity_demand"] and
                      len(matching_checks) == 1 and matching_checks[0]["status"] == "sat" and
                      matching_checks[0]["identity_constraints"] > 0 and
+                     isinstance(data.get("body_used"), bool) and
                      data.get("source_substitution") is True and
                      data.get("runtime_field_loaded") is False and
                      data.get("solver_model_used") is False,

@@ -9,6 +9,13 @@ proof inductive HiddenNext(value: Nat) {
     -> HiddenNext(visible);
 }
 
+proof inductive HiddenChain(value: Nat) {
+  hidden_chain(visible: Nat, middle: Nat, hidden: Nat)
+    takes [middle_is_next: Id(Nat, middle, succ(visible)),
+           hidden_is_next: Id(Nat, hidden, succ(middle))]
+    -> HiddenChain(visible);
+}
+
 function recover_next(value: Nat) -> Nat
   takes [evidence: HiddenNext(value)]
   ensures {
@@ -27,9 +34,34 @@ function recover_one() -> Nat
   recover_next(zero) // Keep this comment after specialization.
 }
 
+function recover_chain(value: Nat) -> Nat
+  takes [evidence: HiddenChain(value)]
+  ensures {
+    result == succ(succ(value));
+  }
+{
+  match evidence {
+    hidden_chain(observed, intermediate, secret) => secret,
+  }
+}
+
+function recover_two() -> Nat
+  takes [evidence: HiddenChain(zero)]
+{
+  recover_chain(zero)
+}
+
 run hidden_composed {
   proof zero_id: Id(Nat, succ(zero), succ(zero)) = refl(succ(zero));
   proof next: HiddenNext(zero) = hidden_next(zero, succ(zero));
   let one: Nat = recover_one();
   assert one == succ(zero);
+
+  proof middle_id: Id(Nat, succ(zero), succ(zero)) = refl(succ(zero));
+  proof hidden_id: Id(Nat, succ(succ(zero)), succ(succ(zero)))
+    = refl(succ(succ(zero)));
+  proof chain: HiddenChain(zero)
+    = hidden_chain(zero, succ(zero), succ(succ(zero)));
+  let two: Nat = recover_two();
+  assert two == succ(succ(zero));
 }

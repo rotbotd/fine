@@ -114,11 +114,13 @@ callers synthesize or supply the evidence.
 - [x] Keep constructor parameters absent from the family result existential in
       the head cover. One identity demand may choose a hidden witness; two
       contradictory demands make that constructor impossible.
-- [x] Residualize a used hidden field when a direct constructor identity demand
-      equates it to an exact source expression depending only on fields already
-      recovered from runtime indices. Rainfall retains the demand and source
-      substitution, and replay closes the residualized binders. Do not evaluate
-      a solver model or reconstruct one erased field from another erased field.
+- [x] Residualize a used hidden field through an acyclic chain of constructor
+      identity demands rooted in fields recovered from runtime indices. Retain
+      every supporting substitution even when its arm binder is not otherwise
+      used, expose them to certified flow lowering in dependency order, and make
+      Rainfall distinguish support from the field consumed by the body. Do not
+      evaluate a solver model; an unanchored cycle between erased fields remains
+      unavailable.
 
 Transfer exit test: one dead runtime branch preserves a compile-time value, one
 live join of distinct constants becomes runtime, a mutually recursive
@@ -128,9 +130,9 @@ compile-time result for a known argument and a runtime result for a runtime
 argument. Certified mutual parity evaluates an exact `Nat`, remains blocked on a
 runtime `Nat`, and is externally cancellable; a nonrecursive caller reaches the
 same certified SCC without losing its environment. A known constructor with a runtime payload crosses a function call and
-selects one caller match arm. An identity demand may replace one erased hidden
-field with a runtime-indexed source value, while an equality between two hidden
-fields remains unavailable. A strict argument's blocked recursion survives
+selects one caller match arm. An identity chain may replace erased hidden fields
+when it ends at a runtime-indexed source value, while a cycle containing only
+erased fields remains unavailable. A strict argument's blocked recursion survives
 even when the callee ignores its value. The proof controls reject elimination
 when its constructor choice depends on runtime data and reject a used field that
 exists only inside erased evidence. Empty `Never()` and unreachable-index value
@@ -232,6 +234,10 @@ so neither browser pass depends on host fonts.
       demand and an explicit identity proof parameter each stage to the exact
       enum constructor, and specialization preserves comments around the proof
       match it replaces.
+- [x] Carry an acyclic two-link identity chain through the same opaque handoff.
+      The supporting middle field is not used by the value arm, but must be
+      retained and lowered before the final field; a mutually hidden cycle must
+      still fail.
 
 Exit test: `recover_off` and the explicit-proof wrapper
 `recover_explicit_off` both stage to `comptime(off)`. Bare flow lowering still
@@ -241,6 +247,10 @@ emits `off`, reparses, verifies, and stages again without losing either adjacent
 comment. The composed-expression control residualizes `succ(visible)` across
 differently named constructor and arm scopes, stages to `comptime(succ(zero))`,
 and materializes that nested enum value as Fine source.
+`recover_two` uses only the last field of `middle = succ(visible); hidden =
+succ(middle)`, yet certified staging retains the unused middle substitution and
+returns `comptime(succ(succ(zero)))`. Rainfall records the middle link with
+`body_used: false` before the final link with `body_used: true`.
 
 ## Closed: honest top-level declaration surface
 

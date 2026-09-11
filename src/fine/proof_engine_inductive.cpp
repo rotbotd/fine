@@ -659,6 +659,13 @@ namespace fine::elaboration {
             syntax::ValueExpr const *source_expression;
             std::size_t source_node;
             syntax::SourceSpan source_span;
+            std::vector<std::string> dependencies;
+            std::size_t order;
+        };
+        struct ResidualizationCandidate {
+            syntax::ValueExpr const *field;
+            syntax::ValueExpr const *replacement;
+            std::string identity_demand;
         };
         std::map<std::string, ValueKind> parameter_kinds;
         std::set<std::string> undetermined_parameters;
@@ -669,45 +676,91 @@ namespace fine::elaboration {
         }
         std::map<std::string, ResidualizedField> residualized_fields;
         std::set<std::string> conflicting_residualizations;
+        std::vector<ResidualizationCandidate> residualization_candidates;
         ProofEnvironment no_proofs;
         std::vector<std::string> no_proof_order;
         std::vector<z3::expr> no_absorbed;
-        auto consider_residualization = [&](syntax::ValueExpr const &field,
-                                            syntax::ValueExpr const &replacement,
-                                            std::string const &identity_demand) {
+        auto collect_residualization = [&](syntax::ValueExpr const &field,
+                                           syntax::ValueExpr const &replacement,
+                                           std::string const &identity_demand) {
             if (field.kind != syntax::ValueExpr::Kind::name ||
-                !undetermined_parameters.contains(field.name) ||
-                conflicting_residualizations.contains(field.name))
+                !undetermined_parameters.contains(field.name))
                 return;
-            for (auto const &undetermined : undetermined_parameters)
-                if (uses_free_value_name(replacement, undetermined))
-                    return;
-            ValueKind kind = parameter_kinds.at(field.name);
-            ValueTerm value = values_.elaborate_value(replacement, selected.values, no_proofs, no_proof_order,
-                                                      no_absorbed, kind);
-            auto found = residualized_fields.find(field.name);
-            if (found == residualized_fields.end()) {
-                residualized_fields.emplace(field.name,
-                                            ResidualizedField{std::move(value), print_value(replacement),
-                                                              identity_demand, &replacement, replacement.node_id,
-                                                              replacement.span});
-                return;
-            }
-            if (!same_ast(values_.context(), found->second.value.expression, value.expression)) {
-                residualized_fields.erase(found);
-                conflicting_residualizations.insert(field.name);
-            }
+            residualization_candidates.push_back({&field, &replacement, identity_demand});
         };
         auto inspect_identity_demand = [&](syntax::CoeffectParameter const &parameter) {
             if (parameter.type.kind != syntax::ProofType::Kind::identity)
                 return;
-            consider_residualization(parameter.type.left, parameter.type.right, parameter.name);
-            consider_residualization(parameter.type.right, parameter.type.left, parameter.name);
+            collect_residualization(parameter.type.left, parameter.type.right, parameter.name);
+            collect_residualization(parameter.type.right, parameter.type.left, parameter.name);
         };
         for (auto const &parameter : constructor.explicit_proof_parameters)
             inspect_identity_demand(parameter);
         for (auto const &parameter : constructor.proof_parameters)
             inspect_identity_demand(parameter);
+
+        std::size_t residualization_order = 0;
+        bool residualization_progress = true;
+        while (residualization_progress) {
+            residualization_progress = false;
+            for (auto const &candidate : residualization_candidates) {
+                std::string const &field = candidate.field->name;
+                if (conflicting_residualizations.contains(field))
+                    continue;
+                std::vector<std::string> dependencies;
+                bool ready = true;
+                for (auto const &undetermined : undetermined_parameters) {
+                    if (!uses_free_value_name(*candidate.replacement, undetermined))
+                        continue;
+                    if (!residualized_fields.contains(undetermined)) {
+                        ready = false;
+                        break;
+                    }
+                    dependencies.push_back(undetermined);
+                }
+                if (!ready)
+                    continue;
+                ValueEnvironment replacement_values = selected.values;
+                for (auto const &[name, residualized] : residualized_fields)
+                    replacement_values.insert_or_assign(name, residualized.value);
+                ValueKind kind = parameter_kinds.at(field);
+                ValueTerm value = values_.elaborate_value(*candidate.replacement, replacement_values, no_proofs,
+                                                          no_proof_order, no_absorbed, kind);
+                auto found = residualized_fields.find(field);
+                if (found == residualized_fields.end()) {
+                    residualized_fields.emplace(
+                        field, ResidualizedField{std::move(value), print_value(*candidate.replacement),
+                                                 candidate.identity_demand, candidate.replacement,
+                                                 candidate.replacement->node_id, candidate.replacement->span,
+                                                 std::move(dependencies), residualization_order++});
+                    residualization_progress = true;
+                    continue;
+                }
+                if (!same_ast(values_.context(), found->second.value.expression, value.expression)) {
+                    residualized_fields.erase(found);
+                    conflicting_residualizations.insert(field);
+                    residualization_progress = true;
+                }
+            }
+        }
+        bool removed_dependency = true;
+        while (removed_dependency) {
+            removed_dependency = false;
+            for (auto found = residualized_fields.begin(); found != residualized_fields.end();) {
+                bool invalid = false;
+                for (auto const &dependency : found->second.dependencies)
+                    if (!residualized_fields.contains(dependency)) {
+                        invalid = true;
+                        break;
+                    }
+                if (invalid) {
+                    found = residualized_fields.erase(found);
+                    removed_dependency = true;
+                }
+                else
+                    ++found;
+            }
+        }
 
         ValueEnvironment branch_values = values;
         ProofEnvironment branch_proofs = proofs;
@@ -716,6 +769,8 @@ namespace fine::elaboration {
         std::set<std::string> arm_names;
         std::vector<std::string> used_residualized_fields;
         std::vector<std::pair<std::size_t, syntax::ValueExpr const *>> staged_aliases;
+        std::map<std::string, std::pair<std::size_t, std::string>> field_binders;
+        std::set<std::string> body_used_fields;
         syntax::ValueExpr const &body = expression.elements.at(1);
         for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
             auto const &parameter = constructor.parameters[i];
@@ -723,6 +778,7 @@ namespace fine::elaboration {
             if (!arm_names.insert(binder).second || branch_values.contains(binder) || branch_proofs.contains(binder))
                 reject(expression.match_arm_spans.front(), "duplicate proof match binder `" + binder + "`");
             bool const used = uses_free_value_name(body, binder);
+            field_binders.emplace(parameter.name, std::pair{i, binder});
             auto residualized = residualized_fields.find(parameter.name);
             if (!selected.determined_parameters.contains(parameter.name) && residualized == residualized_fields.end() &&
                 used)
@@ -732,27 +788,47 @@ namespace fine::elaboration {
                                                 ? selected.values.at(parameter.name)
                                                 : residualized->second.value;
             branch_values.emplace(binder, branch_value);
-            if (used && residualized != residualized_fields.end()) {
-                used_residualized_fields.push_back(binder);
-                staged_aliases.emplace_back(i, residualized->second.source_expression);
-                if (rainfall_) {
-                    std::string replacement_source = rainfall_->source_node(
-                        residualized->second.source_node, residualized->second.source_span, "value.expression");
-                    rainfall_->record(
-                        "derive", "proof.inductive.field-residualize",
-                        {"staged-proof-match:" + std::to_string(expression.node_id)},
-                        "fine.staged-proof-elimination",
-                        "A hidden erased constructor field is replaced by the exact source value named by an identity demand",
-                        {RainfallRecorder::string_field("constructor", constructor.name),
-                         RainfallRecorder::string_field("field", parameter.name),
-                         RainfallRecorder::string_field("binder", binder),
-                         RainfallRecorder::string_field("source", residualized->second.source),
-                         RainfallRecorder::string_field("replacement_source", replacement_source),
-                         RainfallRecorder::string_field("identity_demand", residualized->second.identity_demand),
-                         RainfallRecorder::boolean_field("source_substitution", true),
-                         RainfallRecorder::boolean_field("runtime_field_loaded", false),
-                         RainfallRecorder::boolean_field("solver_model_used", false)});
-                }
+            if (used && residualized != residualized_fields.end())
+                body_used_fields.insert(parameter.name);
+        }
+        std::set<std::string> required_residualizations = body_used_fields;
+        bool added_dependency = true;
+        while (added_dependency) {
+            added_dependency = false;
+            std::vector<std::string> current(required_residualizations.begin(), required_residualizations.end());
+            for (auto const &field : current)
+                for (auto const &dependency : residualized_fields.at(field).dependencies)
+                    if (required_residualizations.insert(dependency).second)
+                        added_dependency = true;
+        }
+        std::vector<std::pair<std::string, ResidualizedField const *>> ordered_residualizations;
+        for (auto const &field : required_residualizations)
+            ordered_residualizations.push_back({field, &residualized_fields.at(field)});
+        std::sort(ordered_residualizations.begin(), ordered_residualizations.end(), [](auto const &left, auto const &right) {
+            return left.second->order < right.second->order;
+        });
+        for (auto const &[field, residualized] : ordered_residualizations) {
+            auto const &[index, binder] = field_binders.at(field);
+            used_residualized_fields.push_back(binder);
+            staged_aliases.emplace_back(index, residualized->source_expression);
+            if (rainfall_) {
+                std::string replacement_source = rainfall_->source_node(
+                    residualized->source_node, residualized->source_span, "value.expression");
+                rainfall_->record(
+                    "derive", "proof.inductive.field-residualize",
+                    {"staged-proof-match:" + std::to_string(expression.node_id)},
+                    "fine.staged-proof-elimination",
+                    "A hidden erased constructor field is replaced by an exact source identity chain",
+                    {RainfallRecorder::string_field("constructor", constructor.name),
+                     RainfallRecorder::string_field("field", field),
+                     RainfallRecorder::string_field("binder", binder),
+                     RainfallRecorder::string_field("source", residualized->source),
+                     RainfallRecorder::string_field("replacement_source", replacement_source),
+                     RainfallRecorder::string_field("identity_demand", residualized->identity_demand),
+                     RainfallRecorder::boolean_field("body_used", body_used_fields.contains(field)),
+                     RainfallRecorder::boolean_field("source_substitution", true),
+                     RainfallRecorder::boolean_field("runtime_field_loaded", false),
+                     RainfallRecorder::boolean_field("solver_model_used", false)});
             }
         }
         if (!staged_aliases.empty()) {

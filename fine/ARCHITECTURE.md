@@ -536,7 +536,10 @@ Proof-field residualization crosses into that flow graph only through an opaque
 ordinary function body. `ProofEngine` supplies the constructor-parameter
 position and the exact source expression already accepted as its replacement;
 it never exports a Z3 value or erased proof field. Certified flow lowering binds
-the corresponding source arm binder to that expression. A bare
+the corresponding constructor parameter to that expression. Acyclic identity
+chains are ordered from their runtime-indexed root outward; each earlier
+substitution is exposed only while lowering the next exact source expression,
+then all constructor-scope aliases are removed before the arm is lowered. A bare
 `build_value_flow` therefore still rejects the hidden binder, and a certificate
 whose match-expression pointer is not contained in the exact parsed function
 body fails before lowering. This keeps staging from becoming a second,
@@ -545,7 +548,10 @@ constructor parameters and arm binders different names, so this handoff is
 positional rather than accidental name capture. A second fixture makes the
 replacement `succ(visible)` and materializes `succ(zero)`, checking that the
 certificate composes a source expression rather than handling only aliases or
-nullary constants.
+nullary constants. Its chained control uses `middle = succ(visible)` and
+`hidden = succ(middle)` while returning only `hidden`; the otherwise unused
+middle certificate must be consumed first for staging to reach
+`succ(succ(zero))`.
 
 The checked native-Z3 probe in
 `research/value-recursion-z3-probe.cpp` fixes the likely non-inlining boundary.
@@ -616,9 +622,10 @@ narrow positive case: its constructor identity demand equates the erased hidden
 field to the visible field used as the family index. Fine binds the arm's hidden
 name directly to that already-elaborated visible value. The same fixture tests
 that replacement through an explicit identity proof parameter and replaces a
-third hidden field with the nullary source constructor `off`. An equality between
-two hidden fields is still rejected because it gives no runtime source
-expression.
+third hidden field with the nullary source constructor `off`. An acyclic chain
+may pass through another hidden field once an earlier identity has rooted that
+field in a runtime-indexed expression. An equality cycle containing only hidden
+fields is still rejected because it has no runtime source expression.
 Unused hidden fields and proof-only branch evidence remain harmless. Constructor
 choice is compile-time data; constructor storage is never manufactured.
 

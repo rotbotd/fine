@@ -334,9 +334,9 @@ constructor field which is itself the family's runtime index, once through a
 `takes` demand and once through an explicit proof parameter. Another is equated
 directly to the nullary source constructor `off`. The value arms may use the
 hidden binders because Fine substitutes those source terms before elaborating
-each arm. An equation between two erased hidden fields does not help: neither
-endpoint supplies a runtime expression, so the rejecting control remains
-outside the rule.
+each arm. Acyclic chains may use a previously residualized hidden field, but a
+cycle between erased fields does not help: neither endpoint supplies the root
+runtime expression, so the rejecting control remains outside the rule.
 
 That substitution is also the only route by which certified staging may lower
 the erased binder. During ordinary function-body checking Fine retains an
@@ -348,6 +348,11 @@ explicit-proof wrapper controls both stage to `comptime(off)` through this
 handoff. `staged-residualized-expression.fine` additionally fixes an erased
 field to `succ(visible)`, renames the arm binders, and stages a zero-indexed
 wrapper to the nested source term `succ(zero)`.
+The same fixture has a two-link control where `middle` is replaced by
+`succ(visible)` and `hidden` by `succ(middle)`. The value arm returns only the
+last binder. Fine nevertheless retains the middle substitution as support,
+passes both through the staging certificate in dependency order, and stages the
+wrapper to `succ(succ(zero))`.
 
 Rainfall retains every constructor's exact feasibility condition before closing
 the staged match, including the number of indexed premises and how many have no
@@ -356,7 +361,8 @@ set of expanded premises retains one shared constructor-value environment and is
 conjoined before hidden values are existentially closed; separate witnesses at
 incompatible indices do not count as joint constructor support. A
 hidden-field substitution separately names the constructor, field, branch
-binder, identity demand, and replacement source while asserting that neither a
+binder, identity demand, replacement source, and whether the body directly used
+that binder, while asserting that neither a
 runtime field load nor a solver model was used. Replay requires one observation
 per declared constructor and closes the exact ordered list of residualized
 binders; a summary event cannot silently omit either kind of observation.

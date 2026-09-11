@@ -175,6 +175,28 @@
           composed_residualized_stage="$($out/bin/fine stage recover_one \
             "$src/fine/fixtures/staged-residualized-expression.fine")"
           grep -F 'result: comptime(succ(zero));' <<<"$composed_residualized_stage"
+          chained_residualized_stage="$($out/bin/fine stage recover_two \
+            "$src/fine/fixtures/staged-residualized-expression.fine")"
+          grep -F 'result: comptime(succ(succ(zero)));' <<<"$chained_residualized_stage"
+          chained_residualized_rain="$(mktemp)"
+          $out/bin/fine rain \
+            "$src/fine/fixtures/staged-residualized-expression.fine" \
+            >"$chained_residualized_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/staged-residualized-expression.fine" \
+            "$chained_residualized_rain"
+          ${pkgs.python3}/bin/python - "$chained_residualized_rain" <<'PY'
+          import json, pathlib, sys
+
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          chain = [event["data"] for event in events
+                   if event["operation"] == "proof.inductive.field-residualize" and
+                   event["data"]["constructor"] == "hidden_chain"]
+          assert [(item["field"], item["source"], item["body_used"]) for item in chain] == [
+              ("middle", "succ(visible)", False),
+              ("hidden", "succ(middle)", True),
+          ]
+          PY
           composed_specialized="$(mktemp)"
           $out/bin/fine specialize recover_one \
             "$src/fine/fixtures/staged-residualized-expression.fine" \
@@ -577,6 +599,7 @@
           assert len(residualizations) == 3
           assert all(item["source_substitution"] and not item["runtime_field_loaded"] and
                      not item["solver_model_used"] for item in residualizations)
+          assert all(item["body_used"] for item in residualizations)
           PY
 
           identity_residualized_mutated="$(mktemp)"
