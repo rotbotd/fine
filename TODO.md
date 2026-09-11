@@ -182,7 +182,9 @@ Exit test: `recover_off` and the explicit-proof wrapper
 reports the erased binder as unavailable; certified lowering succeeds, while
 reusing that certificate with a copied parse fails. Specializing `recover_off`
 emits `off`, reparses, verifies, and stages again without losing either adjacent
-comment.
+comment. The composed-expression control residualizes `succ(visible)` across
+differently named constructor and arm scopes, stages to `comptime(succ(zero))`,
+and materializes that nested enum value as Fine source.
 
 ## Closed: honest top-level declaration surface
 

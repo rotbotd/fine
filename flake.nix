@@ -172,6 +172,17 @@
             "$residualized_specialized")"
           grep -F 'result: comptime(off);' <<<"$specialized_residualized_stage"
 
+          composed_residualized_stage="$($out/bin/fine stage recover_one \
+            "$src/fine/fixtures/staged-residualized-expression.fine")"
+          grep -F 'result: comptime(succ(zero));' <<<"$composed_residualized_stage"
+          composed_specialized="$(mktemp)"
+          $out/bin/fine specialize recover_one \
+            "$src/fine/fixtures/staged-residualized-expression.fine" \
+            >"$composed_specialized"
+          cmp "$src/fine/fixtures/staged-residualized-expression-specialized.fine" \
+            "$composed_specialized"
+          $out/bin/fine run "$composed_specialized"
+
           ${pkgs.python3}/bin/python "$src/fine/check_document_examples.py" "$src"
 
           demo_output="$($out/bin/fine run --proof-selector z3 \
@@ -190,6 +201,8 @@
             "$src/fine/fixtures/identity-coeffect.fine" \
             "$src/fine/fixtures/identity-residualized-hidden-field.fine" \
             "$src/fine/fixtures/identity-residualized-hidden-field-specialized.fine" \
+            "$src/fine/fixtures/staged-residualized-expression.fine" \
+            "$src/fine/fixtures/staged-residualized-expression-specialized.fine" \
             "$src/fine/fixtures/playground-demo.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
             "$src/fine/fixtures/stage-diagnostic.fine" \

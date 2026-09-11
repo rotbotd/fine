@@ -1,0 +1,35 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive HiddenNext(value: Nat) {
+  hidden_next(visible: Nat, hidden: Nat)
+    takes [same: Id(Nat, hidden, succ(visible))]
+    -> HiddenNext(visible);
+}
+
+function recover_next(value: Nat) -> Nat
+  takes [evidence: HiddenNext(value)]
+  ensures {
+    result == succ(value);
+  }
+{
+  match evidence {
+    hidden_next(observed, secret) => secret,
+  }
+}
+
+function recover_one() -> Nat
+  takes [evidence: HiddenNext(zero)]
+{
+  // The erased field is the nested source expression succ(visible).
+  succ(zero) // Keep this comment after specialization.
+}
+
+run hidden_composed {
+  proof zero_id: Id(Nat, succ(zero), succ(zero)) = refl(succ(zero));
+  proof next: HiddenNext(zero) = hidden_next(zero, succ(zero));
+  let one: Nat = recover_one();
+  assert one == succ(zero);
+}

@@ -86,6 +86,10 @@
   identity-proof routes both stage to `off`; specializing the former replaces
   only its proof match and retains the adjacent comments. Constructor parameters
   and arm binders use different spellings to reject name-based substitution.
+- `staged-residualized-expression.fine` makes the certified replacement the
+  composed term `succ(visible)` rather than a name or nullary constructor. Its
+  nullary wrapper stages to `comptime(succ(zero))`; the paired specialized file
+  retains both adjacent comments around the nested emitted term.
 - `identity-holes.fine` gives a typed identity hole a bounded finite
   grammar. The first hole forms `refl(x)`; the second selects exact local proof
   `self`; an earlier proof of `Id(Int, y, y)` is excluded before enumeration.

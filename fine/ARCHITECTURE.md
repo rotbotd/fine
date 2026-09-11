@@ -526,7 +526,10 @@ whose match-expression pointer is not contained in the exact parsed function
 body fails before lowering. This keeps staging from becoming a second,
 independent implementation of proof-elimination semantics. The fixture gives
 constructor parameters and arm binders different names, so this handoff is
-positional rather than accidental name capture.
+positional rather than accidental name capture. A second fixture makes the
+replacement `succ(visible)` and materializes `succ(zero)`, checking that the
+certificate composes a source expression rather than handling only aliases or
+nullary constants.
 
 The checked native-Z3 probe in
 `research/value-recursion-z3-probe.cpp` fixes the likely non-inlining boundary.

@@ -339,7 +339,9 @@ position to the already accepted replacement source expression. Bare flow
 lowering cannot reproduce the rule from syntax, and even a byte-identical
 reparse cannot reuse the old certificate. The public `recover_off` and
 explicit-proof wrapper controls both stage to `comptime(off)` through this
-handoff.
+handoff. `staged-residualized-expression.fine` additionally fixes an erased
+field to `succ(visible)`, renames the arm binders, and stages a zero-indexed
+wrapper to the nested source term `succ(zero)`.
 
 Rainfall retains every constructor's exact feasibility condition before closing
 the staged match. A hidden-field substitution separately names the constructor,

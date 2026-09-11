@@ -7820,3 +7820,48 @@ All passed. Clean artifacts: native
 Wasm `/nix/store/qhw76zg1qqgrqg77w1fcmr9xpl1z99qi-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/dkfpf3sh3456s7kgjfdrcdhbdivvjzdf-fine-playground-0.1.0`.
+
+## 2026-09-11 — composed residualized source control
+
+The first certified staging fixture closed direct-name and nullary-constructor
+replacement, but the rule accepts a source expression built from fields already
+recovered through runtime indices. A checked control now forces that larger
+claim rather than leaving it implicit.
+
+`staged-residualized-expression.fine` declares `HiddenNext(visible)` with an
+erased `hidden` field and constructor demand
+`Id(Nat, hidden, succ(visible))`. Its value match deliberately renames the arm
+fields to `observed` and `secret`, returns `secret`, and its nullary wrapper fixes
+the visible index to `zero`. Certified staging must therefore resolve the
+constructor-scoped `visible`, compose the nested expression, and report
+`comptime(succ(zero))`; neither spelling coincidence nor a special case for
+`off` can pass.
+
+`fine specialize recover_one` emits the exact nested Fine term `succ(zero)`.
+The paired output fixture verifies and retains the comments immediately before
+and after the replaced call. This also exercises the recursive-enum branch of
+the exact stage renderer. The executable implementation remains `96b112cc5`;
+this commit adds the missing discriminator and install check.
+
+Checks:
+
+```
+.build/fine run fine/fixtures/staged-residualized-expression.fine
+.build/fine stage recover_one fine/fixtures/staged-residualized-expression.fine
+.build/fine specialize recover_one fine/fixtures/staged-residualized-expression.fine > "$specialized"
+cmp fine/fixtures/staged-residualized-expression-specialized.fine "$specialized"
+.build/fine run "$specialized"
+.build/fine stage recover_one "$specialized"
+python3 fine/check_document_examples.py .
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All passed. Clean native artifact
+`/nix/store/xik0fklgggsqyar6djs7nlyl2vqzz6qf-fine-0.1.0`; the implementation did
+not change, so the ordinary Wasm
+`/nix/store/5dljrdgaz3afm7lfa39n8q0lw55c52mx-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/qhw76zg1qqgrqg77w1fcmr9xpl1z99qi-fine-playground-wasm-pthreads-0.1.0`,
+and playground `/nix/store/dkfpf3sh3456s7kgjfdrcdhbdivvjzdf-fine-playground-0.1.0`
+remain exact.
