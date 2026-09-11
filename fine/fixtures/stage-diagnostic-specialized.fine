@@ -19,5 +19,5 @@ function odd(value: Nat) -> Bool {
 
 function four_even() -> Bool {
   // The wrapper is the exact-input staging request.
-  even(succ(succ(succ(succ(zero))))) // Preserve this comment on replacement.
+  true // Preserve this comment on replacement.
 }

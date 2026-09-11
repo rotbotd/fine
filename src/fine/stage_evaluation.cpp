@@ -291,6 +291,10 @@ namespace fine::stage {
         return "comptime(" + render_exact(*value.exact) + ")";
     }
 
+    std::string render_stage_exact_value(StageExactValue const &value) {
+        return render_exact(value);
+    }
+
     std::string stage_value_key(StageAbstractValue const &value) {
         std::string result = std::to_string(static_cast<int>(value.kind)) + field(type_key(value.type));
         if (value.exact)

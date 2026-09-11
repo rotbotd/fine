@@ -174,6 +174,14 @@ rejected rather than silently treating its inputs as runtime; add a nullary
 wrapper when the exact inputs are known. This is an inspection action, not a
 second verifier or a runtime code generator.
 
+`fine specialize NAME file.fine` uses the same boundary only when the result is
+exact and no recursive call remained blocked. It replaces that wrapper's body
+through its concrete source range, preserving every surrounding comment and
+whitespace run, then reparses, re-verifies, and re-runs staging on the edited
+document. The exact result must survive that round trip. Output is the complete
+specialized source on stdout. `bottom` and `runtime` results are rejected rather
+than being turned into plausible-looking code.
+
 ## Search and checkpoints
 
 An ordinary proof hole is closed only by a complete typed candidate. `fine

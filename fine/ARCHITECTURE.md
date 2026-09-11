@@ -502,8 +502,18 @@ recursive call remained blocked. `stage-diagnostic.fine` closes the important
 case: a nullary wrapper enters accepted mutually recursive parity at the exact
 value four, reaches `comptime(true)`, and reports no blocked recursion. Naming
 the parameterized `even` directly is rejected with an instruction to write the
-wrapper. This action does not specialize source or generate runtime code; those
-remain absent until they have their own concrete output contract.
+wrapper. The diagnostic itself does not edit source or generate runtime code.
+
+`fine specialize NAME FILE` is the first such source contract, restricted to
+that same nullary target. It requires an exact result and a false recursion-block
+bit, renders the Fine-owned value, and replaces only the wrapper body through
+its `ValueExpr` concrete range. The whole edited document is then reparsed,
+reverified, and staged again; its exact abstract result must equal the original.
+The checked fixture retains comments immediately before and after the replaced
+expression, proving the operation is a CST edit rather than a pretty-printer.
+The impossible `eliminate_never()` wrapper produces staging bottom and is
+rejected. This remains compile-time source reduction in the current pure value
+language, not a runtime code generator.
 
 The checked native-Z3 probe in
 `research/value-recursion-z3-probe.cpp` fixes the likely non-inlining boundary.

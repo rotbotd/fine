@@ -131,6 +131,26 @@
           grep -F 'write a nullary wrapper containing the exact call' \
             "$parameterized_stage_error"
 
+          stage_specialized="$(mktemp)"
+          $out/bin/fine specialize four_even \
+            "$src/fine/fixtures/stage-diagnostic.fine" >"$stage_specialized"
+          cmp "$src/fine/fixtures/stage-diagnostic-specialized.fine" \
+            "$stage_specialized"
+          $out/bin/fine run "$stage_specialized"
+          specialized_diagnostic="$($out/bin/fine stage four_even "$stage_specialized")"
+          grep -F 'result: comptime(true);' <<<"$specialized_diagnostic"
+          grep -F 'executable-match-edges: 0;' <<<"$specialized_diagnostic"
+          grep -F 'recursive-call-blocked: false;' <<<"$specialized_diagnostic"
+
+          bottom_stage_error="$(mktemp)"
+          if $out/bin/fine specialize eliminate_never \
+              "$src/fine/fixtures/staged-proof-elimination.fine" \
+              >"$bottom_stage_error" 2>&1; then
+            echo 'stage specialization unexpectedly materialized bottom' >&2
+            exit 1
+          fi
+          grep -F 'did not produce an exact compile-time value' "$bottom_stage_error"
+
           ${pkgs.python3}/bin/python "$src/fine/check_document_examples.py" "$src"
 
           demo_output="$($out/bin/fine run --proof-selector z3 \
@@ -149,6 +169,8 @@
             "$src/fine/fixtures/identity-coeffect.fine" \
             "$src/fine/fixtures/playground-demo.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
+            "$src/fine/fixtures/stage-diagnostic.fine" \
+            "$src/fine/fixtures/stage-diagnostic-specialized.fine" \
             "$src/fine/fixtures/value-structural-recursion.fine" \
             "$src/fine/fixtures/value-mutual-recursion.fine" \
             "$src/fine/fixtures/value-cross-parameter-recursion.fine" \

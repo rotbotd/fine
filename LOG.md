@@ -7669,3 +7669,73 @@ All passed. Clean artifacts: native
 Wasm `/nix/store/vjgz679p4vwq0spdsfcqvhxdrmp6rd6m-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/70zws92h6gqxybdywp95i26mcm8zxpkh-fine-playground-0.1.0`.
+
+## 2026-09-11 — exact nullary source specialization
+
+The staging diagnostic deliberately stopped at observation, but its nullary
+wrapper already supplied a precise source-level specialization boundary. Fine
+now exposes the adjacent, separate command:
+
+```
+fine specialize <nullary-function> <source.fine>
+```
+
+The operation has three closed parts. First, ordinary execution verifies the
+exact parsed document and supplies its bound recursion certificates before the
+staging evaluator is allowed to run. The named wrapper must produce an exact
+`comptime` value and retain no blocked recursive call. The latter guard is not
+cosmetic: replacing a constant-looking result after a strict recursive call was
+blocked would erase possible divergence. `bottom`, `runtime`, parameterized
+targets, and blocked recursion all fail before an edit is made.
+
+Second, Fine renders its own exact value and replaces only the wrapper body's
+`ValueExpr` concrete range. It does not pretty-print the file. The checked
+`stage-diagnostic-specialized.fine` output changes the recursive call to `true`
+while retaining the preceding comment and the trailing comment byte-for-byte.
+Every other declaration, space, and newline comes directly from the original
+concrete tape.
+
+Third, Fine reparses and ordinarily reverifies the entire edited source, rebuilds
+certified staging from that new exact AST, and requires the wrapper to produce
+the same exact abstract value with no recursion block. Match-edge equality is
+intentionally not required: the original computation reaches three arms, while
+the materialized constant reaches none. The output is the complete accepted
+source on stdout, not runtime code or a second IR.
+
+The negative fixture uses `eliminate_never()`. Its impossible proof match stages
+to `bottom`; specialization rejects it rather than printing a plausible Boolean.
+The parameterized `even` control continues to fail with the nullary-wrapper
+instruction.
+
+During the local check, two tool-yield interruptions had left `.build/.ninja_deps`
+truncated. Ninja reported `premature end of file` and treated the tree as wholly
+stale. The damaged file was retained at
+`/tmp/fine-ninja-deps-corrupt-20260911`; removing it and allowing one complete
+872-object rebuild reconstructed dependency state. A following
+`ninja -C .build -n` reported `no work to do`.
+
+Exact checks:
+
+```
+cmake --build .build -j2
+ninja -C .build -n
+.build/fine stage four_even fine/fixtures/stage-diagnostic.fine
+.build/fine specialize four_even fine/fixtures/stage-diagnostic.fine > "$specialized"
+cmp fine/fixtures/stage-diagnostic-specialized.fine "$specialized"
+.build/fine run "$specialized"
+.build/fine stage four_even "$specialized"
+.build/fine specialize eliminate_never fine/fixtures/staged-proof-elimination.fine
+.build/fine specialize even fine/fixtures/stage-diagnostic.fine
+python3 fine/check_document_examples.py .
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+The two specialization controls fail as intended; all other checks pass. Clean
+artifacts: native
+`/nix/store/bmi0p9gw0wkb5hjsfs5h7yb2sydb1iln-fine-0.1.0`, ordinary Wasm
+`/nix/store/qy9x264c61zg7alisplbxrlwzg8ngzl8-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/ij1h61if3jqx352g09yh7y08hp23zj0x-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/088s9dgaqz06xpw74p7w0hzxbmkakrfs-fine-playground-0.1.0`.

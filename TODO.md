@@ -145,7 +145,22 @@ Exit test: `fine stage four_even fine/fixtures/stage-diagnostic.fine` crosses
 the certified mutually recursive `even`/`odd` SCC and returns `comptime(true)`
 with three executable match edges and no recursion block. Naming parameterized
 `even` is rejected and asks for a nullary wrapper containing the exact call.
-Source specialization and runtime code generation remain absent.
+This command remains inspection-only; the following slice owns source editing.
+
+## Closed: exact nullary source specialization
+
+- [x] Specialize only an exact result with no blocked recursive call; reject
+      `bottom`, `runtime`, and incomplete strict recursion before editing.
+- [x] Replace only the nullary wrapper's expression range, preserving comments,
+      whitespace, declarations, and every other source byte.
+- [x] Reparse and reverify the whole edit, rerun certified staging, and require
+      the same exact abstract value before emitting source.
+
+Exit test: `fine specialize four_even stage-diagnostic.fine` changes only the
+recursive call to `true`; comments on both sides survive byte-for-byte. The
+specialized document verifies and stages to the same exact value with zero match
+edges. Specializing the bottom result of `eliminate_never()` fails without
+emitting source. General runtime code generation remains absent.
 
 ## Closed: honest top-level declaration surface
 

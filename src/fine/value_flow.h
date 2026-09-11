@@ -276,6 +276,7 @@ namespace fine::stage {
     StageEvaluation evaluate_stage_transfer(StageTransfer const &transfer,
                                             std::vector<StageAbstractValue> const &arguments);
     std::string render_stage_value(StageAbstractValue const &value);
+    std::string render_stage_exact_value(StageExactValue const &value);
     std::string stage_value_key(StageAbstractValue const &value);
 
     struct StageCacheEvent {

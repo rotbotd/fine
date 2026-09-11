@@ -12,5 +12,7 @@ namespace fine::stage {
     // request: its body contains the arguments in ordinary Fine syntax.
     int run_stage_diagnostic(syntax::Document const &document, std::string const &function,
                              std::ostream &output);
+    std::string materialize_stage_result(syntax::ConcreteSyntaxTree const &tree, std::string const &function,
+                                         std::ostream &failure_output);
 
 }  // namespace fine::stage
