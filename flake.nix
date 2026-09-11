@@ -103,6 +103,10 @@
           grep -F "mutual-recursion-certified: true" <<<"$stage_analysis"
           grep -F "bare-recursion-permission-rejected: true" <<<"$stage_analysis"
           grep -F "copied-source-certificate-rejected: true" <<<"$stage_analysis"
+          grep -F "staged-match-certificates: 1" <<<"$stage_analysis"
+          grep -F "bare-residualization-rejected: true" <<<"$stage_analysis"
+          grep -F "certified-residualization-result: comptime(off)" <<<"$stage_analysis"
+          grep -F "copied-residualization-certificate-rejected: true" <<<"$stage_analysis"
           grep -F "mutual-even-dependencies: 1" <<<"$stage_analysis"
           grep -F "mutual-odd-dependencies: 1" <<<"$stage_analysis"
           grep -F "mutual-exact-result: comptime(true)" <<<"$stage_analysis"
@@ -151,6 +155,23 @@
           fi
           grep -F 'did not produce an exact compile-time value' "$bottom_stage_error"
 
+          residualized_stage="$($out/bin/fine stage recover_off \
+            "$src/fine/fixtures/identity-residualized-hidden-field.fine")"
+          grep -F 'result: comptime(off);' <<<"$residualized_stage"
+          explicit_residualized_stage="$($out/bin/fine stage recover_explicit_off \
+            "$src/fine/fixtures/identity-residualized-hidden-field.fine")"
+          grep -F 'result: comptime(off);' <<<"$explicit_residualized_stage"
+          residualized_specialized="$(mktemp)"
+          $out/bin/fine specialize recover_off \
+            "$src/fine/fixtures/identity-residualized-hidden-field.fine" \
+            >"$residualized_specialized"
+          cmp "$src/fine/fixtures/identity-residualized-hidden-field-specialized.fine" \
+            "$residualized_specialized"
+          $out/bin/fine run "$residualized_specialized"
+          specialized_residualized_stage="$($out/bin/fine stage recover_off \
+            "$residualized_specialized")"
+          grep -F 'result: comptime(off);' <<<"$specialized_residualized_stage"
+
           ${pkgs.python3}/bin/python "$src/fine/check_document_examples.py" "$src"
 
           demo_output="$($out/bin/fine run --proof-selector z3 \
@@ -167,6 +188,8 @@
           for source in \
             "$src/fine/fixtures/cst-roundtrip-ugly.fine" \
             "$src/fine/fixtures/identity-coeffect.fine" \
+            "$src/fine/fixtures/identity-residualized-hidden-field.fine" \
+            "$src/fine/fixtures/identity-residualized-hidden-field-specialized.fine" \
             "$src/fine/fixtures/playground-demo.fine" \
             "$src/fine/fixtures/runtime-enum.fine" \
             "$src/fine/fixtures/stage-diagnostic.fine" \

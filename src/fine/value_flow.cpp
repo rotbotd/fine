@@ -46,6 +46,19 @@ namespace fine::stage {
             std::vector<syntax::ValueExpr> result_indices;
         };
 
+        using CertifiedMatchAliases =
+            std::map<syntax::ValueExpr const *,
+                     std::vector<std::pair<std::size_t, syntax::ValueExpr const *>>>;
+
+        bool contains_expression(syntax::ValueExpr const &root, syntax::ValueExpr const *needle) {
+            if (&root == needle)
+                return true;
+            for (auto const &child : root.elements)
+                if (contains_expression(child, needle))
+                    return true;
+            return false;
+        }
+
     }  // namespace
 
     bool CertifiedValueFlowProgram::recursion_certified(std::string const &function) const {
@@ -53,40 +66,18 @@ namespace fine::stage {
         return found != program_.function_sccs().end() && certified_recursive_sccs_.contains(found->second);
     }
 
-    CertifiedValueFlowProgram build_certified_value_flow(syntax::Document const &document,
-                                                          ExecutionResult const &execution) {
-        CertifiedValueFlowProgram result;
-        result.program_ = build_value_flow(document);
-        std::map<std::string, syntax::FunctionDecl const *> declarations;
-        for (auto const &function : document.functions)
-            declarations.emplace(function.name, &function);
-        for (auto const &certificate : execution.value_recursion_certificates) {
-            if (certificate.functions_.empty() ||
-                certificate.functions_.size() != certificate.declarations_.size())
-                throw std::logic_error("malformed value-recursion certificate");
-            std::optional<std::size_t> scc;
-            for (std::size_t i = 0; i < certificate.functions_.size(); ++i) {
-                auto declaration = declarations.find(certificate.functions_[i]);
-                auto flow_scc = result.program_.function_sccs().find(certificate.functions_[i]);
-                if (declaration == declarations.end() || declaration->second != certificate.declarations_[i] ||
-                    flow_scc == result.program_.function_sccs().end())
-                    throw std::logic_error("value-recursion certificate does not belong to this parsed document");
-                if (scc && *scc != flow_scc->second)
-                    throw std::logic_error("value-recursion certificate no longer names one source SCC");
-                scc = flow_scc->second;
-            }
-            std::vector<std::string> certified_names = certificate.functions_;
-            std::sort(certified_names.begin(), certified_names.end());
-            if (!scc || result.program_.sccs().at(*scc).functions != certified_names)
-                throw std::logic_error("value-recursion certificate and value-flow SCC disagree");
-            result.certified_recursive_sccs_.insert(*scc);
-        }
-        return result;
-    }
-
     class ValueFlowBuilder {
     public:
-        explicit ValueFlowBuilder(syntax::Document const &document) : document_(document) {
+        explicit ValueFlowBuilder(syntax::Document const &document, CertifiedMatchAliases certified_aliases = {})
+            : document_(document), certified_aliases_(std::move(certified_aliases)) {
+            for (auto const &certificate : certified_aliases_) {
+                syntax::ValueExpr const *match = certificate.first;
+                bool belongs = false;
+                for (auto const &function : document.functions)
+                    belongs = belongs || contains_expression(function.body, match);
+                if (!belongs)
+                    throw std::logic_error("staged value-match certificate does not belong to this parsed document");
+            }
             for (auto const &enumeration : document.enums) {
                 if (!enums_.insert(enumeration.name).second)
                     throw std::runtime_error("duplicate enum in value-flow input: " + enumeration.name);
@@ -121,6 +112,8 @@ namespace fine::stage {
                 ValueFlowFunction lowered = lower_function(function);
                 result.functions_.emplace(lowered.name(), std::move(lowered));
             }
+            if (consumed_certificates_.size() != certified_aliases_.size())
+                throw std::logic_error("staged value-match certificate does not belong to this parsed document");
             build_sccs(result);
             return result;
         }
@@ -131,6 +124,8 @@ namespace fine::stage {
         std::map<std::string, ConstructorSignature> constructors_;
         std::map<std::string, FunctionSignature> signatures_;
         std::map<std::string, ProofConstructorSignature> proof_constructors_;
+        CertifiedMatchAliases certified_aliases_;
+        std::set<syntax::ValueExpr const *> consumed_certificates_;
 
         struct FunctionState {
             ValueFlowFunction function;
@@ -324,15 +319,43 @@ namespace fine::stage {
                 if (bind_proof_index(constructor.result_indices[i], proof.arguments.at(i), parameters, trial))
                     parameter_bindings = std::move(trial);
             }
+            std::map<std::string, FlowNodeId> resolved_parameters;
+            for (auto const &[parameter, source] : parameter_bindings)
+                resolved_parameters.emplace(parameter, lower(*source, state));
+            if (auto certified = certified_aliases_.find(&expression); certified != certified_aliases_.end()) {
+                if (!consumed_certificates_.insert(&expression).second)
+                    throw std::logic_error("staged value-match certificate was consumed twice");
+                std::vector<std::pair<std::string, std::optional<FlowNodeId>>> saved_parameters;
+                for (auto const &[parameter, source] : resolved_parameters) {
+                    auto old = state.aliases.find(parameter);
+                    saved_parameters.push_back(
+                        {parameter, old == state.aliases.end() ? std::nullopt : std::optional(old->second)});
+                    state.aliases[parameter] = source;
+                }
+                for (auto const &[index, source] : certified->second) {
+                    if (!source || index >= constructor.parameters.size())
+                        throw std::logic_error("malformed staged value-match certificate");
+                    std::string const &parameter = constructor.parameters[index].name;
+                    if (resolved_parameters.contains(parameter))
+                        throw std::logic_error("staged value-match certificate replaces a runtime-indexed field");
+                    resolved_parameters.emplace(parameter, lower(*source, state));
+                }
+                for (auto const &[parameter, old] : saved_parameters) {
+                    if (old)
+                        state.aliases[parameter] = *old;
+                    else
+                        state.aliases.erase(parameter);
+                }
+            }
 
             std::vector<std::pair<std::string, std::optional<FlowNodeId>>> saved;
             for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
                 std::string const &binder = expression.match_binders.front()[i];
                 auto old = state.aliases.find(binder);
                 saved.push_back({binder, old == state.aliases.end() ? std::nullopt : std::optional(old->second)});
-                auto binding = parameter_bindings.find(constructor.parameters[i].name);
-                if (binding != parameter_bindings.end())
-                    state.aliases[binder] = lower(*binding->second, state);
+                auto binding = resolved_parameters.find(constructor.parameters[i].name);
+                if (binding != resolved_parameters.end())
+                    state.aliases[binder] = binding->second;
                 else
                     state.aliases.erase(binder);
             }
@@ -451,6 +474,44 @@ namespace fine::stage {
 
     ValueFlowProgram build_value_flow(syntax::Document const &document) {
         return ValueFlowBuilder(document).build();
+    }
+
+    CertifiedValueFlowProgram build_certified_value_flow(syntax::Document const &document,
+                                                          ExecutionResult const &execution) {
+        CertifiedMatchAliases aliases;
+        for (auto const &certificate : execution.staged_value_match_certificates) {
+            if (!certificate.match_ || certificate.aliases_.empty() ||
+                !aliases.emplace(certificate.match_, certificate.aliases_).second)
+                throw std::logic_error("malformed staged value-match certificate");
+        }
+
+        CertifiedValueFlowProgram result;
+        result.program_ = ValueFlowBuilder(document, std::move(aliases)).build();
+        std::map<std::string, syntax::FunctionDecl const *> declarations;
+        for (auto const &function : document.functions)
+            declarations.emplace(function.name, &function);
+        for (auto const &certificate : execution.value_recursion_certificates) {
+            if (certificate.functions_.empty() ||
+                certificate.functions_.size() != certificate.declarations_.size())
+                throw std::logic_error("malformed value-recursion certificate");
+            std::optional<std::size_t> scc;
+            for (std::size_t i = 0; i < certificate.functions_.size(); ++i) {
+                auto declaration = declarations.find(certificate.functions_[i]);
+                auto flow_scc = result.program_.function_sccs().find(certificate.functions_[i]);
+                if (declaration == declarations.end() || declaration->second != certificate.declarations_[i] ||
+                    flow_scc == result.program_.function_sccs().end())
+                    throw std::logic_error("value-recursion certificate does not belong to this parsed document");
+                if (scc && *scc != flow_scc->second)
+                    throw std::logic_error("value-recursion certificate no longer names one source SCC");
+                scc = flow_scc->second;
+            }
+            std::vector<std::string> certified_names = certificate.functions_;
+            std::sort(certified_names.begin(), certified_names.end());
+            if (!scc || result.program_.sccs().at(*scc).functions != certified_names)
+                throw std::logic_error("value-recursion certificate and value-flow SCC disagree");
+            result.certified_recursive_sccs_.insert(*scc);
+        }
+        return result;
     }
 
 }  // namespace fine::stage

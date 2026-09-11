@@ -81,6 +81,11 @@
 - `stage-diagnostic-specialized.fine` is the exact `fine specialize` output.
   Only the wrapper expression becomes `true`; comments on both sides survive,
   and the entire document reparses, verifies, and stages to the same value.
+- `identity-residualized-hidden-field-specialized.fine` is the certified staging
+  control for erased constructor fields. The original coeffect and explicit
+  identity-proof routes both stage to `off`; specializing the former replaces
+  only its proof match and retains the adjacent comments. Constructor parameters
+  and arm binders use different spellings to reject name-based substitution.
 - `identity-holes.fine` gives a typed identity hole a bounded finite
   grammar. The first hole forms `refl(x)`; the second selects exact local proof
   `self`; an earlier proof of `Id(Int, y, y)` is excluded before enumeration.

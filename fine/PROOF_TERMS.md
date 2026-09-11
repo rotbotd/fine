@@ -332,6 +332,15 @@ each arm. An equation between two erased hidden fields does not help: neither
 endpoint supplies a runtime expression, so the rejecting control remains
 outside the rule.
 
+That substitution is also the only route by which certified staging may lower
+the erased binder. During ordinary function-body checking Fine retains an
+opaque certificate from the exact proof match and constructor-parameter
+position to the already accepted replacement source expression. Bare flow
+lowering cannot reproduce the rule from syntax, and even a byte-identical
+reparse cannot reuse the old certificate. The public `recover_off` and
+explicit-proof wrapper controls both stage to `comptime(off)` through this
+handoff.
+
 Rainfall retains every constructor's exact feasibility condition before closing
 the staged match. A hidden-field substitution separately names the constructor,
 field, branch binder, identity demand, and replacement source while asserting

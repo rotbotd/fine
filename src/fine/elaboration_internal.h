@@ -455,7 +455,6 @@ namespace fine::elaboration {
             return coeffects_resolved_;
         }
         std::vector<std::string> runtime_kind_names() const;
-
         z3::sort sort(ValueKind const &kind);
         void require_known_type(syntax::ValueType const &type);
         void declare_enum(syntax::EnumDecl const &declaration);
@@ -539,6 +538,9 @@ namespace fine::elaboration {
         std::size_t coeffects_resolved() const {
             return coeffects_resolved_;
         }
+        std::vector<StagedValueMatchCertificate> const &staged_value_match_certificates() const {
+            return staged_value_match_certificates_;
+        }
         SemanticProofType elaborate_proof_type(syntax::ProofType const &type, ValueEnvironment const &values,
                                                ProofEnvironment const &proofs,
                                                std::vector<std::string> const &proof_order,
@@ -579,6 +581,7 @@ namespace fine::elaboration {
         std::size_t holes_filled_ = 0;
         std::size_t holes_checkpointed_ = 0;
         std::size_t coeffects_resolved_ = 0;
+        std::vector<StagedValueMatchCertificate> staged_value_match_certificates_;
 
         z3::expr inductive_head_cover(InductiveType const &type, std::string const &evidence_name);
         std::vector<z3::expr> constructor_identity_constraints(syntax::ProofConstructorDecl const &constructor,

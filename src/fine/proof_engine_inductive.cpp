@@ -579,6 +579,7 @@ namespace fine::elaboration {
             ValueTerm value;
             std::string source;
             std::string identity_demand;
+            syntax::ValueExpr const *source_expression;
             std::size_t source_node;
             syntax::SourceSpan source_span;
         };
@@ -611,7 +612,7 @@ namespace fine::elaboration {
             if (found == residualized_fields.end()) {
                 residualized_fields.emplace(field.name,
                                             ResidualizedField{std::move(value), print_value(replacement),
-                                                              identity_demand, replacement.node_id,
+                                                              identity_demand, &replacement, replacement.node_id,
                                                               replacement.span});
                 return;
             }
@@ -637,6 +638,7 @@ namespace fine::elaboration {
         std::vector<z3::expr> branch_absorbed = absorbed;
         std::set<std::string> arm_names;
         std::vector<std::string> used_residualized_fields;
+        std::vector<std::pair<std::size_t, syntax::ValueExpr const *>> staged_aliases;
         syntax::ValueExpr const &body = expression.elements.at(1);
         for (std::size_t i = 0; i < constructor.parameters.size(); ++i) {
             auto const &parameter = constructor.parameters[i];
@@ -655,6 +657,7 @@ namespace fine::elaboration {
             branch_values.emplace(binder, branch_value);
             if (used && residualized != residualized_fields.end()) {
                 used_residualized_fields.push_back(binder);
+                staged_aliases.emplace_back(i, residualized->second.source_expression);
                 if (rainfall_) {
                     std::string replacement_source = rainfall_->source_node(
                         residualized->second.source_node, residualized->second.source_span, "value.expression");
@@ -674,6 +677,13 @@ namespace fine::elaboration {
                          RainfallRecorder::boolean_field("solver_model_used", false)});
                 }
             }
+        }
+        if (!staged_aliases.empty()) {
+            for (auto const &certificate : staged_value_match_certificates_)
+                if (certificate.match_ == &expression)
+                    throw std::logic_error("duplicate staged value-match certificate");
+            staged_value_match_certificates_.push_back(
+                StagedValueMatchCertificate(&expression, std::move(staged_aliases)));
         }
 
         ProofEnvironment constructor_proofs;

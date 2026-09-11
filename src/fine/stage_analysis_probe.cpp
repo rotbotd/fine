@@ -290,6 +290,51 @@ function four_even() -> Bool { even(succ(succ(succ(succ(zero))))) }
             copied_source_rejected = true;
         }
         output << "copied-source-certificate-rejected: " << (copied_source_rejected ? "true" : "false") << '\n';
+
+        constexpr std::string_view residualized_source = R"fine(
+enum Flag { off, on }
+proof inductive HiddenOff() {
+  hidden_off(candidate: Flag)
+    takes [is_off: Id(Flag, candidate, off)]
+    -> HiddenOff();
+}
+function recover() -> Flag
+  takes [evidence: HiddenOff()]
+  ensures { result == off; }
+{
+  match evidence { hidden_off(candidate) => candidate, }
+}
+)fine";
+        syntax::ConcreteSyntaxTree residualized_tree = syntax::parse_tree(residualized_source);
+        std::ostringstream residualized_output;
+        ExecutionResult residualized_execution = execute(residualized_tree.ast, residualized_output);
+        output << "staged-match-certificates: "
+               << residualized_execution.staged_value_match_certificates.size() << '\n';
+        bool bare_residualization_rejected = false;
+        try {
+            (void)build_value_flow(residualized_tree.ast);
+        }
+        catch (std::runtime_error const &) {
+            bare_residualization_rejected = true;
+        }
+        output << "bare-residualization-rejected: " << (bare_residualization_rejected ? "true" : "false") << '\n';
+        CertifiedValueFlowProgram certified_residualized =
+            build_certified_value_flow(residualized_tree.ast, residualized_execution);
+        StageAnalysisResult residualized_analysis = cache.analyze(certified_residualized);
+        StageEvaluation residualized_evaluation =
+            evaluate_certified_stage_function(residualized_analysis, "recover", {});
+        output << "certified-residualization-result: " << render_stage_value(residualized_evaluation.result) << '\n';
+        bool copied_residualization_rejected = false;
+        try {
+            syntax::ConcreteSyntaxTree copied_tree = syntax::parse_tree(residualized_source);
+            (void)build_certified_value_flow(copied_tree.ast, residualized_execution);
+        }
+        catch (std::logic_error const &) {
+            copied_residualization_rejected = true;
+        }
+        output << "copied-residualization-certificate-rejected: "
+               << (copied_residualization_rejected ? "true" : "false") << '\n';
+
         output << "mutual-even-dependencies: " << bits(mutual_result.functions.at("even").result_parameters) << '\n';
         output << "mutual-odd-dependencies: " << bits(mutual_result.functions.at("odd").result_parameters) << '\n';
         FlowType nat_type{syntax::ValueType::Kind::enumeration, "Nat"};

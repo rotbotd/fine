@@ -44,6 +44,7 @@ namespace fine::elaboration {
         for (auto const &group : definition_groups)
             if (auto certificate = values_.declare_function_group(group))
                 result_.value_recursion_certificates.push_back(std::move(*certificate));
+        result_.staged_value_match_certificates = proofs_.staged_value_match_certificates();
         for (auto const &function : document.functions)
             values_.verify_function(function);
         if (document.run)

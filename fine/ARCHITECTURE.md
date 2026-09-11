@@ -515,6 +515,19 @@ The impossible `eliminate_never()` wrapper produces staging bottom and is
 rejected. This remains compile-time source reduction in the current pure value
 language, not a runtime code generator.
 
+Proof-field residualization crosses into that flow graph only through an opaque
+`StagedValueMatchCertificate` produced while `ValueElaborator` is checking the
+ordinary function body. `ProofEngine` supplies the constructor-parameter
+position and the exact source expression already accepted as its replacement;
+it never exports a Z3 value or erased proof field. Certified flow lowering binds
+the corresponding source arm binder to that expression. A bare
+`build_value_flow` therefore still rejects the hidden binder, and a certificate
+whose match-expression pointer is not contained in the exact parsed function
+body fails before lowering. This keeps staging from becoming a second,
+independent implementation of proof-elimination semantics. The fixture gives
+constructor parameters and arm binders different names, so this handoff is
+positional rather than accidental name capture.
+
 The checked native-Z3 probe in
 `research/value-recursion-z3-probe.cpp` fixes the likely non-inlining boundary.
 `recfun`/`recdef` evaluates a structural `Nat` size function at a ground term and

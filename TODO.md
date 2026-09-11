@@ -162,6 +162,28 @@ specialized document verifies and stages to the same exact value with zero match
 edges. Specializing the bottom result of `eliminate_never()` fails without
 emitting source. General runtime code generation remains absent.
 
+## Closed: certified hidden-field staging handoff
+
+- [x] When ordinary function-body elaboration residualizes a used erased proof
+      field from a direct identity demand, mint an opaque certificate binding
+      that exact match expression and constructor-parameter position to the
+      exact replacement source expression; constructor and arm binder spellings
+      deliberately differ in the discriminator.
+- [x] Let only certified value-flow lowering consume that substitution. Bare
+      flow lowering must fail rather than independently reconstructing proof
+      semantics, and the certificate must reject a byte-identical reparsed AST.
+- [x] Cross both constructor shapes into public staging: a `takes` identity
+      demand and an explicit identity proof parameter each stage to the exact
+      enum constructor, and specialization preserves comments around the proof
+      match it replaces.
+
+Exit test: `recover_off` and the explicit-proof wrapper
+`recover_explicit_off` both stage to `comptime(off)`. Bare flow lowering still
+reports the erased binder as unavailable; certified lowering succeeds, while
+reusing that certificate with a copied parse fails. Specializing `recover_off`
+emits `off`, reparses, verifies, and stages again without losing either adjacent
+comment.
+
 ## Closed: honest top-level declaration surface
 
 - [x] Parse enums, proof families, value functions, and proof functions in any

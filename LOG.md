@@ -7739,3 +7739,84 @@ artifacts: native
 Wasm `/nix/store/ij1h61if3jqx352g09yh7y08hp23zj0x-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/088s9dgaqz06xpw74p7w0hzxbmkakrfs-fine-playground-0.1.0`.
+
+## 2026-09-11 — certified hidden-field staging handoff
+
+The first source specialization exposed a real mismatch at the proof/value
+boundary. This accepted function:
+
+```
+function recover_off() -> Flag
+  takes [evidence: HiddenOff()]
+{
+  match evidence {
+    hidden_off(candidate) => candidate,
+  }
+}
+```
+
+already had exact ordinary semantics. `HiddenOff`'s constructor demands
+`Id(Flag, candidate, off)`, so body elaboration residualizes the erased
+`candidate` binder to the source constructor `off`. Detached value-flow lowering
+knew only the constructor result indices, saw no runtime source for `candidate`,
+and failed with the low-level diagnostic `unresolved value-flow name: candidate`.
+Reimplementing the identity-residualization rule in staging would create a second
+proof checker and let the two decisions drift.
+
+The repair has three exact owners. `ProofEngine`, while elaborating value
+function bodies, now mints an opaque `StagedValueMatchCertificate` for each used
+residualized binder. It retains the exact proof-match expression pointer, the
+constructor parameter position, and the exact source expression which ordinary
+elaboration already accepted as the replacement. It contains no Z3 value, model,
+or runtime proof field. `DocumentRunner` copies only the certificates accumulated
+through the definition phase into `ExecutionResult`; later guarantee or run
+expressions cannot accidentally become function-flow permissions.
+
+`build_certified_value_flow` consumes those substitutions while binding the
+source arm. Bare `build_value_flow` has no access and continues to reject the
+erased name rather than rediscovering proof semantics. The builder first requires
+every certified match pointer to occur in an exact function-body tree and then
+requires every certificate to be consumed once. Passing execution results to a
+byte-identical reparse therefore fails before lowering, just as the recursion
+certificate does. A certificate may not overwrite a field already recovered
+from a runtime family index.
+
+The public discriminator extends
+`identity-residualized-hidden-field.fine`. `recover_off` covers a constructor
+`takes` identity demand, while the new nullary `recover_explicit_off` crosses the
+existing explicit identity-proof parameter through a call. Both now report
+`comptime(off)`. Their arm binders deliberately have different names from the
+constructor parameters, proving that the certificate is positional rather than
+working through accidental capture. `fine specialize recover_off` replaces the proof match with
+`off`; the checked specialized fixture retains a comment immediately before the
+match and another immediately after it, then reparses, verifies, and restages to
+the same exact enum value. The stage-analysis probe separately checks one
+certificate, rejection by bare flow, successful certified evaluation, and
+rejection by a copied parse.
+
+Exact checks:
+
+```
+cmake --build .build -j2
+.build/fine stage-analysis-probe
+.build/fine run fine/fixtures/identity-residualized-hidden-field.fine
+.build/fine rain fine/fixtures/identity-residualized-hidden-field.fine > "$rain"
+python3 fine/rainfall_replay.py fine/fixtures/identity-residualized-hidden-field.fine "$rain"
+.build/fine stage recover_off fine/fixtures/identity-residualized-hidden-field.fine
+.build/fine stage recover_explicit_off fine/fixtures/identity-residualized-hidden-field.fine
+.build/fine specialize recover_off fine/fixtures/identity-residualized-hidden-field.fine > "$specialized"
+cmp fine/fixtures/identity-residualized-hidden-field-specialized.fine "$specialized"
+.build/fine run "$specialized"
+.build/fine stage recover_off "$specialized"
+python3 fine/check_document_examples.py .
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All passed. Clean artifacts: native
+`/nix/store/sfsi3p7vz2822rr6zma8pikcxb27hybz-fine-0.1.0`, ordinary Wasm
+`/nix/store/5dljrdgaz3afm7lfa39n8q0lw55c52mx-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/qhw76zg1qqgrqg77w1fcmr9xpl1z99qi-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/dkfpf3sh3456s7kgjfdrcdhbdivvjzdf-fine-playground-0.1.0`.

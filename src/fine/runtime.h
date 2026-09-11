@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace fine {
@@ -15,6 +16,7 @@ namespace fine {
     class LiveLiftPipeline;
     struct ExecutionResult;
     namespace elaboration {
+        class ProofEngine;
         class ValueElaborator;
     }
     namespace stage {
@@ -79,9 +81,28 @@ namespace fine {
         std::size_t idempotent_loops_ = 0;
     };
 
+    // Exact source-owned substitutions selected while a value function body
+    // eliminates static proof evidence. Certified staging may consume these;
+    // detached flow lowering may not rediscover an erased field on its own.
+    class StagedValueMatchCertificate {
+    private:
+        friend class elaboration::ProofEngine;
+        friend stage::CertifiedValueFlowProgram
+        stage::build_certified_value_flow(syntax::Document const &, ExecutionResult const &);
+
+        StagedValueMatchCertificate(
+            syntax::ValueExpr const *match,
+            std::vector<std::pair<std::size_t, syntax::ValueExpr const *>> aliases)
+            : match_(match), aliases_(std::move(aliases)) {}
+
+        syntax::ValueExpr const *match_ = nullptr;
+        std::vector<std::pair<std::size_t, syntax::ValueExpr const *>> aliases_;
+    };
+
     struct ExecutionResult {
         std::vector<Materialization> materializations;
         std::vector<ValueRecursionCertificate> value_recursion_certificates;
+        std::vector<StagedValueMatchCertificate> staged_value_match_certificates;
         std::size_t functions_verified = 0;
         std::size_t proof_functions_verified = 0;
         std::size_t proofs_formed = 0;

@@ -182,6 +182,12 @@ document. The exact result must survive that round trip. Output is the complete
 specialized source on stdout. `bottom` and `runtime` results are rejected rather
 than being turned into plausible-looking code.
 
+If the wrapper reaches a value-level proof match whose erased field was fixed by
+a constructor identity demand, staging uses the exact substitution certified by
+ordinary body elaboration. It does not infer that substitution again from the
+proof declaration. The certificate is bound to that parsed match expression;
+detached flow lowering and a byte-identical reparse cannot reuse it.
+
 ## Search and checkpoints
 
 An ordinary proof hole is closed only by a complete typed candidate. `fine

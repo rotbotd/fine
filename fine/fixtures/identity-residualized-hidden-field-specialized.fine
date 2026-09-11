@@ -41,9 +41,7 @@ function recover_off() -> Flag
   }
 {
   // This hidden field is fixed by the constructor's identity demand.
-  match evidence {
-    hidden_off(candidate) => candidate,
-  } // Specialization must retain this trailing comment.
+  off // Specialization must retain this trailing comment.
 }
 
 function recover_explicit_hidden(value: Flag) -> Flag
