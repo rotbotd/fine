@@ -523,6 +523,14 @@ reverified, and staged again; its result and recursion-block bit under the same
 runtime-input abstraction must equal the original. The checked fixtures retain
 comments immediately beside replaced expressions, proving the operation is a
 CST edit rather than a pretty-printer.
+
+A match edge also refines the scrutinized local itself, not merely the new field
+binders. While lowering an arm transfer, Fine replaces a parameter or enclosing
+arm local used as the scrutinee with that arm's constructor applied to the fresh
+field terms. Reusing the original local in the arm therefore sees the constructor
+fact established by control flow, and a nested match can discard unreachable
+arms without asking Z3. `branch_refinement(value, fallback)` remains runtime as
+a whole, while its `zero` arm reduces `value == zero` to `true`.
 The impossible `eliminate_never()` wrapper produces staging bottom and is
 rejected. `--output OUTPUT` makes this an exact file boundary for the browser:
 the file is written only after the whole validation succeeds. This remains

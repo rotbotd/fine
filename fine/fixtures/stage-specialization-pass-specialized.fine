@@ -16,3 +16,10 @@ function simplify_inside(value: Nat) -> Nat {
     succ(previous) => succ(previous),
   }
 }
+
+function branch_refinement(value: Nat, fallback: Bool) -> Bool {
+  match value {
+    zero => true, // The arm itself establishes this constructor fact.
+    succ(previous) => fallback,
+  }
+}

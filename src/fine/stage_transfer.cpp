@@ -217,13 +217,24 @@ namespace fine::stage {
                     transfer_arm.source_arm = source_arm;
                     transfer_arm.binders = arm.binders;
                     transfer_arm.binder_types = arm.binder_types;
+                    std::vector<TermPtr> refined_fields;
                     for (std::size_t i = 0; i < arm.binders.size(); ++i) {
                         Term bound;
                         bound.kind = Term::Kind::bound;
                         bound.type = arm.binder_types[i];
                         bound.local = arm.binders[i];
-                        arm_locals[arm.binders[i]] = make_term(std::move(bound));
+                        TermPtr field = make_term(std::move(bound));
+                        arm_locals[arm.binders[i]] = field;
+                        refined_fields.push_back(std::move(field));
                     }
+                    // Reusing a scrutinized local inside its arm must see the
+                    // constructor fact established by that edge. Keeping the
+                    // refinement in the transfer environment also makes nested
+                    // matches select only reachable arms.
+                    TermPtr const &scrutinee = match.inputs.front();
+                    if (scrutinee->kind == Term::Kind::parameter || scrutinee->kind == Term::Kind::bound)
+                        arm_locals[scrutinee->local] =
+                            make_constructor(scrutinee->type, arm.constructor, std::move(refined_fields));
                     transfer_arm.body = lower(function, arm.body, arm_locals);
                     match.arms.push_back(std::move(transfer_arm));
                 }

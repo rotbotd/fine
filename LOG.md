@@ -8426,3 +8426,41 @@ pthread Wasm
 `/nix/store/x4wp281ndsa56cbdh96ahv4ic4s5zf2p-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/szzxapli0apd1c95rgap0n7shnvy9r5s-fine-playground-0.1.0`.
+
+## 2026-09-11 — match edges refine the scrutinized local
+
+The expression-level specialization pass exposed one missing SCCP fact. Match
+transfer evaluation bound constructor fields inside each arm, but a second use
+of the original scrutinee still read the unrefined runtime parameter. Thus an arm
+selected by `zero` could not reduce `value == zero` even though that equality was
+established by the edge itself.
+
+Transfer construction now replaces a parameter or enclosing arm-local scrutinee
+with the selected constructor applied to that arm's bound field terms while it
+lowers the arm body. Nullary constructors become exact; constructors with runtime
+fields retain a known tag and abstract fields. This is a lexical transfer
+refinement, not a global assumption, and it also lets a nested match on the same
+local discard unreachable constructors.
+
+`stage-specialization-pass.fine` adds
+`branch_refinement(value, fallback)`. Its result remains runtime because the
+successor arm returns unknown `fallback`, but the zero arm's `value == zero`
+reduces to `true`. The two checked specialization invocations are sequential:
+the first reduces the independent predecessor call, the second reduces the
+branch-local equality, and their final source must equal one fixture exactly.
+The comments beside both islands survive.
+
+Local validation:
+
+```
+cmake --build .build --target fine-bin -j2
+first=$(mktemp); second=$(mktemp)
+.build/fine specialize simplify_inside \
+  fine/fixtures/stage-specialization-pass.fine >"$first"
+.build/fine specialize branch_refinement "$first" >"$second"
+cmp fine/fixtures/stage-specialization-pass-specialized.fine "$second"
+.build/fine run "$second"
+git diff --check
+```
+
+The exact comparison and specialized-document execution pass.

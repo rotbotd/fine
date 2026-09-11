@@ -149,9 +149,15 @@
           stage_pass_specialized="$(mktemp)"
           $out/bin/fine specialize simplify_inside \
             "$src/fine/fixtures/stage-specialization-pass.fine" >"$stage_pass_specialized"
-          cmp "$src/fine/fixtures/stage-specialization-pass-specialized.fine" \
-            "$stage_pass_specialized"
           $out/bin/fine run "$stage_pass_specialized"
+
+          branch_refinement_specialized="$(mktemp)"
+          $out/bin/fine specialize branch_refinement \
+            "$stage_pass_specialized" \
+            >"$branch_refinement_specialized"
+          cmp "$src/fine/fixtures/stage-specialization-pass-specialized.fine" \
+            "$branch_refinement_specialized"
+          $out/bin/fine run "$branch_refinement_specialized"
 
           bottom_stage_error="$(mktemp)"
           if $out/bin/fine specialize eliminate_never \

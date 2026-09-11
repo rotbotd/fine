@@ -32,7 +32,9 @@ callers synthesize or supply the evidence.
       one constant to another.
 - [x] Track executable control-flow edges together with values, as in SCCP, so a
       dead runtime arm cannot contaminate a compile-time result and phi-like
-      joins inspect only live predecessors.
+      joins inspect only live predecessors. Refine a scrutinized parameter or
+      enclosing arm local to the selected constructor inside each arm, so reuse
+      of that local and nested matches consume the fact carried by the edge.
 - [x] Cache an immutable exact abstract transfer for every function. Calls
       compose cached callee transfers without re-lowering source; strict
       arguments, live match edges, and recursive-call blocks remain observable.
@@ -189,7 +191,9 @@ emitting source. General runtime code generation remains absent.
 
 Exit test: `simplify_inside(value)` remains runtime as a whole, but its zero arm
 reduces `predecessor(succ(zero))` to `zero` while preserving the adjacent comment
-and leaving the runtime-dependent successor arm unchanged.
+and leaving the runtime-dependent successor arm unchanged. A second pass over
+`branch_refinement(value, fallback)` reduces `value == zero` only in the `zero`
+arm, while the sibling still returns the unknown `fallback`.
 
 ## Closed: atomic browser source specialization
 
