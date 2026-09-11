@@ -524,6 +524,13 @@ the file is written only after the whole validation succeeds. This remains
 compile-time source reduction in the current pure value language, not a runtime
 code generator.
 
+The browser and its ordinary Wasm smoke share one `specializeDocument` module
+for this boundary. That module owns input creation, the exact CLI argument
+order, successful output reading, rejection of any output produced after a
+failed check, and cleanup of both MEMFS paths. The page alone owns the later
+CodeMirror transaction, so a nonzero CLI result cannot accidentally flow into
+an edit while a test exercises only a nearby hand-written command sequence.
+
 Proof-field residualization crosses into that flow graph only through an opaque
 `StagedValueMatchCertificate` produced while `ValueElaborator` is checking the
 ordinary function body. `ProofEngine` supplies the constructor-parameter

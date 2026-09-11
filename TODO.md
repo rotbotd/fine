@@ -181,7 +181,9 @@ without creating its requested MEMFS output. The served-page smoke requires the
 name input, action, failure branch, and atomic-edit path. The public demo also
 ships and preselects the checked nullary wrapper `zero_from_one`; specializing
 the untouched default emits its exact companion fixture rather than immediately
-failing for lack of a target.
+failing for lack of a target. The page and smoke import the same MEMFS command
+module, so argument ordering, failed-output rejection, and cleanup are not
+duplicated test logic.
 
 ## Closed: certified hidden-field staging handoff
 

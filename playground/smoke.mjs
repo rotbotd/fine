@@ -6,6 +6,7 @@ import { EditorState } from "@codemirror/state";
 import { replaceDocument, terminateAndReplace } from "./atomic-edit.js";
 import { runCheckpointEpoch } from "./checkpoint-epoch.js";
 import { selectedProofHoles } from "./rainfall.js";
+import { specializeDocument } from "./specialize-source.js";
 
 const root = path.resolve(process.argv[2]);
 const samplePath = path.resolve(process.argv[3] ?? path.join(root, "sample.fine"));
@@ -32,6 +33,21 @@ const fine = await createFine({
     stderr.push(line);
   },
 });
+
+function invoke(args) {
+  stdout.length = 0;
+  stderr.length = 0;
+  let invokeCode = 0;
+  try {
+    invokeCode = fine.callMain(args) ?? 0;
+  } catch (error) {
+    if (typeof error?.status === "number")
+      invokeCode = error.status;
+    else
+      throw error;
+  }
+  return { code: invokeCode, stdout: [...stdout], stderr: [...stderr] };
+}
 
 const source = await import("node:fs/promises").then((fs) => fs.readFile(samplePath, "utf8"));
 fine.FS.writeFile("/smoke.fine", source);
@@ -162,25 +178,19 @@ if (definitionsPath) {
 }
 
 if (specializePath && expectedSpecializedPath) {
-  stdout.length = 0;
-  stderr.length = 0;
   const original = await readFile(specializePath, "utf8");
   const expected = await readFile(expectedSpecializedPath, "utf8");
-  fine.FS.writeFile("/specialize.fine", original);
-  try {
-    code = fine.callMain([
-      "specialize", "recover_one", "--output", "/specialized.fine", "/specialize.fine",
-    ]) ?? 0;
-  } catch (error) {
-    if (typeof error?.status === "number")
-      code = error.status;
-    else
-      throw error;
-  }
-  if (code !== 0)
-    throw new Error(`Fine specialize exited ${code}: ${stderr.join("\n")}`);
-  const specialized = fine.FS.readFile("/specialized.fine", { encoding: "utf8" });
-  if (specialized !== expected)
+  const specialization = specializeDocument(fine, invoke, {
+    source: original,
+    functionName: "recover_one",
+    inputPath: "/specialize.fine",
+    outputPath: "/specialized.fine",
+  });
+  if (specialization.completed.code !== 0)
+    throw new Error(
+      `Fine specialize exited ${specialization.completed.code}: ${specialization.completed.stderr.join("\n")}`,
+    );
+  if (specialization.source !== expected)
     throw new Error("Wasm specialization did not preserve the exact expected concrete source");
 
   let state = EditorState.create({ doc: original, extensions: [history()] });
@@ -194,7 +204,7 @@ if (specializePath && expectedSpecializedPath) {
   };
   view.dispatch({ changes: { from: state.doc.length, insert: "// unsaved prior edit" } });
   const beforeSpecialization = state.doc.toString();
-  if (!replaceDocument(view, specialized) || state.doc.toString() !== expected)
+  if (!replaceDocument(view, specialization.source) || state.doc.toString() !== expected)
     throw new Error("atomic editor replacement did not install the specialized source");
   if (!undo(view) || state.doc.toString() !== beforeSpecialization)
     throw new Error("one undo did not restore the exact pre-specialization bytes");
@@ -202,51 +212,31 @@ if (specializePath && expectedSpecializedPath) {
     throw new Error("specialization merged with prior editor history or created extra transactions");
 
   if (expectedDefaultSpecializedPath) {
-    stdout.length = 0;
-    stderr.length = 0;
-    fine.FS.writeFile("/default-specialize.fine", source);
-    try {
-      code = fine.callMain([
-        "specialize", "zero_from_one", "--output", "/default-specialized.fine",
-        "/default-specialize.fine",
-      ]) ?? 0;
-    } catch (error) {
-      if (typeof error?.status === "number")
-        code = error.status;
-      else
-        throw error;
-    }
-    if (code !== 0)
-      throw new Error(`default Fine specialization exited ${code}: ${stderr.join("\n")}`);
-    const defaultSpecialized = fine.FS.readFile("/default-specialized.fine", { encoding: "utf8" });
-    if (defaultSpecialized !== await readFile(expectedDefaultSpecializedPath, "utf8"))
+    const defaultSpecialization = specializeDocument(fine, invoke, {
+      source,
+      functionName: "zero_from_one",
+      inputPath: "/default-specialize.fine",
+      outputPath: "/default-specialized.fine",
+    });
+    if (defaultSpecialization.completed.code !== 0)
+      throw new Error(
+        `default Fine specialization exited ${defaultSpecialization.completed.code}: ${defaultSpecialization.completed.stderr.join("\n")}`,
+      );
+    if (defaultSpecialization.source !== await readFile(expectedDefaultSpecializedPath, "utf8"))
       throw new Error("untouched playground source did not produce its exact default specialization");
   }
 
-  stdout.length = 0;
-  stderr.length = 0;
-  try {
-    code = fine.callMain([
-      "specialize", "missing_wrapper", "--output", "/failed-specialized.fine", "/specialize.fine",
-    ]) ?? 0;
-  } catch (error) {
-    if (typeof error?.status === "number")
-      code = error.status;
-    else
-      throw error;
-  }
-  if (code === 0)
+  const failedSpecialization = specializeDocument(fine, invoke, {
+    source: original,
+    functionName: "missing_wrapper",
+    inputPath: "/failed-specialize.fine",
+    outputPath: "/failed-specialized.fine",
+  });
+  if (failedSpecialization.completed.code === 0 || failedSpecialization.source !== null)
     throw new Error("missing specialization target unexpectedly succeeded");
   // Emscripten mirrors the expected CLI failure into Node's eventual process
   // status even though callMain returned control to this multi-call smoke.
   process.exitCode = 0;
-  try {
-    fine.FS.readFile("/failed-specialized.fine");
-    throw new Error("failed specialization created source output");
-  } catch (error) {
-    if (error.message === "failed specialization created source output")
-      throw error;
-  }
 }
 
 console.log(`wasm smoke passed with ${events.length} Rainfall events, atomic materialization/specialization, and paired checkpoint epochs`);

@@ -7972,3 +7972,47 @@ All passed. Clean artifacts: native
 Wasm `/nix/store/44s1a810b6j5hghqs8zcy8z4ykibh4mc-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/gr1hdjay6s4dwd7kg3jx0k6x55jm6csn-fine-playground-0.1.0`.
+
+## 2026-09-11 — browser specialization smoke uses the browser command
+
+The first browser specialization smoke invoked the right Wasm CLI command and
+exercised the same atomic editor primitive, but it duplicated the application's
+MEMFS orchestration. A future argument-order or cleanup regression in `app.js`
+could therefore pass while the button failed.
+
+`playground/specialize-source.js` now owns that complete boundary. It creates the
+input file, invokes `specialize NAME --output OUTPUT INPUT`, returns source only
+on a zero exit, rejects the invariant violation of an output path appearing after
+a failed check, and removes both MEMFS paths. `app.js` calls this module and only
+then passes successful bytes to CodeMirror. The ordinary Wasm smoke imports the
+same module for the composed nested residualization, the untouched public
+default, and the missing-wrapper failure. This is still not DOM automation; it
+covers the exact command path beneath the button rather than checking a nearby
+copy.
+
+Checks:
+
+```
+node playground/smoke.mjs \
+  /nix/store/431dym8a1vl4kli09lmql495i5wczfjl-fine-playground-wasm-0.1.0 \
+  fine/fixtures/playground-demo.fine \
+  fine/fixtures/cst-roundtrip-ugly.fine \
+  fine/fixtures/cst-roundtrip-ugly-materialized.fine \
+  fine/fixtures/identity-checkpoint.fine \
+  fine/fixtures/identity-checkpoint-materialized.fine \
+  fine/fixtures/identity-checkpoint-complete.fine \
+  fine/fixtures/top-level-declarations.fine \
+  fine/fixtures/staged-residualized-expression.fine \
+  fine/fixtures/staged-residualized-expression-specialized.fine \
+  fine/fixtures/playground-demo-specialized.fine
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#default .#playground-wasm \
+  .#playground-wasm-pthreads .#playground
+```
+
+All passed. Clean artifacts: native
+`/nix/store/b7qsvzry9wfxvmlpyhcvr020p7m399wh-fine-0.1.0`, ordinary Wasm
+`/nix/store/431dym8a1vl4kli09lmql495i5wczfjl-fine-playground-wasm-0.1.0`, pthread
+Wasm `/nix/store/44s1a810b6j5hghqs8zcy8z4ykibh4mc-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/hyc59dzn8nmrd572brfddp0l4saz0csy-fine-playground-0.1.0`.

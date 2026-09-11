@@ -118,6 +118,7 @@ try {
       || !bundleText.includes("Atomics"))
     throw new Error("application bundle omits live mailbox source validation");
   if (!bundleText.includes("specialization failed") || !bundleText.includes("-specialized.fine")
+      || !bundleText.includes("Fine specialization produced source after a failed check")
       || !bundleText.includes("one undoable editor transaction"))
     throw new Error("application bundle omits atomic named source specialization");
   if (!reference.includes("two distinct IH edges"))

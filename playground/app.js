@@ -5,6 +5,7 @@ import { tags } from "@lezer/highlight";
 import { compressedWasm, createFine, ordinaryWasm, pthreadCapable } from "./generated-assets.js";
 import { replaceDocument, terminateAndReplace } from "./atomic-edit.js";
 import { selectedProofHoles } from "./rainfall.js";
+import { specializeDocument } from "./specialize-source.js";
 
 const sourceHost = document.querySelector("#source");
 const run = document.querySelector("#run");
@@ -315,11 +316,14 @@ async function specializeSource() {
 
   const inputPath = `/playground-${nextInput++}.fine`;
   const outputPath = `/playground-${nextInput++}-specialized.fine`;
-  fine.FS.writeFile(inputPath, editor.state.doc.toString());
   try {
-    const completed = invoke([
-      "specialize", functionName, "--output", outputPath, inputPath,
-    ]);
+    const specialized = specializeDocument(fine, invoke, {
+      source: editor.state.doc.toString(),
+      functionName,
+      inputPath,
+      outputPath,
+    });
+    const { completed } = specialized;
     if (completed.code !== 0) {
       result.textContent = [...completed.stdout, ...completed.stderr].join("\n")
         || `(exit ${completed.code})`;
@@ -327,8 +331,7 @@ async function specializeSource() {
       return;
     }
 
-    const source = fine.FS.readFile(outputPath, { encoding: "utf8" });
-    const changed = replaceDocument(editor, source);
+    const changed = replaceDocument(editor, specialized.source);
     result.textContent = changed
       ? `${functionName} specialized\nbody replacement committed as one undoable editor transaction`
       : `${functionName} already contains its exact staged result`;
@@ -337,12 +340,6 @@ async function specializeSource() {
     result.textContent = error?.stack ?? String(error);
     status.textContent = "specialization crashed";
   } finally {
-    fine.FS.unlink(inputPath);
-    try {
-      fine.FS.unlink(outputPath);
-    } catch {
-      // A failed specialization does not create or edit source.
-    }
     run.disabled = false;
     materialize.disabled = false;
     specialize.disabled = false;
