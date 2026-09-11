@@ -142,6 +142,13 @@ namespace fine::stage {
 
         FlowNodeId lower(syntax::ValueExpr const &expression, FunctionState &state,
                          std::optional<FlowType> expected = std::nullopt) {
+            FlowNodeId node = lower_expression(expression, state, expected);
+            state.function.source_sites_.push_back({expression.node_id, expression.span, node});
+            return node;
+        }
+
+        FlowNodeId lower_expression(syntax::ValueExpr const &expression, FunctionState &state,
+                                    std::optional<FlowType> expected) {
             if (expression.kind == syntax::ValueExpr::Kind::name) {
                 if (auto alias = state.aliases.find(expression.name); alias != state.aliases.end())
                     return alias->second;

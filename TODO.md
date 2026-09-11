@@ -176,6 +176,21 @@ specialized document verifies and stages to the same exact value with zero match
 edges. Specializing the bottom result of `eliminate_never()` fails without
 emitting source. General runtime code generation remains absent.
 
+## Closed: specialization as a dataflow pass
+
+- [x] Retain source-expression ownership beside immutable typed flow nodes,
+      without putting spans into structural cache keys.
+- [x] Observe each node while evaluating the certified transfer with every
+      formal parameter at runtime; join repeated observations rather than using
+      one favorable branch instance.
+- [x] Replace disjoint outermost exact islands with no blocked recursion, then
+      reparse, reverify, and require the same function result and block bit under
+      the runtime-input abstraction.
+
+Exit test: `simplify_inside(value)` remains runtime as a whole, but its zero arm
+reduces `predecessor(succ(zero))` to `zero` while preserving the adjacent comment
+and leaving the runtime-dependent successor arm unchanged.
+
 ## Closed: atomic browser source specialization
 
 - [x] Add `specialize NAME --output OUTPUT INPUT`; write the output only after

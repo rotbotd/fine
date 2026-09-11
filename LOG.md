@@ -8349,3 +8349,71 @@ pthread Wasm
 `/nix/store/wqgjg2zavj6aqzpv0vszxbk2fdbj7b3r-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/awwgq00jpa204bfrjbrsbz33axbqmqsq-fine-playground-0.1.0`.
+
+## 2026-09-11 — specialization observes expression islands
+
+The first `fine specialize` consumer evaluated only a named nullary wrapper and
+replaced its complete body. That was a useful exact file boundary for the
+browser, but it made the source operation look like a macro even though the
+staging decision already came from the certified dataflow analysis.
+
+The typed flow builder now retains a separate `FlowSourceSite` table mapping
+every source `ValueExpr` to the flow node it lowered into. These sites are not
+part of `FlowNode` and do not enter semantic or SCC cache keys. This separation
+also preserves the deliberate many-source-to-one-node case used by certified
+erased-field aliases without attaching a source pointer to an immutable cached
+node.
+
+Every lowered transfer term now carries its originating function and flow-node
+identity outside its structural cache key. Certified evaluation can optionally
+retain the result, executable edges, and recursion-block bit for each visited
+node. If one node is evaluated more than once under different branch bindings,
+Fine joins the abstract results and unions the operational observations rather
+than retaining a favorable instance.
+
+`fine specialize NAME FILE` now supplies `runtime` for every parameter of the
+named function and selects every outermost source expression whose node is exact
+and has no blocked recursion. Covered descendants are discarded, disjoint exact
+islands survive, and all edits still pass through concrete source ranges. The
+edited document is reparsed and ordinarily reverified; Fine reruns the same
+runtime-input transfer and requires the function's abstract result and recursion
+block bit to remain equal. A nullary exact wrapper remains the whole-body special
+case, so the existing browser command and undo boundary are unchanged.
+
+The new `stage-specialization-pass.fine` discriminator keeps
+`simplify_inside(value)` runtime as a whole. Its `zero` arm contains
+`predecessor(succ(zero))`, which the pass replaces with `zero`; the sibling arm
+still depends on `value`, and the comment immediately after the reduced island
+survives byte-for-byte. The checked specialized companion is executed after the
+exact comparison. Existing whole-wrapper specialization and the bottom-result
+rejection remain unchanged.
+
+Dirty-tree validation before the implementation commit:
+
+```
+cmake --build build/fine -j2
+./build/fine/fine specialize four_even \
+  fine/fixtures/stage-diagnostic.fine
+./build/fine/fine specialize simplify_inside \
+  fine/fixtures/stage-specialization-pass.fine
+./build/fine/fine run \
+  fine/fixtures/stage-specialization-pass-specialized.fine
+./build/fine/fine specialize eliminate_never \
+  fine/fixtures/staged-proof-elimination.fine
+nix flake check --print-build-logs
+nix build --no-link --print-out-paths .#default
+nix build --no-link --print-out-paths \
+  .#playground-wasm .#playground-wasm-pthreads
+nix build --no-link --print-out-paths .#playground
+git diff --check
+```
+
+The native install check, ordinary Wasm smoke, pthread smoke, static playground
+build, existing nullary specialization, parameterized expression pass, and
+bottom rejection all pass. Dirty validation artifacts were native
+`/nix/store/43pkszhplm4ifrfb6ngkrf4ywxwrc3nn-fine-0.1.0`, ordinary Wasm
+`/nix/store/v9lzlinl7mkyw16cylrnkvl9l2vaznkr-fine-playground-wasm-0.1.0`,
+pthread Wasm
+`/nix/store/x4wp281ndsa56cbdh96ahv4ic4s5zf2p-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/szzxapli0apd1c95rgap0n7shnvy9r5s-fine-playground-0.1.0`.

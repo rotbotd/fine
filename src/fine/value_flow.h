@@ -48,6 +48,16 @@ namespace fine::stage {
         std::vector<FlowMatchArm> arms;
     };
 
+    // Source ownership is kept beside the immutable flow graph rather than in
+    // its structural nodes. Several source expressions may deliberately lower
+    // to one node (for example a certified erased-field alias), while cache
+    // keys remain independent of source positions.
+    struct FlowSourceSite {
+        std::size_t syntax_node = 0;
+        syntax::SourceSpan span;
+        FlowNodeId flow_node = 0;
+    };
+
     class ValueFlowFunction {
     public:
         std::string const &name() const {
@@ -71,6 +81,9 @@ namespace fine::stage {
         std::string const &semantic_key() const {
             return semantic_key_;
         }
+        std::vector<FlowSourceSite> const &source_sites() const {
+            return source_sites_;
+        }
 
     private:
         friend class ValueFlowBuilder;
@@ -81,6 +94,7 @@ namespace fine::stage {
         FlowNodeId root_ = 0;
         std::set<std::string> direct_calls_;
         std::string semantic_key_;
+        std::vector<FlowSourceSite> source_sites_;
     };
 
     struct CallScc {
@@ -180,6 +194,7 @@ namespace fine::stage {
         std::vector<StageTransferTermPtr> inputs;
         std::vector<StageTransferArm> arms;
         std::string origin_function;
+        FlowNodeId origin_node = 0;
         FlowNodeId origin_match = 0;
         std::vector<FlowType> callee_parameters;
         StageTransferTermPtr callee_root;
@@ -261,6 +276,11 @@ namespace fine::stage {
         bool recursive_call_blocked = false;
     };
 
+    struct StageFunctionEvaluation {
+        StageEvaluation root;
+        std::map<FlowNodeId, StageEvaluation> nodes;
+    };
+
     StageAbstractValue stage_bottom(FlowType type);
     StageAbstractValue stage_runtime(FlowType type);
     StageAbstractValue stage_boolean(bool value);
@@ -295,6 +315,9 @@ namespace fine::stage {
                                                        std::string const &function,
                                                        std::vector<StageAbstractValue> const &arguments,
                                                        StageEvaluationControl control = {});
+    StageFunctionEvaluation evaluate_certified_stage_function_nodes(
+        StageAnalysisResult const &analysis, std::string const &function,
+        std::vector<StageAbstractValue> const &arguments, StageEvaluationControl control = {});
 
     // This cache contains Fine-owned summaries only. No source pointers or
     // manager-local Z3 handles cross the boundary.

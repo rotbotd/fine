@@ -511,13 +511,18 @@ value four, reaches `comptime(true)`, and reports no blocked recursion. Naming
 the parameterized `even` directly is rejected with an instruction to write the
 wrapper. The diagnostic itself does not edit source or generate runtime code.
 
-`fine specialize NAME FILE` is the first such source contract, restricted to
-that same nullary target. It requires an exact result and a false recursion-block
-bit, renders the Fine-owned value, and replaces only the wrapper body through
-its `ValueExpr` concrete range. The whole edited document is then reparsed,
-reverified, and staged again; its exact abstract result must equal the original.
-The checked fixture retains comments immediately before and after the replaced
-expression, proving the operation is a CST edit rather than a pretty-printer.
+`fine specialize NAME FILE` is the first such source contract. It evaluates the
+named function's certified transfer with every formal parameter at runtime and
+retains a separate observation for each flow node. Source expression sites live
+beside rather than inside the immutable structural graph, so cached semantic
+keys remain independent of source positions and several aliases may own the same
+node. Every outermost expression observed as exact with no blocked recursive call
+is rendered back to Fine and replaced through its concrete range. A nullary exact
+body is the whole-body special case. The whole edited document is then reparsed,
+reverified, and staged again; its result and recursion-block bit under the same
+runtime-input abstraction must equal the original. The checked fixtures retain
+comments immediately beside replaced expressions, proving the operation is a
+CST edit rather than a pretty-printer.
 The impossible `eliminate_never()` wrapper produces staging bottom and is
 rejected. `--output OUTPUT` makes this an exact file boundary for the browser:
 the file is written only after the whole validation succeeds. This remains

@@ -146,6 +146,13 @@
           grep -F 'executable-match-edges: 0;' <<<"$specialized_diagnostic"
           grep -F 'recursive-call-blocked: false;' <<<"$specialized_diagnostic"
 
+          stage_pass_specialized="$(mktemp)"
+          $out/bin/fine specialize simplify_inside \
+            "$src/fine/fixtures/stage-specialization-pass.fine" >"$stage_pass_specialized"
+          cmp "$src/fine/fixtures/stage-specialization-pass-specialized.fine" \
+            "$stage_pass_specialized"
+          $out/bin/fine run "$stage_pass_specialized"
+
           bottom_stage_error="$(mktemp)"
           if $out/bin/fine specialize eliminate_never \
               "$src/fine/fixtures/staged-proof-elimination.fine" \

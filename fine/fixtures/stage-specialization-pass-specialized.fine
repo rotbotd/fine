@@ -1,0 +1,18 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function predecessor(value: Nat) -> Nat {
+  match value {
+    zero => zero,
+    succ(previous) => previous,
+  }
+}
+
+function simplify_inside(value: Nat) -> Nat {
+  match value {
+    zero => zero, // Keep this comment beside the reduced island.
+    succ(previous) => succ(previous),
+  }
+}
