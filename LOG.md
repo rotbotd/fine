@@ -8063,3 +8063,34 @@ nix build -L --no-link --print-out-paths .#playground
 
 All playground checks pass. Clean artifact:
 `/nix/store/i081pjg6lszwv290f4yma3mcxr5b2k7v-fine-playground-0.1.0`.
+
+## 2026-09-11 — public pthread specialization action
+
+The first real browser test deliberately suppressed `SharedArrayBuffer` to keep
+its action boundary separate from thread setup. That proved the ordinary
+fallback button, but the public cross-origin-isolated page selects the pthread
+module. The same CDP action sequence now runs twice. The `ordinary` pass masks
+`SharedArrayBuffer` before navigation and requires the page to disclose
+`single-threaded`; the `pthreads` pass leaves the browser intact and requires
+the page to disclose `pthreads`. Both passes require the exact default source,
+exact specialized source, one-step browser undo, and failed-target non-edit.
+
+This found one shutdown race rather than a Fine error. After the first Chromium
+parent exited, a child could still touch its profile while Node recursively
+removed it, producing `ENOTEMPTY`. Profile deletion now uses bounded filesystem
+retries; the second browser pass is joined with `&&` in the local discriminator
+so a cleanup failure cannot be hidden by the following success.
+
+Exact validation:
+
+```
+node browser-smoke.mjs ../fine/fixtures/playground-demo.fine \
+  ../fine/fixtures/playground-demo-specialized.fine "$fonts" ordinary &&
+node browser-smoke.mjs ../fine/fixtures/playground-demo.fine \
+  ../fine/fixtures/playground-demo-specialized.fine "$fonts" pthreads
+nix build -L --no-link --print-out-paths .#playground
+```
+
+Both actual browser actions and every earlier playground check pass. Clean
+playground artifact:
+`/nix/store/f7dvzj7wl3w3lpajjhs5jf9sqprkdmiz-fine-playground-0.1.0`.

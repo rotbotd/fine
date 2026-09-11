@@ -4,9 +4,11 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-const [sourcePath, specializedPath, fontDirectory] = process.argv.slice(2);
-if (!sourcePath || !specializedPath || !fontDirectory)
-  throw new Error("usage: node browser-smoke.mjs SOURCE SPECIALIZED_SOURCE FONT_DIRECTORY");
+const [sourcePath, specializedPath, fontDirectory, runtime] = process.argv.slice(2);
+if (!sourcePath || !specializedPath || !fontDirectory
+    || !["ordinary", "pthreads"].includes(runtime)) {
+  throw new Error("usage: node browser-smoke.mjs SOURCE SPECIALIZED_SOURCE FONT_DIRECTORY ordinary|pthreads");
+}
 
 const expectedSource = await readFile(sourcePath, "utf8");
 const expectedSpecialized = await readFile(specializedPath, "utf8");
@@ -211,15 +213,18 @@ try {
   const editorSource = `document.querySelector(".cm-content")?.cmTile?.view?.state?.doc?.toString()`;
   await send("Runtime.enable");
   await send("Page.enable");
-  await send("Page.addScriptToEvaluateOnNewDocument", {
-    source: `Object.defineProperty(globalThis, "SharedArrayBuffer", { value: undefined });`,
-  });
+  if (runtime === "ordinary") {
+    await send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `Object.defineProperty(globalThis, "SharedArrayBuffer", { value: undefined });`,
+    });
+  }
   await send("Page.navigate", { url });
   await waitFor(`document.querySelector("#status")?.textContent === "ready"`, "Fine to load");
   console.log("browser smoke: Fine ready");
 
-  if (!await evaluate("crossOriginIsolated && document.documentElement.dataset.fineRuntime === 'single-threaded'"))
-    throw new Error("browser smoke did not select the isolated ordinary runtime");
+  const expectedRuntime = runtime === "ordinary" ? "single-threaded" : "pthreads";
+  if (!await evaluate(`crossOriginIsolated && document.documentElement.dataset.fineRuntime === ${JSON.stringify(expectedRuntime)}`))
+    throw new Error(`browser smoke did not select the isolated ${runtime} runtime`);
   if (await evaluate(editorSource) !== expectedSource)
     throw new Error("CodeMirror did not receive the exact checked default source");
 
@@ -249,7 +254,7 @@ try {
   if (consoleErrors.length > 0)
     throw new Error(`browser console errors:\n${consoleErrors.join("\n")}`);
 
-  console.log("browser smoke passed: button installed exact source, one undo restored it, failure made no edit");
+  console.log(`browser smoke passed on ${runtime}: button installed exact source, one undo restored it, failure made no edit`);
   await fetch(`${debug}/json/close/${target.id}`);
 } catch (error) {
   console.error(diagnostics);
@@ -257,5 +262,5 @@ try {
 } finally {
   socket?.close();
   await Promise.all([browser, server].map(stopChild));
-  await rm(profile, { recursive: true, force: true });
+  await rm(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }

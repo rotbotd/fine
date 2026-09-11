@@ -194,13 +194,17 @@ duplicated test logic.
 - [x] Send one browser undo and require the exact initial fixture to return;
       then name a missing wrapper, press the same button, and require failure to
       leave both the source and enabled action intact.
+- [x] Run that exact action sequence through both frontend-selected modules:
+      the ordinary fallback with `SharedArrayBuffer` hidden before navigation,
+      and the unmodified cross-origin-isolated pthread runtime used publicly.
 
 Exit test: `browser-smoke.mjs` drives the application through the Chrome DevTools
-Protocol without a second browser framework. It deliberately hides
-`SharedArrayBuffer` before navigation so this UI boundary uses the ordinary Wasm
-runtime; pthread memory and worker behavior remain covered by the independent
+Protocol without a second browser framework. One pass deliberately hides
+`SharedArrayBuffer` before navigation and requires the ordinary Wasm runtime; a
+second pass leaves browser features intact and requires the pthread runtime.
+Pthread memory and worker behavior remain covered independently by the lower
 pthread smoke. The Nix derivation supplies an explicit DejaVu/fontconfig fixture
-so the browser test does not depend on host fonts.
+so neither browser pass depends on host fonts.
 
 ## Closed: certified hidden-field staging handoff
 
