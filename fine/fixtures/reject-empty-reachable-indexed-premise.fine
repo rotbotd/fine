@@ -1,13 +1,18 @@
-proof inductive UnitProof() {
-  unit_proof() -> UnitProof();
+enum Flag {
+  off,
+  on,
 }
 
-proof inductive NeedsUnit() {
-  needs_unit() takes [unit: UnitProof()] -> NeedsUnit();
+proof inductive OnlyOff(value: Flag) {
+  only_off() -> OnlyOff(off);
+}
+
+proof inductive NeedsOnlyOff() {
+  needs_only_off() takes [available: OnlyOff(off)] -> NeedsOnlyOff();
 }
 
 function reject_empty_reachable_indexed_premise() -> Bool
-  takes [reachable: NeedsUnit()]
+  takes [reachable: NeedsOnlyOff()]
 {
   match reachable {
   }

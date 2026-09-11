@@ -78,7 +78,8 @@ namespace fine::elaboration {
     }
 
     ProofEngine::IndexedPremiseShape ProofEngine::constructor_indexed_premise_shape(
-        syntax::ProofConstructorDecl const &constructor) const {
+        syntax::ProofConstructorDecl const &constructor, ValueEnvironment const &constructor_values,
+        std::string const &evidence_name, std::set<std::string> &expanding) {
         IndexedPremiseShape shape;
         auto inspect = [&](syntax::CoeffectParameter const &parameter) {
             if (parameter.type.kind != syntax::ProofType::Kind::inductive)
@@ -86,6 +87,19 @@ namespace fine::elaboration {
             ++shape.total;
             if (!proof_family_has_finite_constructor_tree(parameter.type.name))
                 ++shape.impossible;
+            if (expanding.contains(parameter.type.name))
+                return;
+            ProofEnvironment no_proofs;
+            std::vector<std::string> no_proof_order;
+            std::vector<z3::expr> no_absorbed;
+            SemanticProofType premise = elaborate_proof_type(parameter.type, constructor_values, no_proofs,
+                                                             no_proof_order, no_absorbed);
+            auto inductive = std::get_if<InductiveType>(&premise);
+            if (!inductive)
+                throw std::logic_error("indexed constructor premise changed proof kind");
+            shape.covers.push_back(
+                inductive_head_cover(*inductive, evidence_name + "." + parameter.name, expanding));
+            ++shape.expanded;
         };
         for (auto const &parameter : constructor.explicit_proof_parameters)
             inspect(parameter);
@@ -546,7 +560,13 @@ namespace fine::elaboration {
                 constructor_identity_constraints(constructor, constructor_values);
             for (auto const &constraint : identity_constraints)
                 condition = condition && constraint;
-            IndexedPremiseShape indexed_premises = constructor_indexed_premise_shape(constructor);
+            std::set<std::string> expanding{family.name};
+            IndexedPremiseShape indexed_premises = constructor_indexed_premise_shape(
+                constructor, constructor_values,
+                "fine.staged-proof-match." + std::to_string(expression.node_id) + "." + constructor.name,
+                expanding);
+            for (auto const &cover : indexed_premises.covers)
+                condition = condition && cover;
             if (indexed_premises.impossible != 0)
                 condition = condition && values_.context().bool_val(false);
             solver.add(condition);
@@ -567,6 +587,7 @@ namespace fine::elaboration {
                      RainfallRecorder::number_field("identity_constraints", identity_constraints.size()),
                      RainfallRecorder::number_field("indexed_premises", indexed_premises.total),
                      RainfallRecorder::number_field("impossible_indexed_premises", indexed_premises.impossible),
+                     RainfallRecorder::number_field("expanded_indexed_premises", indexed_premises.expanded),
                      RainfallRecorder::number_field("absorbed_assumptions", absorbed.size()),
                      RainfallRecorder::string_field("status", status == z3::sat ? "sat" : "unsat")});
             }
@@ -1028,9 +1049,16 @@ namespace fine::elaboration {
                                          values, proofs, proof_order, absorbed, std::move(name), run);
     }
     z3::expr ProofEngine::inductive_head_cover(InductiveType const &type, std::string const &evidence_name) {
+        std::set<std::string> expanding;
+        return inductive_head_cover(type, evidence_name, expanding);
+    }
+    z3::expr ProofEngine::inductive_head_cover(InductiveType const &type, std::string const &evidence_name,
+                                               std::set<std::string> &expanding) {
         auto family_found = proof_inductives_.find(type.family);
         if (family_found == proof_inductives_.end())
             throw std::logic_error("proof evidence names an undeclared family");
+        if (!expanding.insert(type.family).second)
+            return values_.context().bool_val(true);
         z3::expr cover = values_.context().bool_val(false);
         for (auto const &constructor : family_found->second->constructors) {
             ValueEnvironment constructor_values;
@@ -1056,12 +1084,18 @@ namespace fine::elaboration {
                 head = head && result_type->indices[i].expression == type.indices[i].expression;
             for (auto const &constraint : constructor_identity_constraints(constructor, constructor_values))
                 head = head && constraint;
-            if (constructor_indexed_premise_shape(constructor).impossible != 0)
+            IndexedPremiseShape indexed_premises = constructor_indexed_premise_shape(
+                constructor, constructor_values, "fine.proof-head." + evidence_name + "." + constructor.name,
+                expanding);
+            for (auto const &premise_cover : indexed_premises.covers)
+                head = head && premise_cover;
+            if (indexed_premises.impossible != 0)
                 head = head && values_.context().bool_val(false);
             if (!witnesses.empty())
                 head = z3::exists(witnesses, head);
             cover = cover || head;
         }
+        expanding.erase(type.family);
         return cover.simplify();
     }
     void ProofEngine::absorb(ProofEvidence const &proof, std::vector<z3::expr> &absorbed,

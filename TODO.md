@@ -95,13 +95,16 @@ callers synthesize or supply the evidence.
 - [x] Include identity-shaped constructor arguments and `takes` demands in
       staged reachability and the existential head cover. A result-compatible
       constructor whose own identity demand is contradictory is unreachable;
-      indexed premises first contribute only a coarse finite-constructor-spine
-      impossibility result, not index-specific proof search.
+      indexed premises are handled separately below.
 - [x] Propagate globally empty indexed premise families through constructor
       heads. Empty families and self-supported cycles without a base make a
       demanding constructor unreachable; a premise family with one base keeps
       it reachable. Retain total/impossible premise counts in Rainfall rather
       than presenting the coarse check as index-specific inhabitation.
+- [x] Expand exact constructor-head covers through acyclic indexed premise
+      dependencies. This propagates an impossible result index or constructor
+      identity demand into the outer constructor while stopping conservatively
+      when a family repeats. Rainfall retains the expanded-premise count.
 - [x] Retain every staged constructor feasibility query in Rainfall as an exact
       result-index/identity-premise term and solver status. Replay closes the
       complete constructor set against the selected or impossible value match.

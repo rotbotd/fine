@@ -404,6 +404,8 @@
           grep -F "verified function: eliminate_blocked_explicit" <<<"$staged_output"
           grep -F "verified function: eliminate_blocked_coeffect" <<<"$staged_output"
           grep -F "verified function: eliminate_ungrounded_cycle" <<<"$staged_output"
+          grep -F "verified function: eliminate_blocked_premise_index" <<<"$staged_output"
+          grep -F "verified function: eliminate_blocked_premise_identity" <<<"$staged_output"
           grep -F "verified function: eliminate_unreachable_index" <<<"$staged_output"
           grep -F "verified function: eliminate_never_as_argument" <<<"$staged_output"
           grep -F "verified function: eliminate_failed_constructor_demand" <<<"$staged_output"
@@ -424,11 +426,15 @@
           grep -F '"operation":"proof.inductive.constructor-feasibility"' "$staged_rain"
           grep -F '"identity_constraints":1' "$staged_rain"
           grep -F '"impossible_indexed_premises":1' "$staged_rain"
+          grep -F '"expanded_indexed_premises":1' "$staged_rain"
           grep -F '"feasible_constructors":0' "$staged_rain"
           grep -F '"context_unsat":true' "$staged_rain"
           blocked_stage="$($out/bin/fine stage eliminate_blocked_explicit \
             "$src/fine/fixtures/staged-proof-elimination.fine")"
           grep -F 'result: bottom;' <<<"$blocked_stage"
+          nested_blocked_stage="$($out/bin/fine stage eliminate_blocked_premise_identity \
+            "$src/fine/fixtures/staged-proof-elimination.fine")"
+          grep -F 'result: bottom;' <<<"$nested_blocked_stage"
           ${pkgs.python3}/bin/python - "$staged_rain" <<'PY'
           import json, pathlib, sys
 
@@ -459,6 +465,15 @@
           assert all(check["indexed_premises"] == 1 and
                      check["impossible_indexed_premises"] == 1 and
                      check["status"] == "unsat" for check in impossible_premises)
+          nested_premises = [check for check in checks
+                             if check["family"] in {
+                                 "BlockedByPremiseIndex", "BlockedByPremiseIdentity"}]
+          assert {check["family"] for check in nested_premises} == {
+              "BlockedByPremiseIndex", "BlockedByPremiseIdentity"}
+          assert all(check["indexed_premises"] == 1 and
+                     check["impossible_indexed_premises"] == 0 and
+                     check["expanded_indexed_premises"] == 1 and
+                     check["status"] == "unsat" for check in nested_premises)
           PY
 
           reachable_indexed_premise="$(mktemp)"
@@ -468,7 +483,7 @@
             echo 'reachable indexed premise unexpectedly made an empty match valid' >&2
             exit 1
           fi
-          grep -F 'staged proof match must contain exactly its uniquely reachable arm `needs_unit`' \
+          grep -F 'staged proof match must contain exactly its uniquely reachable arm `needs_only_off`' \
             "$reachable_indexed_premise"
 
           staged_mutated="$(mktemp)"

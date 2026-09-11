@@ -631,10 +631,12 @@ least-constructor analysis. Starting without evidence, a family becomes
 globally grounded when one constructor's indexed premises all belong to already
 grounded families; a base constructor grounds its family, while `Never()` and a
 self-supported constructor cycle with no base remain empty. A constructor
-demanding one of those empty families contributes `false` to its head. The
-analysis ignores indices and does not recursively transport identity
-constraints, so it remains a sound overapproximation rather than a fabricated
-decision procedure for general inhabitation.
+demanding one of those empty families contributes `false` to its head. For a
+grounded premise family, Fine also expands its exact constructor-head cover:
+result indices and identity demands therefore propagate through prior premise
+families. Expansion stops conservatively when a family repeats, so recursive
+index-specific inhabitation remains an overapproximation rather than a
+fabricated decision procedure.
 For `Never()` the cover is false; for `OnlyOff(on)` it reduces to `off == on`.
 For `IdentityGuarded(on)`, the result head fixes the constructor's candidate to
 `on` while its coeffect demands `Id(Flag, candidate, off)`, so the head is
@@ -659,16 +661,19 @@ witness are rejected because their constructors are reachable.
 their sole constructors require `Never()`, so both are empty. `UngroundedCycle()`
 has only a constructor requiring another `UngroundedCycle()`; it remains empty
 because no finite proof term can start the cycle. Conversely, the rejecting
-control `NeedsUnit()` requires a family with a nullary base constructor and
-therefore remains reachable. The head cover can still refuse valid empty
-eliminations whose impossibility depends on particular indices or on a
-contradictory premise family rather than the absence of every finite spine.
+control `NeedsOnlyOff()` requires the reachable index `OnlyOff(off)` and therefore
+remains reachable. `BlockedByPremiseIndex()` instead requires `OnlyOff(on)`, and
+`BlockedByPremiseIdentity()` requires the contradictory constructor demand
+inside `IdentityGuarded(on)`; expanding those premise covers makes both outer
+families empty. The head cover can still refuse valid empty eliminations which
+require following a recursive family through multiple index-changing steps.
 
 Rainfall does not reduce this decision to the final constructor name. Every
 source constructor emits one feasibility observation containing the exact live
 condition formed from result-index equalities, identity premises, and any
 globally impossible indexed premise. It retains the identity count, total and
-impossible indexed-premise counts, absorbed-context size, and solver result. The
+impossible indexed-premise counts, how many acyclic premise covers were expanded,
+absorbed-context size, and solver result. The
 closing value-match event states how many constructors were considered and how
 many were feasible. Each identity-directed hidden-field replacement is a
 separate event naming its source expression and declaring that no model or

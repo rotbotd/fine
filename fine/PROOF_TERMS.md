@@ -314,8 +314,10 @@ also pass through a source-owned finite-spine check: a family is globally
 grounded only when some constructor can reach constructors with no indexed
 premises, so an empty family and a self-supported cycle with no base make every
 constructor demanding them impossible. This remains only a necessary condition:
-the check does not decide whether a grounded family inhabits the particular
-indices demanded by a constructor. When that head cover is inconsistent,
+Fine expands the exact head cover of grounded premise families, so impossible
+indices and identity demands propagate through acyclic dependencies. It stops
+when a family repeats and therefore does not decide recursive index-specific
+inhabitation. When that head cover is inconsistent,
 zero arms eliminate the impossible evidence into the expected value type. The
 stage transfer records the result as bottom, not as an arbitrary runtime value.
 Zero arms against a reachable constructor are rejected.
@@ -349,12 +351,12 @@ wrapper to the nested source term `succ(zero)`.
 
 Rainfall retains every constructor's exact feasibility condition before closing
 the staged match, including the number of indexed premises and how many have no
-finite constructor spine. A hidden-field substitution separately names the constructor,
-field, branch binder, identity demand, and replacement source while asserting
-that neither a runtime field load nor a solver model was used. Replay requires
-one observation per declared constructor and closes the exact ordered list of
-residualized binders; a summary event cannot silently omit either kind of
-observation.
+finite constructor spine, plus how many acyclic premise covers were expanded. A
+hidden-field substitution separately names the constructor, field, branch
+binder, identity demand, and replacement source while asserting that neither a
+runtime field load nor a solver model was used. Replay requires one observation
+per declared constructor and closes the exact ordered list of residualized
+binders; a summary event cannot silently omit either kind of observation.
 
 This remains declaration-time checking. Fine does not yet retain a symbolic
 proof match for later call-site specialization, normalize proof applications to

@@ -8158,3 +8158,72 @@ pthread Wasm
 `/nix/store/vxyfvm82b8w8j11rjjrv9vb3xz3r04l6-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/wjkc3ms4w72pimkqpwkmh5n5nhz58l1q-fine-playground-0.1.0`.
+
+## 2026-09-11 — exact head covers cross indexed proof premises
+
+Global finite-tree inhabitation was not enough for a grounded indexed premise.
+`OnlyOff` has a base constructor and is therefore inhabited somewhere, but the
+specific demand `OnlyOff(on)` is impossible. An outer constructor demanding
+that proof must disappear from `BlockedByPremiseIndex()`. The same failure can
+be hidden one level deeper behind an identity premise: `IdentityGuarded(on)` has
+a constructor globally, but its `Id(Flag, on, off)` demand makes the exact head
+cover false.
+
+Constructor feasibility and absorbed evidence covers now expand the demanded
+proof family's exact constructor-head disjunction. Expansion substitutes the
+actual premise indices, recursively conjoins every nested indexed premise cover,
+and shares the outer constructor's value variables rather than solving each
+premise independently. Declaration ordering makes ordinary dependencies
+acyclic. An explicit expansion set stops at a repeated family and returns
+`true`, retaining the old sound overapproximation instead of claiming recursive
+index inhabitation. The earlier least-finite-tree test still rejects a globally
+empty family or a constructor cycle with no base before exact expansion.
+
+`staged-proof-elimination.fine` adds two outer families. One demands
+`OnlyOff(on)`; the other demands `IdentityGuarded(on)`. Both exact premise covers
+are unsatisfiable, so both zero-arm eliminators verify. Staging the nested
+identity case returns `bottom`. The negative fixture now uses `OnlyOff(off)`
+behind an outer constructor: its exact premise cover is satisfiable and the
+zero-arm match is rejected with the named `needs_only_off` arm. This is the
+control which prevents recursive expansion from becoming blanket rejection of
+all indexed premises.
+
+Rainfall's `proof.inductive.constructor-feasibility` event adds
+`expanded_indexed_premises`. It counts direct indexed premises whose exact
+head cover entered that constructor condition; nested expansion is retained in
+the condition itself. Replay requires an integer between zero and the total
+indexed-premise count. For both new impossible outer constructors the retained
+triple is `indexed_premises: 1`, `impossible_indexed_premises: 0`, and
+`expanded_indexed_premises: 1`, followed by solver status `unsat`. Thus the
+failure is distinguished from global finite-spine emptiness.
+
+Exact validation:
+
+```
+cmake --build .build --target fine-bin -j2
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine rain fine/fixtures/staged-proof-elimination.fine \
+  | python3 fine/rainfall_replay.py fine/fixtures/staged-proof-elimination.fine
+.build/fine run fine/fixtures/reject-empty-reachable-indexed-premise.fine
+.build/fine stage eliminate_blocked_premise_identity \
+  fine/fixtures/staged-proof-elimination.fine
+nix flake check --no-write-lock-file
+git diff --check
+nix build -L --no-link --print-out-paths \
+  .#default .#playground-wasm .#playground-wasm-pthreads .#playground
+```
+
+All native install checks, ordinary and pthread Wasm smokes, served-response
+checks, and both real Chromium action paths pass. Clean artifacts: native
+`/nix/store/65yfywz2bf3hzl4davqvskzgblxqddpx-fine-0.1.0`, ordinary Wasm
+`/nix/store/28j2nwxlygzrdsdmp35yvlgx2qpq3dif-fine-playground-wasm-0.1.0`,
+pthread Wasm
+`/nix/store/j1rdsck48pl0ah6c5d439gcndw98948h-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/v221bg2wdiv62nl5nl0cj8b9n3v72lmd-fine-playground-0.1.0`.
+
+The remaining boundary is deliberate: a recursive family may have a base
+constructor in general while remaining impossible at one particular index only
+after several recursive steps. Repeated-family expansion does not decide that.
+There is still no general proof normalization, constructor search, or indexed
+inhabitation solver in staged elimination.

@@ -584,13 +584,19 @@ namespace fine::elaboration {
         std::vector<StagedValueMatchCertificate> staged_value_match_certificates_;
 
         z3::expr inductive_head_cover(InductiveType const &type, std::string const &evidence_name);
+        z3::expr inductive_head_cover(InductiveType const &type, std::string const &evidence_name,
+                                      std::set<std::string> &expanding);
         struct IndexedPremiseShape {
             std::size_t total = 0;
             std::size_t impossible = 0;
+            std::size_t expanded = 0;
+            std::vector<z3::expr> covers;
         };
         bool proof_family_has_finite_constructor_tree(std::string const &family) const;
         IndexedPremiseShape
-        constructor_indexed_premise_shape(syntax::ProofConstructorDecl const &constructor) const;
+        constructor_indexed_premise_shape(syntax::ProofConstructorDecl const &constructor,
+                                          ValueEnvironment const &constructor_values,
+                                          std::string const &evidence_name, std::set<std::string> &expanding);
         std::vector<z3::expr> constructor_identity_constraints(syntax::ProofConstructorDecl const &constructor,
                                                                ValueEnvironment const &constructor_values);
 

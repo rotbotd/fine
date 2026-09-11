@@ -37,6 +37,18 @@ proof inductive IdentityGuarded(value: Flag) {
     -> IdentityGuarded(candidate);
 }
 
+proof inductive BlockedByPremiseIndex() {
+  blocked_by_premise_index()
+    takes [impossible: OnlyOff(on)]
+    -> BlockedByPremiseIndex();
+}
+
+proof inductive BlockedByPremiseIdentity() {
+  blocked_by_premise_identity()
+    takes [impossible: IdentityGuarded(on)]
+    -> BlockedByPremiseIdentity();
+}
+
 proof inductive ExplicitIdentityGuarded(value: Flag) {
   explicit_identity_guarded(candidate: Flag, is_off: Id(Flag, candidate, off))
     -> ExplicitIdentityGuarded(candidate);
@@ -98,6 +110,20 @@ function eliminate_blocked_coeffect() -> Bool
 
 function eliminate_ungrounded_cycle() -> Bool
   takes [impossible: UngroundedCycle()]
+{
+  match impossible {
+  }
+}
+
+function eliminate_blocked_premise_index() -> Bool
+  takes [impossible: BlockedByPremiseIndex()]
+{
+  match impossible {
+  }
+}
+
+function eliminate_blocked_premise_identity() -> Bool
+  takes [impossible: BlockedByPremiseIdentity()]
 {
   match impossible {
   }
