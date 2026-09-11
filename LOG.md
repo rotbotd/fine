@@ -8016,3 +8016,50 @@ All passed. Clean artifacts: native
 Wasm `/nix/store/44s1a810b6j5hghqs8zcy8z4ykibh4mc-fine-playground-wasm-pthreads-0.1.0`,
 and static playground
 `/nix/store/hyc59dzn8nmrd572brfddp0l4saz0csy-fine-playground-0.1.0`.
+
+## 2026-09-11 — real browser specialization boundary
+
+The shared MEMFS module closed the command beneath the browser button, but it
+still could not catch a broken event listener, wrong DOM target, or a CodeMirror
+undo transaction which behaved differently inside an actual browser. The
+playground package now runs `browser-smoke.mjs` after its module, pthread, and
+served-response smokes.
+
+The test starts the built Vite preview and a declaratively supplied headless
+Chromium, connects directly over the Chrome DevTools Protocol, and waits for the
+actual Fine Wasm module and CodeMirror document. It requires the editor's exact
+initial bytes to equal `playground-demo.fine`, presses `specialize body`, and
+requires the complete editor document to equal
+`playground-demo-specialized.fine`. It then delivers one Ctrl-Z through the
+browser input boundary and requires the exact initial bytes to return. Finally
+it enters `missing_wrapper`, presses the same button, observes
+`specialization failed`, and requires no source edit and a re-enabled action.
+Console exceptions and errors fail the test.
+
+The DOM test deliberately masks `SharedArrayBuffer` before navigation, selecting
+the ordinary Wasm module while retaining the site's cross-origin isolation. It
+tests the specialization UI rather than duplicating the already independent
+pthread memory/worker smoke. The script uses Node's built-in WebSocket and raw
+CDP, so no browser-automation dependency or second model of the page was added.
+
+Two failed Nix runs found environmental assumptions the first local run hid.
+First, creating the page target before Vite listened could strand Chromium on a
+connection-refused document; the test now proves the HTTP server is ready before
+navigating. Second, Chromium's renderer died inside the pure build with
+`SkFontMgr_FontConfigInterface.cpp: Not implemented` because it had no fontconfig
+database. The derivation now supplies DejaVu and the test writes a private
+fontconfig file inside its temporary profile. Child termination has a bounded
+SIGTERM/SIGKILL fallback, and CDP requests time out with the captured browser
+diagnostics rather than leaving a Nix build asleep forever.
+
+Exact validation:
+
+```
+nix flake check --no-write-lock-file
+nix build -L --no-link --print-out-paths .#playground
+# browser smoke passed: button installed exact source, one undo restored it,
+# failure made no edit
+```
+
+All playground checks pass. Clean artifact:
+`/nix/store/i081pjg6lszwv290f4yma3mcxr5b2k7v-fine-playground-0.1.0`.

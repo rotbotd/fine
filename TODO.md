@@ -185,6 +185,23 @@ failing for lack of a target. The page and smoke import the same MEMFS command
 module, so argument ordering, failed-output rejection, and cleanup are not
 duplicated test logic.
 
+## Closed: actual browser specialization action
+
+- [x] Launch the built Vite site in headless Chromium and wait for the real Fine
+      Wasm module and CodeMirror document rather than inspecting bundle text.
+- [x] Press the served `specialize body` button and require the editor document
+      to equal the checked specialized fixture byte-for-byte.
+- [x] Send one browser undo and require the exact initial fixture to return;
+      then name a missing wrapper, press the same button, and require failure to
+      leave both the source and enabled action intact.
+
+Exit test: `browser-smoke.mjs` drives the application through the Chrome DevTools
+Protocol without a second browser framework. It deliberately hides
+`SharedArrayBuffer` before navigation so this UI boundary uses the ordinary Wasm
+runtime; pthread memory and worker behavior remain covered by the independent
+pthread smoke. The Nix derivation supplies an explicit DejaVu/fontconfig fixture
+so the browser test does not depend on host fonts.
+
 ## Closed: certified hidden-field staging handoff
 
 - [x] When ordinary function-body elaboration residualizes a used erased proof

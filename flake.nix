@@ -1448,6 +1448,7 @@
         src = ./playground;
         npmDepsHash = "sha256-yIB1xGWSt4wUSE3WvUF2I7edLE2H6ZOlUbox1mvWgsU=";
         npmBuildScript = "build";
+        nativeBuildInputs = [ pkgs.chromium ];
 
         preBuild = ''
           mkdir -p public
@@ -1481,6 +1482,10 @@
             ${./fine/fixtures/identity-checkpoint-multi-materialized.fine} \
             ${./fine/fixtures/identity-checkpoint-multi-interrupted.fine}
           node serve-smoke.mjs
+          node browser-smoke.mjs \
+            ${./fine/fixtures/playground-demo.fine} \
+            ${./fine/fixtures/playground-demo-specialized.fine} \
+            ${pkgs.dejavu_fonts}/share/fonts/truetype
           runHook postCheck
         '';
 
