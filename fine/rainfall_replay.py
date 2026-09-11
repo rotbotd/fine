@@ -386,6 +386,8 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             scope = tuple(within)
             checks = staged_constructor_checks.setdefault(scope, [])
             identity_constraints = data.get("identity_constraints")
+            indexed_premises = data.get("indexed_premises")
+            impossible_indexed_premises = data.get("impossible_indexed_premises")
             absorbed_assumptions = data.get("absorbed_assumptions")
             _require(len(scope) == 1 and scope[0].startswith("staged-proof-match:") and
                      isinstance(data.get("family"), str) and data["family"] and
@@ -394,9 +396,15 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      data.get("condition") in terms and
                      isinstance(identity_constraints, int) and not isinstance(identity_constraints, bool) and
                      identity_constraints >= 0 and
+                     isinstance(indexed_premises, int) and not isinstance(indexed_premises, bool) and
+                     indexed_premises >= 0 and
+                     isinstance(impossible_indexed_premises, int) and
+                     not isinstance(impossible_indexed_premises, bool) and
+                     0 <= impossible_indexed_premises <= indexed_premises and
                      isinstance(absorbed_assumptions, int) and not isinstance(absorbed_assumptions, bool) and
                      absorbed_assumptions >= 0 and
-                     data.get("status") in {"sat", "unsat"},
+                     data.get("status") in {"sat", "unsat"} and
+                     (impossible_indexed_premises == 0 or data.get("status") == "unsat"),
                      f"event {sequence}: malformed staged constructor-feasibility observation")
             checks.append(data)
         elif operation == "proof.inductive.field-residualize":

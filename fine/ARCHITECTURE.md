@@ -626,8 +626,15 @@ Zero reachable constructors are the other closed result. Absorbing indexed
 evidence contributes a necessary outer-constructor head cover to the lexical
 SMT context. The cover existentially hides constructor value parameters and
 includes identity-shaped explicit proof parameters and `takes` demands as
-equalities. It deliberately ignores indexed proof premises, so it is a sound
-overapproximation rather than a fabricated decision procedure for inhabitation.
+equalities. Indexed proof premises receive a separate, deliberately coarse
+least-constructor analysis. Starting without evidence, a family becomes
+globally grounded when one constructor's indexed premises all belong to already
+grounded families; a base constructor grounds its family, while `Never()` and a
+self-supported constructor cycle with no base remain empty. A constructor
+demanding one of those empty families contributes `false` to its head. The
+analysis ignores indices and does not recursively transport identity
+constraints, so it remains a sound overapproximation rather than a fabricated
+decision procedure for general inhabitation.
 For `Never()` the cover is false; for `OnlyOff(on)` it reduces to `off == on`.
 For `IdentityGuarded(on)`, the result head fixes the constructor's candidate to
 `on` while its coeffect demands `Id(Flag, candidate, off)`, so the head is
@@ -648,14 +655,20 @@ function eliminate_never() -> Bool
 
 Empty matches on `OnlyOff(off)`, `IdentityGuarded(off)`, and the one-demand hidden
 witness are rejected because their constructors are reachable.
-The head cover cannot make an impossible recursive premise look inhabited; by
-omitting indexed proof premises it can only refuse some valid empty eliminations
-until a stronger source-owned analysis exists.
+`BlockedExplicit()` and `BlockedCoeffect()` show the two parameter positions:
+their sole constructors require `Never()`, so both are empty. `UngroundedCycle()`
+has only a constructor requiring another `UngroundedCycle()`; it remains empty
+because no finite proof term can start the cycle. Conversely, the rejecting
+control `NeedsUnit()` requires a family with a nullary base constructor and
+therefore remains reachable. The head cover can still refuse valid empty
+eliminations whose impossibility depends on particular indices or on a
+contradictory premise family rather than the absence of every finite spine.
 
 Rainfall does not reduce this decision to the final constructor name. Every
 source constructor emits one feasibility observation containing the exact live
-condition formed from result-index equalities and identity premises, the number
-of identity constraints, the absorbed-context size, and the solver result. The
+condition formed from result-index equalities, identity premises, and any
+globally impossible indexed premise. It retains the identity count, total and
+impossible indexed-premise counts, absorbed-context size, and solver result. The
 closing value-match event states how many constructors were considered and how
 many were feasible. Each identity-directed hidden-field replacement is a
 separate event naming its source expression and declaring that no model or

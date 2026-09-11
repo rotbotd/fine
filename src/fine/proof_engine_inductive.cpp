@@ -44,6 +44,56 @@ namespace fine::elaboration {
         return constraints;
     }
 
+    bool ProofEngine::proof_family_has_finite_constructor_tree(std::string const &family) const {
+        if (!proof_inductives_.contains(family))
+            throw std::logic_error("proof premise names an undeclared family");
+
+        std::set<std::string> grounded;
+        bool changed;
+        do {
+            changed = false;
+            for (auto const &[name, declaration] : proof_inductives_) {
+                if (grounded.contains(name))
+                    continue;
+                for (auto const &constructor : declaration->constructors) {
+                    bool premises_grounded = true;
+                    auto inspect = [&](syntax::CoeffectParameter const &parameter) {
+                        if (parameter.type.kind == syntax::ProofType::Kind::inductive &&
+                            !grounded.contains(parameter.type.name))
+                            premises_grounded = false;
+                    };
+                    for (auto const &parameter : constructor.explicit_proof_parameters)
+                        inspect(parameter);
+                    for (auto const &parameter : constructor.proof_parameters)
+                        inspect(parameter);
+                    if (premises_grounded) {
+                        grounded.insert(name);
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        } while (changed);
+        return grounded.contains(family);
+    }
+
+    ProofEngine::IndexedPremiseShape ProofEngine::constructor_indexed_premise_shape(
+        syntax::ProofConstructorDecl const &constructor) const {
+        IndexedPremiseShape shape;
+        auto inspect = [&](syntax::CoeffectParameter const &parameter) {
+            if (parameter.type.kind != syntax::ProofType::Kind::inductive)
+                return;
+            ++shape.total;
+            if (!proof_family_has_finite_constructor_tree(parameter.type.name))
+                ++shape.impossible;
+        };
+        for (auto const &parameter : constructor.explicit_proof_parameters)
+            inspect(parameter);
+        for (auto const &parameter : constructor.proof_parameters)
+            inspect(parameter);
+        return shape;
+    }
+
     std::vector<ProofCandidate>
     ProofEngine::enumerate_inductive_proof_candidates(syntax::ProofType const &expected_syntax,
                                                       InductiveType const &expected, ProofEnvironment const &proofs,
@@ -496,6 +546,9 @@ namespace fine::elaboration {
                 constructor_identity_constraints(constructor, constructor_values);
             for (auto const &constraint : identity_constraints)
                 condition = condition && constraint;
+            IndexedPremiseShape indexed_premises = constructor_indexed_premise_shape(constructor);
+            if (indexed_premises.impossible != 0)
+                condition = condition && values_.context().bool_val(false);
             solver.add(condition);
             z3::check_result status = solver.check();
             if (status == z3::unknown)
@@ -506,11 +559,14 @@ namespace fine::elaboration {
                 rainfall_->record(
                     "observe", "proof.inductive.constructor-feasibility",
                     {"staged-proof-match:" + std::to_string(expression.node_id)}, "fine.staged-proof-elimination",
-                    "One source constructor is tested under its exact result-index and identity-premise condition",
+                    "One source constructor is tested under its result indices, identity premises, and finite-spine "
+                    "availability of indexed premises",
                     {RainfallRecorder::string_field("family", family.name),
                      RainfallRecorder::string_field("constructor", constructor.name),
                      RainfallRecorder::string_field("condition", condition_term),
                      RainfallRecorder::number_field("identity_constraints", identity_constraints.size()),
+                     RainfallRecorder::number_field("indexed_premises", indexed_premises.total),
+                     RainfallRecorder::number_field("impossible_indexed_premises", indexed_premises.impossible),
                      RainfallRecorder::number_field("absorbed_assumptions", absorbed.size()),
                      RainfallRecorder::string_field("status", status == z3::sat ? "sat" : "unsat")});
             }
@@ -1000,6 +1056,8 @@ namespace fine::elaboration {
                 head = head && result_type->indices[i].expression == type.indices[i].expression;
             for (auto const &constraint : constructor_identity_constraints(constructor, constructor_values))
                 head = head && constraint;
+            if (constructor_indexed_premise_shape(constructor).impossible != 0)
+                head = head && values_.context().bool_val(false);
             if (!witnesses.empty())
                 head = z3::exists(witnesses, head);
             cover = cover || head;

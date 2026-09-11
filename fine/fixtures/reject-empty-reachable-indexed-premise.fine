@@ -1,0 +1,14 @@
+proof inductive UnitProof() {
+  unit_proof() -> UnitProof();
+}
+
+proof inductive NeedsUnit() {
+  needs_unit() takes [unit: UnitProof()] -> NeedsUnit();
+}
+
+function reject_empty_reachable_indexed_premise() -> Bool
+  takes [reachable: NeedsUnit()]
+{
+  match reachable {
+  }
+}

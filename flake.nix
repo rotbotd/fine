@@ -401,6 +401,9 @@
           grep -F "verified function: recover" <<<"$staged_output"
           grep -F "verified function: selected_by_equality" <<<"$staged_output"
           grep -F "verified function: eliminate_never" <<<"$staged_output"
+          grep -F "verified function: eliminate_blocked_explicit" <<<"$staged_output"
+          grep -F "verified function: eliminate_blocked_coeffect" <<<"$staged_output"
+          grep -F "verified function: eliminate_ungrounded_cycle" <<<"$staged_output"
           grep -F "verified function: eliminate_unreachable_index" <<<"$staged_output"
           grep -F "verified function: eliminate_never_as_argument" <<<"$staged_output"
           grep -F "verified function: eliminate_failed_constructor_demand" <<<"$staged_output"
@@ -420,8 +423,12 @@
           grep -F '"operation":"proof.inductive.value-match"' "$staged_rain"
           grep -F '"operation":"proof.inductive.constructor-feasibility"' "$staged_rain"
           grep -F '"identity_constraints":1' "$staged_rain"
+          grep -F '"impossible_indexed_premises":1' "$staged_rain"
           grep -F '"feasible_constructors":0' "$staged_rain"
           grep -F '"context_unsat":true' "$staged_rain"
+          blocked_stage="$($out/bin/fine stage eliminate_blocked_explicit \
+            "$src/fine/fixtures/staged-proof-elimination.fine")"
+          grep -F 'result: bottom;' <<<"$blocked_stage"
           ${pkgs.python3}/bin/python - "$staged_rain" <<'PY'
           import json, pathlib, sys
 
@@ -444,7 +451,25 @@
           assert hidden["identity_constraints"] == 2 and hidden["status"] == "unsat"
           assert "candidate" in hidden_text and "fine.enum.Flag.off" in hidden_text
           assert "fine.enum.Flag.on" in hidden_text
+          impossible_premises = [check for check in checks
+                                 if check["family"] in {
+                                     "BlockedExplicit", "BlockedCoeffect", "UngroundedCycle"}]
+          assert {check["family"] for check in impossible_premises} == {
+              "BlockedExplicit", "BlockedCoeffect", "UngroundedCycle"}
+          assert all(check["indexed_premises"] == 1 and
+                     check["impossible_indexed_premises"] == 1 and
+                     check["status"] == "unsat" for check in impossible_premises)
           PY
+
+          reachable_indexed_premise="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-empty-reachable-indexed-premise.fine" \
+              >"$reachable_indexed_premise" 2>&1; then
+            echo 'reachable indexed premise unexpectedly made an empty match valid' >&2
+            exit 1
+          fi
+          grep -F 'staged proof match must contain exactly its uniquely reachable arm `needs_unit`' \
+            "$reachable_indexed_premise"
 
           staged_mutated="$(mktemp)"
           ${pkgs.python3}/bin/python - "$staged_rain" "$staged_mutated" <<'PY'

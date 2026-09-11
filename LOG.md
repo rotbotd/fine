@@ -8094,3 +8094,67 @@ nix build -L --no-link --print-out-paths .#playground
 Both actual browser actions and every earlier playground check pass. Clean
 playground artifact:
 `/nix/store/f7dvzj7wl3w3lpajjhs5jf9sqprkdmiz-fine-playground-0.1.0`.
+
+## 2026-09-11 — globally empty indexed premises reach staged elimination
+
+The mixed proof eliminator checked constructor result indices and identity-shaped
+premises, but it ignored ordinary indexed proof premises. That was a safe
+reachability overapproximation, yet it made a constructor requiring `Never()`
+look reachable and rejected a valid zero-arm elimination. The source declaration
+already contains the missing fact; asking Z3 to invent general indexed
+inhabitation would have enlarged this slice into proof search.
+
+`ProofEngine` now computes the least set of proof families possessing any finite
+constructor tree. It begins with no grounded families and repeatedly admits a
+family when one constructor's explicit and coeffect indexed premises all belong
+to the grounded set. Nullary constructors are bases. `Never()` remains empty,
+and a family whose sole constructor demands another proof from itself never
+enters the set because no finite term can start the cycle. Identity premises are
+left to the existing exact SMT condition. Particular result indices and
+identity contradictions inside transitively demanded families are deliberately
+ignored, so this is a proof of global emptiness rather than a general
+inhabitation procedure.
+
+Both places which consume constructor heads now conjoin `false` for a globally
+empty indexed premise: staged value-level proof-match feasibility and the
+necessary constructor-head cover absorbed from evidence. Rainfall's
+`proof.inductive.constructor-feasibility` event separately retains total and
+impossible indexed-premise counts; replay requires both counts, their bounds,
+and an unsatisfiable status whenever an impossible premise was observed.
+
+`staged-proof-elimination.fine` distinguishes three closed cases. One constructor
+has an explicit `Never()` proof parameter, one has a `takes` demand for
+`Never()`, and one is a self-supported family with no base. All three admit
+zero-arm elimination, and the first stages to `bottom`. The negative fixture
+uses a demanded family with a nullary base constructor; its constructor remains
+reachable and the empty match is rejected with the exact missing-arm diagnostic.
+This prevents the new pass from treating every indexed dependency as absent.
+
+Local discriminators:
+
+```
+cmake --build .build --target fine-bin -j2
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine rain fine/fixtures/staged-proof-elimination.fine \
+  | python3 fine/rainfall_replay.py fine/fixtures/staged-proof-elimination.fine
+.build/fine run fine/fixtures/reject-empty-reachable-indexed-premise.fine
+nix flake check --no-write-lock-file
+git diff --check
+```
+
+The first attempt addressed `.build/fine/fine`, although the executable is
+`.build/fine`. An earlier negative check expected the generic impossible-match
+diagnostic; the actual and stronger failure names the reachable `needs_unit`
+arm, and the install check now fixes that exact boundary. A stray `build/` tree
+contained only a Z3 configuration, so subsequent local compilation deliberately
+used the existing `.build` Fine tree.
+
+The complete native install checks, ordinary Wasm smoke, pthread shared-memory
+smoke, served-response smoke, and both real Chromium action paths pass. Clean
+artifacts: native
+`/nix/store/fl9n8fv3zq74khr8gxwnscshdl347ffq-fine-0.1.0`, ordinary Wasm
+`/nix/store/yyzz35cywy7k6i14a8q34a4gwrb0g6bw-fine-playground-wasm-0.1.0`,
+pthread Wasm
+`/nix/store/vxyfvm82b8w8j11rjjrv9vb3xz3r04l6-fine-playground-wasm-pthreads-0.1.0`,
+and static playground
+`/nix/store/wjkc3ms4w72pimkqpwkmh5n5nhz58l1q-fine-playground-0.1.0`.

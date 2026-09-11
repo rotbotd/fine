@@ -309,9 +309,13 @@ the missing value.
 An indexed coeffect also contributes the disjunction of its possible outer
 constructor heads to the lexical SMT context, existentially hiding constructor
 value parameters. Identity-shaped explicit constructor arguments and `takes`
-demands constrain each head with their endpoint equality. This is only a
-necessary condition: indexed recursive proof fields are not treated as
-automatically inhabited. When that head cover is inconsistent,
+demands constrain each head with their endpoint equality. Indexed proof fields
+also pass through a source-owned finite-spine check: a family is globally
+grounded only when some constructor can reach constructors with no indexed
+premises, so an empty family and a self-supported cycle with no base make every
+constructor demanding them impossible. This remains only a necessary condition:
+the check does not decide whether a grounded family inhabits the particular
+indices demanded by a constructor. When that head cover is inconsistent,
 zero arms eliminate the impossible evidence into the expected value type. The
 stage transfer records the result as bottom, not as an arbitrary runtime value.
 Zero arms against a reachable constructor are rejected.
@@ -344,7 +348,8 @@ field to `succ(visible)`, renames the arm binders, and stages a zero-indexed
 wrapper to the nested source term `succ(zero)`.
 
 Rainfall retains every constructor's exact feasibility condition before closing
-the staged match. A hidden-field substitution separately names the constructor,
+the staged match, including the number of indexed premises and how many have no
+finite constructor spine. A hidden-field substitution separately names the constructor,
 field, branch binder, identity demand, and replacement source while asserting
 that neither a runtime field load nor a solver model was used. Replay requires
 one observation per declared constructor and closes the exact ordered list of

@@ -15,6 +15,18 @@ proof inductive Selected(value: Flag) {
 proof inductive Never() {
 }
 
+proof inductive BlockedExplicit() {
+  blocked_explicit(impossible: Never()) -> BlockedExplicit();
+}
+
+proof inductive BlockedCoeffect() {
+  blocked_coeffect() takes [impossible: Never()] -> BlockedCoeffect();
+}
+
+proof inductive UngroundedCycle() {
+  ungrounded_cycle() takes [previous: UngroundedCycle()] -> UngroundedCycle();
+}
+
 proof inductive OnlyOff(value: Flag) {
   only_off() -> OnlyOff(off);
 }
@@ -65,6 +77,27 @@ function selected_by_equality(value: Flag) -> Bool
 
 function eliminate_never() -> Bool
   takes [impossible: Never()]
+{
+  match impossible {
+  }
+}
+
+function eliminate_blocked_explicit() -> Bool
+  takes [impossible: BlockedExplicit()]
+{
+  match impossible {
+  }
+}
+
+function eliminate_blocked_coeffect() -> Bool
+  takes [impossible: BlockedCoeffect()]
+{
+  match impossible {
+  }
+}
+
+function eliminate_ungrounded_cycle() -> Bool
+  takes [impossible: UngroundedCycle()]
 {
   match impossible {
   }
