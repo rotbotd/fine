@@ -669,6 +669,26 @@ and ordinary Wasm builds. Other repeated families stop conservatively rather
 than invoking a fabricated general decision procedure. The reproducible profile
 is `fine/profile_finite_inhabitation.py`, with retained measurements in
 `fine/research/finite-inhabitation-profile.json`.
+
+A second exact path handles one closed index outside that enumerable boundary.
+When every indexed proof premise of the family recurs into that same family,
+Fine lowers the source constructors to a private Horn relation: constructor
+values are universally bound, identity demands remain body equalities, and each
+recursive proof field becomes one relation premise. Querying a ground index asks
+Spacer about the least relation, not merely whether a constructor head unifies.
+An `unsat` answer therefore makes the absorbed evidence proposition false. To
+keep fixedpoint rule installation away from the known recursive-function hang,
+this path also excludes source function applications from result indices,
+premise indices, and identity guards. A `sat`, `unknown`, timeout, source call,
+cross-family premise, or nonground index keeps the existing conservative cover.
+`ground-least-inhabitation.fine` distinguishes the
+rule from head matching twice: a recursive `Even(Nat)` family has a deceptive
+self-supported constructor at every index but remains empty at `succ(zero)`, and
+an integer-indexed family with a base only at zero remains empty at `-1`.
+Rainfall retains every Horn rule, the exact ground query, the source constructor
+and recursive-premise counts, and the solver status. This is a closed
+inhabitation check only; it does not turn proof families into runtime predicates
+or supply a general symbolic relation to ordinary value code.
 For `Never()` the cover is false; for `OnlyOff(on)` it reduces to `off == on`.
 For `IdentityGuarded(on)`, the result head fixes the constructor's candidate to
 `on` while its coeffect demands `Id(Flag, candidate, off)`, so the head is

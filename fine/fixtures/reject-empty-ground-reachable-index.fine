@@ -1,0 +1,21 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat)
+    takes [prior: Even(previous)]
+    -> Even(succ(succ(previous)));
+  even_stuck(value: Nat)
+    takes [prior: Even(value)]
+    -> Even(value);
+}
+
+function reject_empty_even_two() -> Bool
+  takes [evidence: Even(succ(succ(zero)))]
+{
+  match evidence {
+  }
+}

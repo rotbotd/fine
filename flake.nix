@@ -476,6 +476,38 @@
           recursive_blocked_stage="$($out/bin/fine stage eliminate_stuck_cycle \
             "$src/fine/fixtures/staged-proof-elimination.fine")"
           grep -F 'result: bottom;' <<<"$recursive_blocked_stage"
+
+          ground_output="$($out/bin/fine run \
+            "$src/fine/fixtures/ground-least-inhabitation.fine")"
+          grep -F 'verified function: eliminate_even_one' <<<"$ground_output"
+          grep -F 'verified proof function: retain_even_two' <<<"$ground_output"
+          grep -F 'verified function: eliminate_negative_one' <<<"$ground_output"
+          ground_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/ground-least-inhabitation.fine" \
+            >"$ground_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/ground-least-inhabitation.fine" "$ground_rain"
+          ${pkgs.python3}/bin/python - "$ground_rain" <<'PY'
+          import json, pathlib, sys
+
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          queries = [event["data"] for event in events
+                     if event["operation"] == "proof.inductive.ground-inhabitation"]
+          assert len(queries) == 4
+          assert {(query["family"], query["status"]) for query in queries} == {
+              ("Even", "unsat"), ("Even", "sat"), ("Zero", "unsat")}
+          assert {query["constructor_rules"] for query in queries} == {2, 3}
+          assert all(query["recursive_premises"] >= 1 for query in queries)
+          PY
+
+          reachable_ground_index="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-empty-ground-reachable-index.fine" \
+              >"$reachable_ground_index" 2>&1; then
+            echo 'reachable closed recursive index unexpectedly made an empty match valid' >&2
+            exit 1
+          fi
+          grep -F 'proof match cannot produce a runtime value' "$reachable_ground_index"
           ${pkgs.python3}/bin/python - "$staged_rain" <<'PY'
           import json, pathlib, sys
 

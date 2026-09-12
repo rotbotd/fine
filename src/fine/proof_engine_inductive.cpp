@@ -1080,6 +1080,7 @@ namespace fine::elaboration {
 
         proof_inductives_.emplace(declaration.name, &declaration);
         finite_inhabitation_cache_.clear();
+        ground_inhabitation_cache_.clear();
         std::set<std::string> local_constructors;
         for (auto const &constructor : declaration.constructors) {
             if (!local_constructors.insert(constructor.name).second || proof_constructors_.contains(constructor.name) ||

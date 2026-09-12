@@ -598,8 +598,15 @@ namespace fine::elaboration {
             std::size_t rounds = 0;
             std::size_t solver_checks = 0;
         };
+        struct GroundInhabitation {
+            std::string family;
+            std::vector<z3::expr> indices;
+            std::optional<bool> inhabited;
+        };
         std::map<std::string, std::optional<FiniteInhabitation>> finite_inhabitation_cache_;
+        std::vector<GroundInhabitation> ground_inhabitation_cache_;
         std::optional<FiniteInhabitation> finite_inhabitation(std::string const &family);
+        std::optional<bool> ground_least_inhabited(InductiveType const &type);
         std::optional<z3::expr> finite_inductive_head_cover(InductiveType const &type);
         bool proof_family_has_finite_constructor_tree(std::string const &family) const;
         IndexedPremiseShape constructor_indexed_premise_shape(syntax::ProofConstructorDecl const &constructor,

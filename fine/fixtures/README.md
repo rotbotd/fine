@@ -88,6 +88,20 @@
   `FiniteReach(two)` with zero arms. The three-round constructor chain makes the
   `reach_two` arm mandatory, preventing the finite closure from proving only
   absence while missing reachable indices.
+- `ground-least-inhabitation.fine` forces the exact least-constructor question
+  beyond the enumerable index boundary. A recursive `Nat` family contains the
+  ordinary even-number constructors plus a self-supported constructor at every
+  index; `Even(succ(zero))` is nevertheless empty. A second integer-indexed
+  family has a base only at zero plus the same deceptive self-support, so
+  `Zero(-1)` is empty. Fine proves both closed indices impossible through its
+  restricted Horn relation rather than accepting the circular premise. A proof
+  function at `Even(succ(succ(zero)))` retains the paired satisfiable query and
+  checks both possible outer derivations, so `sat` cannot be mistaken for
+  evidence of absence.
+- `reject-empty-ground-reachable-index.fine` queries the same recursive `Even`
+  family at `succ(succ(zero))`. The least relation is inhabited there, so a
+  zero-arm value match is rejected instead of turning a successful query into
+  evidence of absence.
 - `stage-diagnostic.fine` puts an exact `Nat` argument in the nullary wrapper
   `four_even`. The public staging diagnostic follows its accepted mutually
   recursive `even`/`odd` SCC to `comptime(true)` without blocking recursion.

@@ -1,0 +1,44 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Even(value: Nat) {
+  even_zero() -> Even(zero);
+  even_next(previous: Nat)
+    takes [prior: Even(previous)]
+    -> Even(succ(succ(previous)));
+  even_stuck(value: Nat)
+    takes [prior: Even(value)]
+    -> Even(value);
+}
+
+function eliminate_even_one() -> Bool
+  takes [impossible: Even(succ(zero))]
+{
+  match impossible {
+  }
+}
+
+proof function retain_even_two()
+  takes [evidence: Even(succ(succ(zero)))]
+  -> Id(Bool, true, true) {
+  match evidence {
+    even_next(previous) => refl(true),
+    even_stuck(value) => refl(true),
+  }
+}
+
+proof inductive Zero(value: Int) {
+  zero_proof() -> Zero(0);
+  zero_stuck(value: Int)
+    takes [prior: Zero(value)]
+    -> Zero(value);
+}
+
+function eliminate_negative_one() -> Bool
+  takes [impossible: Zero(-1)]
+{
+  match impossible {
+  }
+}

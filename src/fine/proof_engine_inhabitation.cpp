@@ -239,6 +239,202 @@ namespace fine::elaboration {
         return cover.simplify();
     }
 
+    std::optional<bool> ProofEngine::ground_least_inhabited(InductiveType const &type) {
+        std::function<bool(z3::expr const &)> is_ground = [&](z3::expr const &expression) {
+            if (!expression.is_app())
+                return false;
+            if (expression.num_args() == 0 && expression.decl().decl_kind() == Z3_OP_UNINTERPRETED)
+                return false;
+            for (unsigned i = 0; i < expression.num_args(); ++i)
+                if (!is_ground(expression.arg(i)))
+                    return false;
+            return true;
+        };
+        std::function<bool(z3::expr const &)> contains_source_function = [&](z3::expr const &expression) {
+            if (!expression.is_app())
+                return true;
+            Z3_decl_kind kind = expression.decl().decl_kind();
+            if (kind == Z3_OP_RECURSIVE || (kind == Z3_OP_UNINTERPRETED && expression.num_args() != 0))
+                return true;
+            for (unsigned i = 0; i < expression.num_args(); ++i)
+                if (contains_source_function(expression.arg(i)))
+                    return true;
+            return false;
+        };
+        if (!std::all_of(type.indices.begin(), type.indices.end(),
+                         [&](ValueTerm const &index) { return is_ground(index.expression); }))
+            return std::nullopt;
+
+        auto cached = std::find_if(
+            ground_inhabitation_cache_.begin(), ground_inhabitation_cache_.end(), [&](GroundInhabitation const &entry) {
+                return entry.family == type.family && entry.indices.size() == type.indices.size() &&
+                       std::equal(entry.indices.begin(), entry.indices.end(), type.indices.begin(),
+                                  [&](z3::expr const &left, ValueTerm const &right) {
+                                      return same_ast(values_.context(), left, right.expression);
+                                  });
+            });
+        if (cached != ground_inhabitation_cache_.end())
+            return cached->inhabited;
+        std::size_t cache_index = ground_inhabitation_cache_.size();
+        std::vector<z3::expr> cached_indices;
+        cached_indices.reserve(type.indices.size());
+        for (auto const &index : type.indices)
+            cached_indices.push_back(index.expression);
+        ground_inhabitation_cache_.push_back({type.family, std::move(cached_indices), std::nullopt});
+
+        auto family_found = proof_inductives_.find(type.family);
+        if (family_found == proof_inductives_.end())
+            throw std::logic_error("proof evidence names an undeclared family");
+        syntax::ProofInductiveDecl const &declaration = *family_found->second;
+        z3::sort_vector domain(values_.context());
+        for (auto const &index : declaration.indices)
+            domain.push_back(values_.sort(kind_of(index.type)));
+        std::string relation_name = "fine.proof-ground-least." + type.family + "." + std::to_string(cache_index);
+        z3::func_decl relation =
+            values_.context().function(relation_name.c_str(), domain, values_.context().bool_sort());
+        z3::fixedpoint fixedpoint(values_.context());
+        z3::params options(values_.context());
+        options.set("engine", "spacer");
+#ifndef __EMSCRIPTEN__
+        options.set("timeout", 1000u);
+#endif
+        options.set("rlimit", 1000000u);
+        fixedpoint.set(options);
+        fixedpoint.register_relation(relation);
+
+        std::vector<z3::expr> rules;
+        std::size_t recursive_premises = 0;
+        try {
+            for (std::size_t constructor_index = 0; constructor_index < declaration.constructors.size();
+                 ++constructor_index) {
+                auto const &constructor = declaration.constructors[constructor_index];
+                ValueEnvironment constructor_values;
+                z3::expr_vector variables(values_.context());
+                for (auto const &parameter : constructor.parameters) {
+                    ValueKind kind = kind_of(parameter.type);
+                    std::string symbol =
+                        "fine.proof-ground-least." + type.family + "." + constructor.name + "." + parameter.name;
+                    z3::expr variable = values_.context().constant(symbol.c_str(), values_.sort(kind));
+                    variables.push_back(variable);
+                    constructor_values.emplace(parameter.name, ValueTerm(kind, std::move(variable)));
+                }
+                ProofEnvironment no_proofs;
+                std::vector<std::string> no_proof_order;
+                std::vector<z3::expr> no_absorbed;
+                SemanticProofType semantic_result = elaborate_proof_type(constructor.result_type, constructor_values,
+                                                                         no_proofs, no_proof_order, no_absorbed);
+                auto result = std::get_if<InductiveType>(&semantic_result);
+                if (!result || result->family != type.family || result->indices.size() != type.indices.size())
+                    throw std::logic_error("checked proof constructor changed family or arity");
+                if (std::any_of(result->indices.begin(), result->indices.end(),
+                                [&](ValueTerm const &index) { return contains_source_function(index.expression); }))
+                    return std::nullopt;
+
+                z3::expr body = values_.context().bool_val(true);
+                for (auto const &constraint : constructor_identity_constraints(constructor, constructor_values)) {
+                    if (contains_source_function(constraint))
+                        return std::nullopt;
+                    body = body && constraint;
+                }
+                bool supported = true;
+                auto add_premise = [&](syntax::CoeffectParameter const &parameter) {
+                    if (!supported || parameter.type.kind != syntax::ProofType::Kind::inductive)
+                        return;
+                    SemanticProofType semantic_premise = elaborate_proof_type(parameter.type, constructor_values,
+                                                                              no_proofs, no_proof_order, no_absorbed);
+                    auto premise = std::get_if<InductiveType>(&semantic_premise);
+                    if (!premise || premise->family != type.family) {
+                        supported = false;
+                        return;
+                    }
+                    if (std::any_of(premise->indices.begin(), premise->indices.end(), [&](ValueTerm const &index) {
+                            return contains_source_function(index.expression);
+                        })) {
+                        supported = false;
+                        return;
+                    }
+                    z3::expr_vector arguments(values_.context());
+                    for (auto const &index : premise->indices)
+                        arguments.push_back(index.expression);
+                    body = body && relation(arguments);
+                    ++recursive_premises;
+                };
+                for (auto const &parameter : constructor.explicit_proof_parameters)
+                    add_premise(parameter);
+                for (auto const &parameter : constructor.proof_parameters)
+                    add_premise(parameter);
+                if (!supported)
+                    return std::nullopt;
+
+                z3::expr_vector result_arguments(values_.context());
+                for (auto const &index : result->indices)
+                    result_arguments.push_back(index.expression);
+                z3::expr rule = z3::implies(body, relation(result_arguments));
+                if (!variables.empty())
+                    rule = z3::forall(variables, rule);
+                rules.push_back(rule);
+                std::string rule_name =
+                    "fine.proof-ground-least.rule." + type.family + "." + std::to_string(constructor_index);
+                fixedpoint.add_rule(rules.back(), values_.context().str_symbol(rule_name.c_str()));
+            }
+
+            z3::expr_vector query_arguments(values_.context());
+            for (auto const &index : type.indices)
+                query_arguments.push_back(index.expression);
+            z3::expr target = relation(query_arguments);
+            std::string query_relation_name =
+                "fine.proof-ground-least.query." + type.family + "." + std::to_string(cache_index);
+            z3::func_decl query_relation =
+                values_.context().function(query_relation_name.c_str(), 0, nullptr, values_.context().bool_sort());
+            fixedpoint.register_relation(query_relation);
+            z3::expr query_rule = z3::implies(target, query_relation());
+            fixedpoint.add_rule(query_rule, values_.context().str_symbol("fine.proof-ground-least.query-rule"));
+            z3::expr query = query_relation();
+            z3::check_result status = fixedpoint.query(query);
+            std::optional<bool> result;
+            if (status == z3::sat)
+                result = true;
+            else if (status == z3::unsat)
+                result = false;
+            ground_inhabitation_cache_[cache_index].inhabited = result;
+            if (rainfall_) {
+                std::vector<std::string> rule_terms;
+                rule_terms.reserve(rules.size());
+                for (auto const &rule : rules)
+                    rule_terms.push_back(rainfall_->term(rule, "proof-ground-least-rule"));
+                std::string target_term = rainfall_->term(target, "proof-ground-least-target");
+                std::string query_rule_term = rainfall_->term(query_rule, "proof-ground-least-query-rule");
+                rainfall_->record(
+                    "observe", "proof.inductive.ground-inhabitation", {"proof-inductive:" + type.family},
+                    "fine.proof-elaborator",
+                    "A restricted Horn relation checks one closed index against the source family's least "
+                    "constructor closure",
+                    {RainfallRecorder::string_field("family", type.family),
+                     RainfallRecorder::string_field("target", target_term),
+                     RainfallRecorder::string_field("query_rule", query_rule_term),
+                     RainfallRecorder::raw_field("rules", RainfallRecorder::string_array(rule_terms)),
+                     RainfallRecorder::number_field("constructor_rules", rules.size()),
+                     RainfallRecorder::number_field("recursive_premises", recursive_premises),
+                     RainfallRecorder::string_field("status", status == z3::sat     ? "sat"
+                                                              : status == z3::unsat ? "unsat"
+                                                                                    : "unknown"),
+                     RainfallRecorder::boolean_field("ground_indices", true),
+                     RainfallRecorder::boolean_field("same_family_premises_only", true),
+                     RainfallRecorder::number_field("timeout_ms",
+#ifdef __EMSCRIPTEN__
+                                                    0
+#else
+                                                    1000
+#endif
+                                                    ),
+                     RainfallRecorder::number_field("resource_limit", 1000000)});
+            }
+            return result;
+        } catch (z3::exception const &) {
+            return std::nullopt;
+        }
+    }
+
     ProofEngine::IndexedPremiseShape
     ProofEngine::constructor_indexed_premise_shape(syntax::ProofConstructorDecl const &constructor,
                                                    ValueEnvironment const &constructor_values,
@@ -283,6 +479,8 @@ namespace fine::elaboration {
                                                std::set<std::string> &expanding) {
         if (auto finite_cover = finite_inductive_head_cover(type))
             return std::move(*finite_cover);
+        if (auto inhabited = ground_least_inhabited(type); inhabited && !*inhabited)
+            return values_.context().bool_val(false);
         auto family_found = proof_inductives_.find(type.family);
         if (family_found == proof_inductives_.end())
             throw std::logic_error("proof evidence names an undeclared family");

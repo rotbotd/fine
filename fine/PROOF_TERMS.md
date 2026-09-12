@@ -330,6 +330,20 @@ zero arms eliminate the impossible evidence into the expected value type. The
 stage transfer records the result as bottom, not as an arbitrary runtime value.
 Zero arms against a reachable constructor are rejected.
 
+For one ground index beyond the finite table, Fine has a narrower exact rule. If
+every indexed premise of the family is recursive evidence from that same family,
+the constructor declarations form a private Horn relation. Constructor values
+are universally quantified, identity proof demands become equality guards, and
+recursive proof fields become relation premises. Spacer then queries the closed
+index against the least relation. Only `unsat` strengthens the evidence cover to
+false. Source function calls are excluded before rule installation because Z3
+can hang while installing ground facts about recursive functions. A reachable
+index, an unknown result, a timeout, a source call, a symbolic index, or a
+cross-family premise falls back to the conservative constructor cover. This is
+why a self-supported constructor cannot make `Even(succ(zero))` or `Zero(-1)`
+inhabited, while the paired reachable-index control still rejects an empty match.
+The Horn relation is an analysis artifact and never becomes a Fine proof value.
+
 Constructor values absent from the result are existential witnesses, not free
 constants. A hidden `candidate` constrained only by `candidate == off` leaves its
 constructor reachable; adding `candidate == on` to the same constructor makes

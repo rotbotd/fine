@@ -152,6 +152,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     proof_matches: set[tuple[str, ...]] = set()
     staged_constructor_checks: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     finite_inhabitation_families: set[str] = set()
+    ground_inhabitation_queries: set[str] = set()
     staged_field_residualizations: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     proof_model_grammars: dict[str, dict[str, Any]] = {}
     proof_model_solves: dict[str, dict[str, Any]] = {}
@@ -403,6 +404,28 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      data.get("least_fixed_point") is True,
                      f"event {sequence}: malformed finite proof-family inhabitation closure")
             finite_inhabitation_families.add(family)
+        elif operation == "proof.inductive.ground-inhabitation":
+            family = data.get("family")
+            target = data.get("target")
+            query_rule = data.get("query_rule")
+            rules = data.get("rules")
+            constructor_rules = data.get("constructor_rules")
+            recursive_premises = data.get("recursive_premises")
+            _require(len(within) == 1 and within[0] == f"proof-inductive:{family}" and
+                     isinstance(family, str) and family and
+                     isinstance(target, str) and target in terms and target not in ground_inhabitation_queries and
+                     isinstance(query_rule, str) and query_rule in terms and
+                     isinstance(rules, list) and all(isinstance(rule, str) and rule in terms for rule in rules) and
+                     isinstance(constructor_rules, int) and not isinstance(constructor_rules, bool) and
+                     constructor_rules == len(rules) and
+                     isinstance(recursive_premises, int) and not isinstance(recursive_premises, bool) and
+                     recursive_premises >= 0 and
+                     data.get("status") in {"sat", "unsat", "unknown"} and
+                     data.get("ground_indices") is True and
+                     data.get("same_family_premises_only") is True and
+                     data.get("timeout_ms") == 1000,
+                     f"event {sequence}: malformed ground proof-family inhabitation query")
+            ground_inhabitation_queries.add(target)
         elif operation == "proof.inductive.constructor-feasibility":
             scope = tuple(within)
             checks = staged_constructor_checks.setdefault(scope, [])
