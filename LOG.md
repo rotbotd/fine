@@ -8489,3 +8489,35 @@ Clean implementation `6ec99d44b` passes the flake evaluation and the complete
 static-playground build, including served-page and real browser actions. Clean
 playground artifact:
 `/nix/store/0jw178m4r8f83w4qdfxd00d482fivg37-fine-playground-0.1.0`.
+
+## 2026-09-12 — CLI and README stop calling specialization nullary
+
+The expression pass had already made `fine specialize NAME FILE` accept a
+parameterized function by supplying `runtime` for each formal parameter, but the
+CLI usage still printed `<nullary-function>` and the README still described a
+single wrapper-body replacement. The public browser label had been corrected in
+the preceding slice, leaving the executable's own help as the especially bad
+counterexample.
+
+The usage now distinguishes the deliberately nullary `stage` diagnostic from
+the general `<function>` accepted by `specialize`. The README describes the
+actual selection rule: outermost exact expression islands with no blocked
+recursion, observed under runtime formal parameters, with a nullary exact body
+only as the whole-body special case. Its browser section now names the live
+`specialize exact islands` action and says explicitly that parameterized
+functions cross the same MEMFS and one-undo boundary.
+
+Validation for implementation `0bb09205c`:
+
+```
+cmake --build .build --target fine-bin -j2
+(.build/fine 2>&1 || true) | grep -F 'fine specialize <function>'
+.build/fine specialize branch_refinement \
+  fine/fixtures/stage-specialization-pass.fine
+nix flake check --no-write-lock-file --print-build-logs
+nix build -L --no-link --print-out-paths .#default
+git diff --check
+```
+
+The complete native install check passes. Clean native artifact:
+`/nix/store/2jjmqcc53n6ya3bn6p5c3riq8ymi1mgz-fine-0.1.0`.
