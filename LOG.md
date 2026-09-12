@@ -8651,3 +8651,32 @@ git diff --check
 The main fixture and replay validation pass. The rejecting control exits one at
 `reach_two`, as intended. The complete native install check passes. Clean native
 artifact: `/nix/store/5lksryazcj1cw5asrqbysviqzlrvyv97-fine-0.1.0`.
+
+### 2026-09-12 — finite closure shipped through both browser runtimes
+
+The native semantic slice also rebuilt through the ordinary and pthread Wasm
+frontends rather than leaving the public playground on the preceding compiler.
+The complete playground package re-ran the shared MEMFS checks, live lifting and
+checkpoint checks, served-page smoke, and the real Chromium action sequence on
+both runtime selections.
+
+```
+nix build --no-link --print-out-paths \
+  .#playground-wasm .#playground-wasm-pthreads .#playground
+systemctl restart fine-playground.service
+systemctl status fine-playground.service
+systemctl status rc-publish-fine.service
+curl -fsS http://127.0.0.1:4174/
+curl -fsSI https://fine.shit.yachts/
+```
+
+All three builds pass. The restarted local service serves the new hashed app,
+`assets/index-CnmAjlC6.js`; the existing publisher remains active. The public
+HTTPS route returns 200 with `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`, preserving pthread eligibility.
+Clean artifacts: ordinary Wasm
+`/nix/store/ia553xgp8n7gim855xf006w5gwm25ihy-fine-playground-wasm-0.1.0`,
+pthread Wasm
+`/nix/store/hbwswr1zmka7b6m6sjh69zdcdynbkk9r-fine-playground-wasm-pthreads-0.1.0`,
+and playground
+`/nix/store/r6gc0xwxlazkslc5lyp0lhh5b77nmp7y-fine-playground-0.1.0`.
