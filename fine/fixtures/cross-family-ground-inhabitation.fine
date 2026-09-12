@@ -1,0 +1,38 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Seed(value: Nat) {
+  seed_zero() -> Seed(zero);
+  seed_stuck(value: Nat)
+    takes [prior: Seed(value)]
+    -> Seed(value);
+}
+
+proof inductive Middle(value: Nat) {
+  middle(value: Nat)
+    takes [seed: Seed(value)]
+    -> Middle(value);
+}
+
+proof inductive Outer(value: Nat) {
+  outer(value: Nat)
+    takes [middle_evidence: Middle(value)]
+    -> Outer(value);
+}
+
+function eliminate_outer_one() -> Bool
+  takes [impossible: Outer(succ(zero))]
+{
+  match impossible {
+  }
+}
+
+proof function retain_outer_zero()
+  takes [evidence: Outer(zero)]
+  -> Id(Bool, true, true) {
+  match evidence {
+    outer(value) => refl(true),
+  }
+}

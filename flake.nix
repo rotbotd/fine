@@ -508,6 +508,47 @@
             exit 1
           fi
           grep -F 'proof match cannot produce a runtime value' "$reachable_ground_index"
+
+          cross_family_output="$($out/bin/fine run \
+            "$src/fine/fixtures/cross-family-ground-inhabitation.fine")"
+          grep -F 'verified function: eliminate_outer_one' <<<"$cross_family_output"
+          grep -F 'verified proof function: retain_outer_zero' <<<"$cross_family_output"
+          cross_family_rain="$(mktemp)"
+          $out/bin/fine rain "$src/fine/fixtures/cross-family-ground-inhabitation.fine" \
+            >"$cross_family_rain"
+          ${pkgs.python3}/bin/python $out/bin/fine-rain-validate \
+            "$src/fine/fixtures/cross-family-ground-inhabitation.fine" "$cross_family_rain"
+          ${pkgs.python3}/bin/python - "$cross_family_rain" <<'PY'
+          import json, pathlib, sys
+
+          events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          queries = [event["data"] for event in events
+                     if event["operation"] == "proof.inductive.ground-inhabitation"]
+          outer = [query for query in queries if query["family"] == "Outer"]
+          middle = [query for query in queries if query["family"] == "Middle"]
+          assert {query["status"] for query in outer} == {"sat", "unsat"}
+          assert {query["status"] for query in middle} == {"sat", "unsat"}
+          assert all(query["families"] == ["Middle", "Outer", "Seed"] and
+                     query["constructor_rules"] == 4 and
+                     query["recursive_premises"] == 3 and
+                     query["cross_family_premises"] == 2 and
+                     not query["same_family_premises_only"] for query in outer)
+          assert all(query["families"] == ["Middle", "Seed"] and
+                     query["constructor_rules"] == 3 and
+                     query["recursive_premises"] == 2 and
+                     query["cross_family_premises"] == 1 and
+                     not query["same_family_premises_only"] for query in middle)
+          PY
+
+          reachable_cross_family_index="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-empty-cross-family-ground-reachable.fine" \
+              >"$reachable_cross_family_index" 2>&1; then
+            echo 'reachable cross-family ground index unexpectedly made an empty match valid' >&2
+            exit 1
+          fi
+          grep -F 'staged proof match must contain exactly its uniquely reachable arm `outer`' \
+            "$reachable_cross_family_index"
           ${pkgs.python3}/bin/python - "$staged_rain" <<'PY'
           import json, pathlib, sys
 

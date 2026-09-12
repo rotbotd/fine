@@ -409,10 +409,15 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             target = data.get("target")
             query_rule = data.get("query_rule")
             rules = data.get("rules")
+            families = data.get("families")
             constructor_rules = data.get("constructor_rules")
             recursive_premises = data.get("recursive_premises")
+            cross_family_premises = data.get("cross_family_premises")
             _require(len(within) == 1 and within[0] == f"proof-inductive:{family}" and
                      isinstance(family, str) and family and
+                     isinstance(families, list) and
+                     all(isinstance(item, str) and item for item in families) and
+                     families == sorted(set(families)) and family in families and
                      isinstance(target, str) and target in terms and target not in ground_inhabitation_queries and
                      isinstance(query_rule, str) and query_rule in terms and
                      isinstance(rules, list) and all(isinstance(rule, str) and rule in terms for rule in rules) and
@@ -420,10 +425,14 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      constructor_rules == len(rules) and
                      isinstance(recursive_premises, int) and not isinstance(recursive_premises, bool) and
                      recursive_premises >= 0 and
+                     isinstance(cross_family_premises, int) and not isinstance(cross_family_premises, bool) and
+                     0 <= cross_family_premises <= recursive_premises and
                      data.get("status") in {"sat", "unsat", "unknown"} and
                      data.get("ground_indices") is True and
-                     data.get("same_family_premises_only") is True and
-                     data.get("timeout_ms") == 1000,
+                     isinstance(data.get("same_family_premises_only"), bool) and
+                     data.get("same_family_premises_only") == (cross_family_premises == 0) and
+                     data.get("timeout_ms") in {0, 1000} and
+                     data.get("resource_limit") == 1000000,
                      f"event {sequence}: malformed ground proof-family inhabitation query")
             ground_inhabitation_queries.add(target)
         elif operation == "proof.inductive.constructor-feasibility":

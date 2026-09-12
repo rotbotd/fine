@@ -671,22 +671,25 @@ is `fine/profile_finite_inhabitation.py`, with retained measurements in
 `fine/research/finite-inhabitation-profile.json`.
 
 A second exact path handles one closed index outside that enumerable boundary.
-When every indexed proof premise of the family recurs into that same family,
-Fine lowers the source constructors to a private Horn relation: constructor
-values are universally bound, identity demands remain body equalities, and each
-recursive proof field becomes one relation premise. Querying a ground index asks
-Spacer about the least relation, not merely whether a constructor head unifies.
+Fine collects the complete indexed-premise family dependency set and lowers each
+family's source constructors to its own private Horn relation: constructor values
+are universally bound, identity demands remain body equalities, and each proof
+field becomes a premise of its named family relation. Querying a ground index asks
+Spacer about the joint least relation system, not merely whether a constructor head unifies.
 An `unsat` answer therefore makes the absorbed evidence proposition false. To
 keep fixedpoint rule installation away from the known recursive-function hang,
 this path also excludes source function applications from result indices,
 premise indices, and identity guards. A `sat`, `unknown`, timeout, source call,
-cross-family premise, or nonground index keeps the existing conservative cover.
+or nonground index keeps the existing conservative cover.
 `ground-least-inhabitation.fine` distinguishes the
 rule from head matching twice: a recursive `Even(Nat)` family has a deceptive
 self-supported constructor at every index but remains empty at `succ(zero)`, and
 an integer-indexed family with a base only at zero remains empty at `-1`.
-Rainfall retains every Horn rule, the exact ground query, the source constructor
-and recursive-premise counts, and the solver status. This is a closed
+`cross-family-ground-inhabitation.fine` then carries the target through
+`Outer -> Middle -> Seed`: the self-supported `Seed(succ(zero))` cannot support
+either wrapper, while the base at zero reaches both. Rainfall retains every
+involved family and Horn rule, the exact ground query, same/cross-family premise
+counts, the resource boundary, and solver status. This is a closed
 inhabitation check only; it does not turn proof families into runtime predicates
 or supply a general symbolic relation to ordinary value code.
 For `Never()` the cover is false; for `OnlyOff(on)` it reduces to `off == on`.
@@ -726,8 +729,8 @@ premise family is separately inhabited. A compatible two-premise control remains
 reachable. `FiniteReach` needs three rounds to reach `two`, while its `stuck`
 constructor can only demand `FiniteReach(stuck)` again. The exact finite closure
 therefore keeps the `two` arm and accepts a zero-arm elimination at `stuck`.
-Recursive index-specific inhabitation over integers or payload-bearing recursive
-runtime enums remains conservative.
+Symbolic index-specific inhabitation and constructor rules containing source
+function applications remain conservative.
 
 Rainfall does not reduce this decision to the final constructor name. Every
 source constructor emits one feasibility observation containing the exact live

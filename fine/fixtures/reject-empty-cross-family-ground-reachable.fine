@@ -1,0 +1,30 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+proof inductive Seed(value: Nat) {
+  seed_zero() -> Seed(zero);
+  seed_stuck(value: Nat)
+    takes [prior: Seed(value)]
+    -> Seed(value);
+}
+
+proof inductive Middle(value: Nat) {
+  middle(value: Nat)
+    takes [seed: Seed(value)]
+    -> Middle(value);
+}
+
+proof inductive Outer(value: Nat) {
+  outer(value: Nat)
+    takes [middle_evidence: Middle(value)]
+    -> Outer(value);
+}
+
+function reject_empty_outer_zero() -> Bool
+  takes [evidence: Outer(zero)]
+{
+  match evidence {
+  }
+}

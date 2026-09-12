@@ -121,16 +121,20 @@ callers synthesize or supply the evidence.
       guard measured by `fine/profile_finite_inhabitation.py`; integer,
       payload-bearing, and larger recursive index products keep the conservative
       repeated-family boundary.
-- [x] Prove closed same-family recursive indices empty beyond the finite table
-      through a restricted source-owned Horn relation. Constructor values remain
+- [x] Prove closed recursive indices empty beyond the finite table through a
+      restricted source-owned Horn relation system. Constructor values remain
       universal, identity demands remain guards, and recursive proof fields are
       exact relation premises. `Even(succ(zero))` and integer `Zero(-1)` stay
       empty despite a result-compatible self-supported constructor; the reachable
-      `Even(succ(succ(zero)))` control rejects zero arms. Rainfall retains every
-      rule, the ground query, counts, and status. Source function applications,
-      symbolic indices, and cross-family recursive relations remain conservative
-      rather than exposing the known recursive-function installation hang or
-      leaking the analysis relation into runtime or proof syntax.
+      `Even(succ(succ(zero)))` control rejects zero arms. Include the complete
+      indexed-premise dependency set as separately sorted relations, so an outer
+      `Outer -> Middle -> Seed` chain cannot hide circular support in `Seed`;
+      retain the reachable zero-index route. Rainfall keeps every family, rule,
+      ground query, same/cross-family premise count, resource boundary, and
+      status. Source function applications and symbolic indices remain
+      conservative rather than exposing the known recursive-function
+      installation hang or leaking analysis relations into runtime or proof
+      syntax.
 - [x] Retain every staged constructor feasibility query in Rainfall as an exact
       result-index/identity-premise term and solver status. Replay closes the
       complete constructor set against the selected or impossible value match.

@@ -102,6 +102,15 @@
   family at `succ(succ(zero))`. The least relation is inhabited there, so a
   zero-arm value match is rejected instead of turning a successful query into
   evidence of absence.
+- `cross-family-ground-inhabitation.fine` carries a closed `Nat` index through
+  `Outer -> Middle -> Seed`, where `Seed(succ(zero))` has only circular support.
+  One private Horn relation per involved family proves `Outer(succ(zero))`
+  empty while preserving `Outer(zero)`. Rainfall retains the complete family
+  set and distinguishes the two cross-family premises from the inner
+  same-family self-premise.
+- `reject-empty-cross-family-ground-reachable.fine` asks for a zero-arm match at
+  `Outer(zero)`. The base of `Seed(zero)` reaches it through both wrapper
+  families, so the `outer` arm remains mandatory.
 - `stage-diagnostic.fine` puts an exact `Nat` argument in the nullary wrapper
   `four_even`. The public staging diagnostic follows its accepted mutually
   recursive `even`/`odd` SCC to `comptime(true)` without blocking recursion.
