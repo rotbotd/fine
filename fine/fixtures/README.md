@@ -84,6 +84,12 @@
 - `stage-diagnostic-specialized.fine` is the exact `fine specialize` output.
   Only the wrapper expression becomes `true`; comments on both sides survive,
   and the entire document reparses, verifies, and stages to the same value.
+- `stage-specialization-pass.fine` keeps two parameterized functions runtime as
+  wholes while exposing one exact expression island in each selected match arm.
+  `stage-specialization-pass-first.fine` is the exact source after specializing
+  `simplify_inside`; `stage-specialization-pass-specialized.fine` is the exact
+  second epoch after specializing `branch_refinement`. The real browser smoke
+  installs and undoes both epochs independently.
 - `identity-residualized-hidden-field-specialized.fine` is the certified staging
   control for erased constructor fields. The original coeffect and explicit
   identity-proof routes both stage to `off`; specializing the former replaces

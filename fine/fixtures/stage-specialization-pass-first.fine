@@ -1,0 +1,25 @@
+enum Nat {
+  zero,
+  succ(Nat),
+}
+
+function predecessor(value: Nat) -> Nat {
+  match value {
+    zero => zero,
+    succ(previous) => previous,
+  }
+}
+
+function simplify_inside(value: Nat) -> Nat {
+  match value {
+    zero => zero, // Keep this comment beside the reduced island.
+    succ(previous) => succ(previous),
+  }
+}
+
+function branch_refinement(value: Nat, fallback: Bool) -> Bool {
+  match value {
+    zero => value == zero, // The arm itself establishes this constructor fact.
+    succ(previous) => fallback,
+  }
+}

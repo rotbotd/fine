@@ -1578,11 +1578,17 @@
           node browser-smoke.mjs \
             ${./fine/fixtures/playground-demo.fine} \
             ${./fine/fixtures/playground-demo-specialized.fine} \
+            ${./fine/fixtures/stage-specialization-pass.fine} \
+            ${./fine/fixtures/stage-specialization-pass-first.fine} \
+            ${./fine/fixtures/stage-specialization-pass-specialized.fine} \
             ${pkgs.dejavu_fonts}/share/fonts/truetype \
             ordinary
           node browser-smoke.mjs \
             ${./fine/fixtures/playground-demo.fine} \
             ${./fine/fixtures/playground-demo-specialized.fine} \
+            ${./fine/fixtures/stage-specialization-pass.fine} \
+            ${./fine/fixtures/stage-specialization-pass-first.fine} \
+            ${./fine/fixtures/stage-specialization-pass-specialized.fine} \
             ${pkgs.dejavu_fonts}/share/fonts/truetype \
             pthreads
           runHook postCheck

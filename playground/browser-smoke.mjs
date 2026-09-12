@@ -4,14 +4,19 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-const [sourcePath, specializedPath, fontDirectory, runtime] = process.argv.slice(2);
-if (!sourcePath || !specializedPath || !fontDirectory
+const [sourcePath, specializedPath, islandSourcePath, firstIslandPath,
+  specializedIslandsPath, fontDirectory, runtime] = process.argv.slice(2);
+if (!sourcePath || !specializedPath || !islandSourcePath || !firstIslandPath
+    || !specializedIslandsPath || !fontDirectory
     || !["ordinary", "pthreads"].includes(runtime)) {
-  throw new Error("usage: node browser-smoke.mjs SOURCE SPECIALIZED_SOURCE FONT_DIRECTORY ordinary|pthreads");
+  throw new Error("usage: node browser-smoke.mjs SOURCE SPECIALIZED_SOURCE ISLAND_SOURCE FIRST_ISLAND_SOURCE SPECIALIZED_ISLANDS_SOURCE FONT_DIRECTORY ordinary|pthreads");
 }
 
 const expectedSource = await readFile(sourcePath, "utf8");
 const expectedSpecialized = await readFile(specializedPath, "utf8");
+const expectedIslandSource = await readFile(islandSourcePath, "utf8");
+const expectedFirstIsland = await readFile(firstIslandPath, "utf8");
+const expectedSpecializedIslands = await readFile(specializedIslandsPath, "utf8");
 const profile = await mkdtemp(path.join(os.tmpdir(), "fine-browser-smoke-"));
 const fontConfig = path.join(profile, "fonts.conf");
 await writeFile(fontConfig, `<?xml version="1.0"?>
@@ -251,10 +256,49 @@ try {
     throw new Error("failed specialization changed the editor source");
   if (!await evaluate(`!document.querySelector("#specialize").disabled`))
     throw new Error("failed specialization left the browser action disabled");
+
+  // The public action is named after expression islands, so exercise that
+  // actual case rather than proving only the older whole-nullary-body path.
+  await evaluate(`(() => {
+    const view = document.querySelector(".cm-content").cmTile.view;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: ${JSON.stringify(expectedIslandSource)} } });
+    document.querySelector("#specialize-function").value = "simplify_inside";
+  })()`);
+  await evaluate(`document.querySelector("#specialize").click()`);
+  await waitFor(`${editorSource} === ${JSON.stringify(expectedFirstIsland)}`,
+    "the first parameterized expression-island specialization");
+
+  await evaluate(`document.querySelector("#specialize-function").value = "branch_refinement"`);
+  await evaluate(`document.querySelector("#specialize").click()`);
+  await waitFor(`${editorSource} === ${JSON.stringify(expectedSpecializedIslands)}`,
+    "the second parameterized expression-island specialization");
+
+  await evaluate(`document.querySelector(".cm-content").focus()`);
+  await send("Input.dispatchKeyEvent", {
+    type: "rawKeyDown", key: "z", code: "KeyZ",
+    windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90, modifiers: 2,
+  });
+  await send("Input.dispatchKeyEvent", {
+    type: "keyUp", key: "z", code: "KeyZ",
+    windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90, modifiers: 2,
+  });
+  await waitFor(`${editorSource} === ${JSON.stringify(expectedFirstIsland)}`,
+    "one-step expression-island undo");
+
+  await send("Input.dispatchKeyEvent", {
+    type: "rawKeyDown", key: "z", code: "KeyZ",
+    windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90, modifiers: 2,
+  });
+  await send("Input.dispatchKeyEvent", {
+    type: "keyUp", key: "z", code: "KeyZ",
+    windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90, modifiers: 2,
+  });
+  await waitFor(`${editorSource} === ${JSON.stringify(expectedIslandSource)}`,
+    "second expression-island undo");
   if (consoleErrors.length > 0)
     throw new Error(`browser console errors:\n${consoleErrors.join("\n")}`);
 
-  console.log(`browser smoke passed on ${runtime}: button installed exact source, one undo restored it, failure made no edit`);
+  console.log(`browser smoke passed on ${runtime}: nullary and parameterized islands installed exactly, each undo restored one source epoch, failure made no edit`);
   await fetch(`${debug}/json/close/${target.id}`);
 } catch (error) {
   console.error(diagnostics);
