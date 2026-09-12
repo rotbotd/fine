@@ -8800,3 +8800,89 @@ and the complete playground is
 public request immediately after restart returned 502 while the service realized
 its flake app; ten seconds later it returned 200 with COOP `same-origin` and COEP
 `require-corp`. Both services remained active.
+
+## 2026-09-12 — restricted least inhabitation at closed recursive indices
+
+The finite-state closure deliberately falls back for payload-bearing enums and
+integer indices, but constructor-head unification alone is too weak even at one
+closed target. A family with a real base and a self-supported constructor makes
+every ground head syntactically feasible although the self-cycle cannot create its
+own evidence. `ground-least-inhabitation.fine` fixes the discriminator with
+recursive `Nat` evidence: `Even(succ(zero))` has only self-support and must be
+empty, while `Even(zero)` and `Even(succ(succ(zero)))` are reachable. The same
+fixture adds an integer-indexed `Zero(-1)` target with a base only at zero and a
+self-cycle at every integer. The rejecting control asks for a zero-arm match at
+the reachable even-two index and must still report both feasible outer
+constructors.
+
+Implementation `71b226bf1` adds a narrow source-owned Horn check for exactly
+this boundary. It runs only when every target index is ground, every indexed
+constructor premise recurs into the same family, and no constructor result,
+premise index, or identity constraint contains a source function application.
+Constructor value parameters become universally quantified Horn variables,
+identity evidence becomes an equality guard, and same-family proof fields become
+recursive premises. Fine asks whether the one ground target occurs in the least
+relation. Only `unsat` strengthens the ordinary constructor cover to false;
+`sat`, `unknown`, timeout/resource exhaustion, a symbolic index, a source call,
+or a cross-family premise retains the previous conservative behavior. This is
+not normalization of arbitrary proof applications and does not close the general
+infinite-index case.
+
+Rainfall records every constructor rule, the exact ground target, the nullary
+query rule, constructor and recursive-premise counts, solver status, timeout, and
+resource limit in `proof.inductive.ground-inhabitation`. Replay checks the event
+shape and referenced terms. The accepted fixture records four exact queries:
+`Even(two)` and `Even(zero)` are `sat`; `Even(one)` and `Zero(-1)` are `unsat`.
+Its 94 events replay successfully. The reachable-index control exits one and
+reports `even_next even_stuck`, proving the new check does not erase reachable
+recursive constructors.
+
+Two failed experiments were retained because both expose ownership boundaries.
+First, directly querying the parameterized fixedpoint relation hung on the
+reachable even-two case despite the fixedpoint timeout. Giving the ground target
+a rule into a fresh zero-arity query relation makes both reachable and unreachable
+queries terminate. Second, the first memo table stored only family names and Z3
+AST-id integers. `fine rain` passed because Rainfall retained strong references to
+all terms, while ordinary `fine run` released an earlier target and Z3 reused its
+AST id: the cached `Even(zero)` answer was then returned for `Even(one)`. Cache
+entries now retain the actual `z3::expr` indices and compare them by exact
+same-manager AST identity; the fixture orders its queries to keep this regression
+visible without Rainfall.
+
+The first complete browser build exposed one more concrete platform boundary.
+The ground query's one-second wall-clock timeout made the ordinary single-threaded
+Emscripten module fail with `fine: thread constructor failed: Not supported`.
+Fine's browser builds cannot create Z3's wall-clock timeout helper, so Wasm now
+uses only the one-million-unit Z3 resource limit and records `timeout_ms: 0`;
+native uses both that resource limit and a one-second timeout. Rebuilding the
+ordinary module, pthread module, and complete playground then passed every Node
+and real-browser check.
+
+Validation:
+
+```
+cmake --build .build -j2 --target fine-bin
+.build/fine run fine/fixtures/ground-least-inhabitation.fine
+.build/fine rain fine/fixtures/ground-least-inhabitation.fine > /tmp/ground.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/ground-least-inhabitation.fine /tmp/ground.rain
+.build/fine run fine/fixtures/reject-empty-ground-reachable-index.fine
+# Compare stdout, stderr, and status for all 81 pre-existing fixtures against
+# /nix/store/yhc7gqxmqh7hajnd28yja9ww8scqxc8b-fine-0.1.0/bin/fine.
+nix build --no-link --print-out-paths \
+  .#default .#playground-wasm .#playground-wasm-pthreads .#playground
+systemctl restart fine-playground.service
+curl -sS -D /tmp/fine-headers -o /dev/null https://fine.shit.yachts/
+```
+
+All 81 pre-existing fixtures retain exact stdout, stderr, and exit status. The
+clean native artifact is
+`/nix/store/gl1drp2qhcnbsxnb9j7v8i228lavqsd8-fine-0.1.0`; ordinary Wasm is
+`/nix/store/xma37npgk2xjf8wq125i4dxg96md1bsa-fine-playground-wasm-0.1.0`;
+pthread Wasm is
+`/nix/store/pxdhqsdavl7aijpijmncm0fwz3g6ikhd-fine-playground-wasm-pthreads-0.1.0`;
+and the complete playground is
+`/nix/store/5gb5621xrk8csfky1j3adcc4dlq2nsp6-fine-playground-0.1.0`. Both
+services are active. The first public request after restart returned the expected
+transient 502 while the flake app realized; the next returned 200 with COOP
+`same-origin` and COEP `require-corp`.
