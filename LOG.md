@@ -8565,3 +8565,89 @@ clean pthread artifact:
 `/nix/store/fd1rk2rlwbk34ih8bg9h67sdjrywwy4w-fine-playground-wasm-pthreads-0.1.0`;
 clean playground artifact:
 `/nix/store/50rdb8has6lapqmyckz50ksylzvzlg8m-fine-playground-0.1.0`.
+
+## 2026-09-12 — least constructor closure for finite proof indices
+
+The remaining repeated-family boundary had a small exact case hidden inside it.
+The old constructor-head expansion stopped whenever an indexed premise named a
+family already on the expansion stack. That was conservative for general
+recursive indices, but it also treated a recursive premise as unconstrained once
+the same family had any unrelated base constructor. This source exposed the
+loss:
+
+```fine
+enum Flag {
+  off,
+  on,
+}
+
+proof inductive Reach(value: Flag) {
+  reach_off() -> Reach(off);
+  reach_on() takes [again: Reach(on)] -> Reach(on);
+}
+
+function eliminate_recursive_index() -> Bool
+  takes [impossible: Reach(on)]
+{
+  match impossible {
+  }
+}
+```
+
+Before this slice the staged match rejected the empty body and demanded
+`reach_on`: the global finite-spine check saw `reach_off`, while the recursive
+head-cover expansion returned `true` at the repeated `Reach`. No finite proof
+term can begin at `Reach(on)`.
+
+Implementation `aee2564b8` adds an exact bounded-state path rather than changing
+the conservative general fallback. `ValueElaborator::finite_values` enumerates
+`Bool` and runtime enums whose constructors have no fields. For a proof family
+whose index product has at most 256 such tuples, `ProofEngine` performs a
+source-owned monotone closure. Round zero contains no states. Each later round
+checks every constructor against one candidate result tuple, its identity
+premises, and membership of every indexed premise in the previous round. Hidden
+constructor values remain shared solver constants during that query, so multiple
+premises cannot select incompatible witnesses independently. A tuple enters the
+set only on `sat`; `unknown`, a nonfinite dependency, a payload-bearing enum, or
+a product over the cap returns to the pre-existing conservative head expansion.
+Self premises use the previous-round snapshot, so a cycle cannot bootstrap
+itself within one pass. Backward premise-family dependencies use their cached
+exact closures. Cache entries are cleared when another proof family is declared.
+
+`FiniteReach(Phase)` in `staged-proof-elimination.fine` is the discriminating
+fixture. `zero`, `one`, and `two` enter over three productive rounds; `stuck` has
+only a constructor demanding `FiniteReach(stuck)` and never enters. A value
+function at `FiniteReach(two)` must retain the `reach_two` arm and returns `two`.
+A second function at `FiniteReach(stuck)` has zero arms and stages to bottom. The
+run constructs the three reachable proofs through ordinary caller-local coeffect
+search. `reject-empty-reachable-recursive-index.fine` is the underapproximation
+control: trying zero arms at `two` fails specifically by demanding `reach_two`.
+
+Rainfall emits one `proof.inductive.finite-inhabitation` event for each exact
+family closure. Replay requires a unique family, a bounded nonempty domain,
+reachable count within that domain, at least one round, and the explicit
+least-fixed-point marker. The checked `FiniteReach` event records four domain
+states, three reachable states, and four total passes including the final stable
+pass. Constructor feasibility and value-match closure remain separately checked.
+The architecture, proof-term boundary, TODO, and fixture catalogue now distinguish
+this exact finite case from integer and payload-bearing recursive indices, which
+remain conservative.
+
+Local and package validation:
+
+```
+cmake --build .build -j2
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine run fine/fixtures/reject-empty-reachable-recursive-index.fine
+.build/fine rain fine/fixtures/staged-proof-elimination.fine > /tmp/staged.rain
+PYTHONPATH=fine python3 fine/rainfall_validate.py \
+  fine/fixtures/staged-proof-elimination.fine /tmp/staged.rain
+nix flake check
+nix build --no-link .#default
+nix build --no-link --print-out-paths .#default
+git diff --check
+```
+
+The main fixture and replay validation pass. The rejecting control exits one at
+`reach_two`, as intended. The complete native install check passes. Clean native
+artifact: `/nix/store/5lksryazcj1cw5asrqbysviqzlrvyv97-fine-0.1.0`.
