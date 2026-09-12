@@ -3,6 +3,13 @@ enum Flag {
   on,
 }
 
+enum Phase {
+  zero,
+  one,
+  two,
+  stuck,
+}
+
 proof inductive Tagged(value: Flag) {
   tagged(field: Flag) -> Tagged(field);
 }
@@ -68,6 +75,13 @@ proof inductive HiddenIdentityConflict() {
   hidden_identity_conflict(candidate: Flag)
     takes [is_off: Id(Flag, candidate, off), is_on: Id(Flag, candidate, on)]
     -> HiddenIdentityConflict();
+}
+
+proof inductive FiniteReach(value: Phase) {
+  reach_zero() -> FiniteReach(zero);
+  reach_one() takes [previous: FiniteReach(zero)] -> FiniteReach(one);
+  reach_two() takes [previous: FiniteReach(one)] -> FiniteReach(two);
+  reach_stuck() takes [previous: FiniteReach(stuck)] -> FiniteReach(stuck);
 }
 
 function recover(value: Flag) -> Flag
@@ -201,6 +215,21 @@ function eliminate_conflicting_hidden_witness() -> Bool
   }
 }
 
+function recover_reachable_two() -> Phase
+  takes [evidence: FiniteReach(two)]
+{
+  match evidence {
+    reach_two() => two,
+  }
+}
+
+function eliminate_stuck_cycle() -> Bool
+  takes [impossible: FiniteReach(stuck)]
+{
+  match impossible {
+  }
+}
+
 run staged_proof_elimination {
   proof tagged_on: Tagged(on) = tagged(on);
   let recovered: Flag = recover(on);
@@ -214,4 +243,10 @@ run staged_proof_elimination {
   let constrained: Bool = selected_by_equality(off)
     using [at_off = off_identity, evidence = off_selected];
   assert constrained;
+
+  proof reached_zero: FiniteReach(zero) = reach_zero();
+  proof reached_one: FiniteReach(one) = reach_one();
+  proof reached_two: FiniteReach(two) = reach_two();
+  let recovered_two: Phase = recover_reachable_two();
+  assert recovered_two == two;
 }

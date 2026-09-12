@@ -456,6 +456,7 @@ namespace fine::elaboration {
         }
         std::vector<std::string> runtime_kind_names() const;
         z3::sort sort(ValueKind const &kind);
+        std::optional<std::vector<z3::expr>> finite_values(ValueKind const &kind);
         void require_known_type(syntax::ValueType const &type);
         void declare_enum(syntax::EnumDecl const &declaration);
         void record_boundary();
@@ -592,6 +593,13 @@ namespace fine::elaboration {
             std::size_t expanded = 0;
             std::vector<z3::expr> covers;
         };
+        struct FiniteInhabitation {
+            std::vector<std::vector<z3::expr>> reachable_indices;
+            std::size_t rounds = 0;
+        };
+        std::map<std::string, std::optional<FiniteInhabitation>> finite_inhabitation_cache_;
+        std::optional<FiniteInhabitation> finite_inhabitation(std::string const &family);
+        std::optional<z3::expr> finite_inductive_head_cover(InductiveType const &type);
         bool proof_family_has_finite_constructor_tree(std::string const &family) const;
         IndexedPremiseShape
         constructor_indexed_premise_shape(syntax::ProofConstructorDecl const &constructor,

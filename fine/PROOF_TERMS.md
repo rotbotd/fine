@@ -315,9 +315,14 @@ grounded only when some constructor can reach constructors with no indexed
 premises, so an empty family and a self-supported cycle with no base make every
 constructor demanding them impossible. This remains only a necessary condition:
 Fine expands the exact head cover of grounded premise families, so impossible
-indices and identity demands propagate through acyclic dependencies. It stops
-when a family repeats and therefore does not decide recursive index-specific
-inhabitation. When that head cover is inconsistent,
+indices and identity demands propagate through acyclic dependencies. For a
+family indexed only by `Bool` or fieldless runtime enums, with at most 256 ground
+index tuples, Fine computes the least constructor closure directly. The empty
+set is round zero; a later round adds a tuple only when one constructor produces
+it and all of that constructor's indexed premises were already reached. Thus a
+base at `zero`, successive constructors at `one` and `two`, and a self-supported
+constructor at `stuck` reach exactly the first three indices. A repeated family
+outside this finite boundary still stops conservatively. When the resulting head cover is inconsistent,
 zero arms eliminate the impossible evidence into the expected value type. The
 stage transfer records the result as bottom, not as an arbitrary runtime value.
 Zero arms against a reachable constructor are rejected.
@@ -357,6 +362,8 @@ wrapper to `succ(succ(zero))`.
 Rainfall retains every constructor's exact feasibility condition before closing
 the staged match, including the number of indexed premises and how many have no
 finite constructor spine, plus how many acyclic premise covers were expanded. A
+finite-family closure additionally records its complete domain size, reached
+state count, and number of monotone rounds. A
 set of expanded premises retains one shared constructor-value environment and is
 conjoined before hidden values are existentially closed; separate witnesses at
 incompatible indices do not count as joint constructor support. A

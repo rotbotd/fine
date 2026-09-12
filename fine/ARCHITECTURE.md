@@ -654,9 +654,13 @@ self-supported constructor cycle with no base remain empty. A constructor
 demanding one of those empty families contributes `false` to its head. For a
 grounded premise family, Fine also expands its exact constructor-head cover:
 result indices and identity demands therefore propagate through prior premise
-families. Expansion stops conservatively when a family repeats, so recursive
-index-specific inhabitation remains an overapproximation rather than a
-fabricated decision procedure.
+families. When every index of a family ranges over `Bool` or a fieldless runtime
+enum and their product contains at most 256 states, Fine instead starts with no
+inhabitants and repeatedly admits exactly those ground index tuples supported by
+a constructor whose indexed premises were admitted in the previous round. This
+least constructor closure follows repeated families without turning a cycle into
+evidence. Other repeated families still stop conservatively rather than invoking
+a fabricated general decision procedure.
 For `Never()` the cover is false; for `OnlyOff(on)` it reduces to `off == on`.
 For `IdentityGuarded(on)`, the result head fixes the constructor's candidate to
 `on` while its coeffect demands `Id(Flag, candidate, off)`, so the head is
@@ -691,8 +695,11 @@ inside `IdentityGuarded(on)`; expanding those premise covers makes both outer
 families empty. `BlockedByJointPremises()` requires both `OnlyOff(candidate)` and
 `OnlyOn(candidate)` for the same hidden candidate and is empty even though each
 premise family is separately inhabited. A compatible two-premise control remains
-reachable. The head cover can still refuse valid empty eliminations which
-require following a recursive family through multiple index-changing steps.
+reachable. `FiniteReach` needs three rounds to reach `two`, while its `stuck`
+constructor can only demand `FiniteReach(stuck)` again. The exact finite closure
+therefore keeps the `two` arm and accepts a zero-arm elimination at `stuck`.
+Recursive index-specific inhabitation over integers or payload-bearing recursive
+runtime enums remains conservative.
 
 Rainfall does not reduce this decision to the final constructor name. Every
 source constructor emits one feasibility observation containing the exact live
@@ -701,7 +708,8 @@ globally impossible indexed premise. It retains the identity count, total and
 impossible indexed-premise counts, how many acyclic premise covers were expanded,
 absorbed-context size, and solver result. The
 closing value-match event states how many constructors were considered and how
-many were feasible. Each identity-directed hidden-field replacement is a
+many were feasible. Each exact finite family also emits its domain size, reached
+state count, and fixed-point rounds. Each identity-directed hidden-field replacement is a
 separate event naming its source expression and declaring that no model or
 runtime field load supplied it. Replay requires a complete, name-distinct set of
 constructor observations, recomputes the selected constructor from their

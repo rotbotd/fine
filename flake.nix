@@ -447,6 +447,8 @@
           grep -F "verified function: eliminate_failed_constructor_demand" <<<"$staged_output"
           grep -F "verified function: eliminate_failed_explicit_constructor_child" <<<"$staged_output"
           grep -F "verified function: eliminate_conflicting_hidden_witness" <<<"$staged_output"
+          grep -F "verified function: recover_reachable_two" <<<"$staged_output"
+          grep -F "verified function: eliminate_stuck_cycle" <<<"$staged_output"
           grep -F "resolved coeffect: recover.evidence <- tagged_on (lexical search)" <<<"$staged_output"
           grep -F "runtime-proof-values: 0 (unrepresentable)" <<<"$staged_output"
           staged_materialized="$(mktemp)"
@@ -471,6 +473,9 @@
           nested_blocked_stage="$($out/bin/fine stage eliminate_blocked_premise_identity \
             "$src/fine/fixtures/staged-proof-elimination.fine")"
           grep -F 'result: bottom;' <<<"$nested_blocked_stage"
+          recursive_blocked_stage="$($out/bin/fine stage eliminate_stuck_cycle \
+            "$src/fine/fixtures/staged-proof-elimination.fine")"
+          grep -F 'result: bottom;' <<<"$recursive_blocked_stage"
           ${pkgs.python3}/bin/python - "$staged_rain" <<'PY'
           import json, pathlib, sys
 
@@ -516,7 +521,24 @@
           assert joint["impossible_indexed_premises"] == 0
           assert joint["expanded_indexed_premises"] == 2
           assert joint["status"] == "unsat"
+          closures = {event["data"]["family"]: event["data"] for event in events
+                      if event["operation"] == "proof.inductive.finite-inhabitation"}
+          recursive = closures["FiniteReach"]
+          assert recursive["domain_states"] == 4
+          assert recursive["reachable_states"] == 3
+          assert recursive["rounds"] == 4
+          assert recursive["least_fixed_point"] is True
           PY
+
+          reachable_recursive_index="$(mktemp)"
+          if $out/bin/fine run \
+              "$src/fine/fixtures/reject-empty-reachable-recursive-index.fine" \
+              >"$reachable_recursive_index" 2>&1; then
+            echo 'reachable recursive index unexpectedly made an empty match valid' >&2
+            exit 1
+          fi
+          grep -F 'staged proof match must contain exactly its uniquely reachable arm `reach_two`' \
+            "$reachable_recursive_index"
 
           reachable_indexed_premise="$(mktemp)"
           if $out/bin/fine run \

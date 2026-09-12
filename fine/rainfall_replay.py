@@ -151,6 +151,7 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
     proof_match_branches: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     proof_matches: set[tuple[str, ...]] = set()
     staged_constructor_checks: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    finite_inhabitation_families: set[str] = set()
     staged_field_residualizations: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     proof_model_grammars: dict[str, dict[str, Any]] = {}
     proof_model_solves: dict[str, dict[str, Any]] = {}
@@ -382,6 +383,23 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
                      data.get("runtime_value_created") is False,
                      f"event {sequence}: malformed or incomplete indexed proof match")
             proof_matches.add(scope)
+        elif operation == "proof.inductive.finite-inhabitation":
+            family = data.get("family")
+            domain_states = data.get("domain_states")
+            reachable_states = data.get("reachable_states")
+            rounds = data.get("rounds")
+            state_cap = data.get("state_cap")
+            _require(len(within) == 1 and within[0] == f"proof-inductive:{family}" and
+                     isinstance(family, str) and family and family not in finite_inhabitation_families and
+                     isinstance(domain_states, int) and not isinstance(domain_states, bool) and
+                     isinstance(reachable_states, int) and not isinstance(reachable_states, bool) and
+                     isinstance(rounds, int) and not isinstance(rounds, bool) and rounds >= 1 and
+                     isinstance(state_cap, int) and not isinstance(state_cap, bool) and state_cap > 0 and
+                     1 <= domain_states <= state_cap and
+                     0 <= reachable_states <= domain_states and
+                     data.get("least_fixed_point") is True,
+                     f"event {sequence}: malformed finite proof-family inhabitation closure")
+            finite_inhabitation_families.add(family)
         elif operation == "proof.inductive.constructor-feasibility":
             scope = tuple(within)
             checks = staged_constructor_checks.setdefault(scope, [])

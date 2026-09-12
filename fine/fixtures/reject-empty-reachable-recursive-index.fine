@@ -1,0 +1,20 @@
+enum Phase {
+  zero,
+  one,
+  two,
+  stuck,
+}
+
+proof inductive FiniteReach(value: Phase) {
+  reach_zero() -> FiniteReach(zero);
+  reach_one() takes [previous: FiniteReach(zero)] -> FiniteReach(one);
+  reach_two() takes [previous: FiniteReach(one)] -> FiniteReach(two);
+  reach_stuck() takes [previous: FiniteReach(stuck)] -> FiniteReach(stuck);
+}
+
+function reject_empty_reachable_recursive_index() -> Bool
+  takes [reachable: FiniteReach(two)]
+{
+  match reachable {
+  }
+}

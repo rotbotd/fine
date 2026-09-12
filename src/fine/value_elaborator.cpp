@@ -25,6 +25,22 @@ namespace fine::elaboration {
             throw std::logic_error("unknown runtime enum kind `" + kind.name + "`");
         return found->second->sort;
     }
+    std::optional<std::vector<z3::expr>> ValueElaborator::finite_values(ValueKind const &kind) {
+        if (kind.tag == ValueKind::Tag::integer)
+            return std::nullopt;
+        if (kind.tag == ValueKind::Tag::boolean)
+            return std::vector<z3::expr>{context_.bool_val(false), context_.bool_val(true)};
+        auto found = enums_.find(kind.name);
+        if (found == enums_.end())
+            throw std::logic_error("unknown runtime enum kind `" + kind.name + "`");
+        std::vector<z3::expr> values;
+        for (auto const &constructor : found->second->constructors) {
+            if (!constructor.fields.empty())
+                return std::nullopt;
+            values.push_back(constructor.constructor());
+        }
+        return values;
+    }
     void ValueElaborator::require_known_type(syntax::ValueType const &type) {
         if (type.kind == syntax::ValueType::Kind::enumeration && !enums_.contains(type.name))
             reject(type.span, "unknown value type `" + type.name + "`");

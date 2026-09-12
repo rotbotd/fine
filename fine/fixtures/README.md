@@ -78,6 +78,16 @@
   shadowing the function body's reserved `result` name inside `ensures`.
 - `reject-result-coeffect.fine` applies the same reservation across the static
   coeffect namespace before proof absorption begins.
+- `staged-proof-elimination.fine` checks compile-time constructor selection,
+  impossible zero-arm elimination, indexed-premise and identity-premise
+  propagation, joint hidden-witness support, and identity-rooted recovery of
+  erased constructor fields. Its `FiniteReach(Phase)` section computes a
+  four-state least constructor closure: `zero`, `one`, and `two` are reached in
+  order, while the self-supported `stuck` index remains empty.
+- `reject-empty-reachable-recursive-index.fine` tries to eliminate
+  `FiniteReach(two)` with zero arms. The three-round constructor chain makes the
+  `reach_two` arm mandatory, preventing the finite closure from proving only
+  absence while missing reachable indices.
 - `stage-diagnostic.fine` puts an exact `Nat` argument in the nullary wrapper
   `four_even`. The public staging diagnostic follows its accepted mutually
   recursive `even`/`odd` SCC to `comptime(true)` without blocking recursion.

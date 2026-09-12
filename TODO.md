@@ -108,8 +108,17 @@ callers synthesize or supply the evidence.
       identity demand into the outer constructor, and preserves joint support:
       two individually inhabited premise families sharing one hidden constructor
       value must be simultaneously inhabitable at that same value. Stop
-      conservatively when a family repeats. Rainfall retains the expanded-premise
-      count.
+      conservatively when a family repeats outside the exact finite boundary
+      below. Rainfall retains the expanded-premise count.
+- [x] Compute exact recursive index inhabitation for small finite proof families.
+      If every family index is `Bool` or a fieldless runtime enum and the product
+      has at most 256 states, iterate constructor support from the empty set to a
+      least fixed point. `FiniteReach(two)` needs its base and two successive
+      rounds; `FiniteReach(stuck)` has only self-support and remains empty. A
+      zero-arm staged match accepts the latter, while a rejecting control requires
+      the `reach_two` arm for the former. Rainfall retains domain, reachable-state,
+      and round counts. Integer and payload-bearing recursive indices keep the
+      conservative repeated-family boundary.
 - [x] Retain every staged constructor feasibility query in Rainfall as an exact
       result-index/identity-premise term and solver status. Replay closes the
       complete constructor set against the selected or impossible value match.
