@@ -8725,3 +8725,78 @@ git diff --check
 
 The complete native install check passes. Clean native artifact:
 `/nix/store/02r8j4f588az96hfahz8qrrvbch5lwnv-fine-0.1.0`.
+
+## 2026-09-12 — measured finite inhabitation boundary and constructor-first closure
+
+The original exact finite-family implementation carried a hard-coded 256-state
+product limit without saying what the number protected. A generated worst-case
+family made the missing meaning concrete: one base constructor, a chain through
+all but one enum state, and a final self-supported state which must remain
+unreachable. The zero-arm eliminator at that last state forces the complete least
+closure. On implementation `6178bf006`, which rebuilt a solver for every candidate
+state and constructor in every round, 8/16/32/64 states took
+0.038/0.248/1.907/15.665 seconds on this host. Thus 256 was not an interactive
+boundary; 64 states had already exceeded it badly.
+
+Implementation `dfa4ef80a` turns the iteration inside out. In each round, each
+constructor owns one incremental solver. Its constraints include indexed premises
+from the previous-round snapshot and exclude all previously reached result tuples.
+Fine repeatedly reads a model's concrete finite output tuple, records it, and adds
+a blocking clause until that constructor is unsatisfiable. Additions from the
+current round are not visible until the next round, so a self-cycle still cannot
+manufacture its own premise. Duplicate tuples produced by different constructors
+are retained once. An `unknown` result or nonfinite premise returns to the existing
+conservative analysis.
+
+Rainfall now records the number of solver checks as well as domain size, reached
+states, rounds, and the active cap. The first replay rule incorrectly required a
+positive solver-check count. `Never()` has zero constructors and legitimately
+reaches its stable empty closure without calling a solver, so replay now requires
+a nonnegative count. `FiniteReach` deterministically records 19 checks, four
+states, three reached states, four rounds, and cap 64; the package check fixes all
+five values.
+
+The new checked profiler is `fine/profile_finite_inhabitation.py`. It generates
+the discriminating family, verifies the exact Rainfall result for every size, and
+can drive both native executables and an ordinary Wasm module through Node. The
+schema-versioned retained result is
+`fine/research/finite-inhabitation-profile.json`. At 64 states the constructor
+enumerator takes 0.615 seconds natively and 0.796 seconds in ordinary Wasm, versus
+15.665 seconds for the prior state scan. The 64-state cap now explicitly stands
+for a sub-second latency guard on this worst-case chain, not a correctness or
+decidability claim. Larger finite products keep the sound conservative boundary.
+For context, an exploratory optimized-only run at 96/128/192/256 states took
+1.547/2.929/7.632/15.434 seconds and 9,311/16,511/37,055/65,791 solver checks;
+that null result is why the cap was reduced rather than merely documenting 256.
+
+Validation and profiling commands:
+
+```
+cmake --build .build -j2 --target fine-bin
+.build/fine run fine/fixtures/staged-proof-elimination.fine
+.build/fine rain fine/fixtures/staged-proof-elimination.fine > /tmp/staged.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/staged-proof-elimination.fine /tmp/staged.rain
+nix flake check
+nix build --no-link --print-out-paths
+nix build --no-link --print-out-paths \
+  .#playground-wasm .#playground-wasm-pthreads .#playground
+python3 fine/profile_finite_inhabitation.py \
+  --implementation state-scan=/nix/store/02r8j4f588az96hfahz8qrrvbch5lwnv-fine-0.1.0/bin/fine \
+  --implementation constructor-enumeration=/nix/store/yhc7gqxmqh7hajnd28yja9ww8scqxc8b-fine-0.1.0/bin/fine \
+  --wasm-implementation browser-constructor-enumeration=/nix/store/8znwbywxf9nabdncfj2g8fmfbr5p6drg-fine-playground-wasm-0.1.0 \
+  --sizes 8 16 32 64 --repetitions 1
+systemctl restart fine-playground.service
+curl -sS -D /tmp/fine-headers -o /dev/null https://fine.shit.yachts/
+```
+
+The clean native artifact is
+`/nix/store/yhc7gqxmqh7hajnd28yja9ww8scqxc8b-fine-0.1.0`; ordinary Wasm is
+`/nix/store/8znwbywxf9nabdncfj2g8fmfbr5p6drg-fine-playground-wasm-0.1.0`;
+pthread Wasm is
+`/nix/store/wvfayfmcizlm6ny04yw6ysq4pbb7mwlr-fine-playground-wasm-pthreads-0.1.0`;
+and the complete playground is
+`/nix/store/rsznbzl1dzxq40v1nz3jzgcc3bfdx62a-fine-playground-0.1.0`. The first
+public request immediately after restart returned 502 while the service realized
+its flake app; ten seconds later it returned 200 with COOP `same-origin` and COEP
+`require-corp`. Both services remained active.
