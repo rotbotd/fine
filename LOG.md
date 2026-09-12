@@ -8521,3 +8521,47 @@ git diff --check
 
 The complete native install check passes. Clean native artifact:
 `/nix/store/2jjmqcc53n6ya3bn6p5c3riq8ymi1mgz-fine-0.1.0`.
+
+## 2026-09-12 — real browser action crosses parameterized source epochs
+
+Renaming the public action to `specialize exact islands` was not enough: both
+real-Chromium paths still exercised only the old nullary whole-body example. The
+UI and Wasm boundary were generic, but the end-to-end public contract did not
+distinguish an expression pass from a wrapper macro.
+
+`browser-smoke.mjs` now receives three checked staging-pass epochs. After the
+existing nullary success/undo and missing-target no-edit controls, it installs
+`stage-specialization-pass.fine` into the actual CodeMirror view. The first click
+names parameterized `simplify_inside` and must produce the byte-exact new
+`stage-specialization-pass-first.fine`, reducing only
+`predecessor(succ(zero))`. The second names parameterized
+`branch_refinement` and must produce the existing final fixture, reducing only
+the arm-local `value == zero`. One browser undo restores the first epoch; a
+second restores the original parameterized source. The comments beside both
+islands remain part of each exact comparison.
+
+The same sequence runs once with `SharedArrayBuffer` hidden, forcing the
+ordinary Wasm module, and once through the public cross-origin-isolated pthread
+module. This tests the actual served button, MEMFS output, CodeMirror transaction
+history, and both frontend-selected runtimes; it does not call the CLI beside
+the browser.
+
+Validation for implementation `85792a8ab`:
+
+```
+node --check playground/browser-smoke.mjs
+.build/fine specialize simplify_inside \
+  fine/fixtures/stage-specialization-pass.fine
+nix build -L --no-link --print-out-paths .#playground
+nix flake check --no-write-lock-file
+nix build --no-link --print-out-paths .#playground
+git diff --check
+```
+
+Both real browser runs and the lower ordinary/pthread Wasm smokes pass. Clean
+ordinary Wasm artifact:
+`/nix/store/d0d74ial6jlghi8lwpa4p19fmhrips4z-fine-playground-wasm-0.1.0`;
+clean pthread artifact:
+`/nix/store/fd1rk2rlwbk34ih8bg9h67sdjrywwy4w-fine-playground-wasm-pthreads-0.1.0`;
+clean playground artifact:
+`/nix/store/50rdb8has6lapqmyckz50ksylzvzlg8m-fine-playground-0.1.0`.
