@@ -1,0 +1,141 @@
+{
+  "fixture": "one base, a length-(N-1) chain, and one unreachable self-supported state",
+  "profiles": [
+    {
+      "implementation": "state-scan",
+      "measurements": [
+        {
+          "domain_states": 8,
+          "elapsed_seconds_median": 0.101015,
+          "elapsed_seconds_trials": [
+            0.101015
+          ],
+          "reachable_states": 7,
+          "rounds": 8,
+          "solver_checks": null
+        },
+        {
+          "domain_states": 16,
+          "elapsed_seconds_median": 0.245011,
+          "elapsed_seconds_trials": [
+            0.245011
+          ],
+          "reachable_states": 15,
+          "rounds": 16,
+          "solver_checks": null
+        },
+        {
+          "domain_states": 32,
+          "elapsed_seconds_median": 1.89479,
+          "elapsed_seconds_trials": [
+            1.89479
+          ],
+          "reachable_states": 31,
+          "rounds": 32,
+          "solver_checks": null
+        },
+        {
+          "domain_states": 64,
+          "elapsed_seconds_median": 15.66486,
+          "elapsed_seconds_trials": [
+            15.66486
+          ],
+          "reachable_states": 63,
+          "rounds": 64,
+          "solver_checks": null
+        }
+      ]
+    },
+    {
+      "implementation": "constructor-enumeration",
+      "measurements": [
+        {
+          "domain_states": 8,
+          "elapsed_seconds_median": 0.018298,
+          "elapsed_seconds_trials": [
+            0.018298
+          ],
+          "reachable_states": 7,
+          "rounds": 8,
+          "solver_checks": 71
+        },
+        {
+          "domain_states": 16,
+          "elapsed_seconds_median": 0.043062,
+          "elapsed_seconds_trials": [
+            0.043062
+          ],
+          "reachable_states": 15,
+          "rounds": 16,
+          "solver_checks": 271
+        },
+        {
+          "domain_states": 32,
+          "elapsed_seconds_median": 0.146018,
+          "elapsed_seconds_trials": [
+            0.146018
+          ],
+          "reachable_states": 31,
+          "rounds": 32,
+          "solver_checks": 1055
+        },
+        {
+          "domain_states": 64,
+          "elapsed_seconds_median": 0.614785,
+          "elapsed_seconds_trials": [
+            0.614785
+          ],
+          "reachable_states": 63,
+          "rounds": 64,
+          "solver_checks": 4159
+        }
+      ]
+    },
+    {
+      "implementation": "browser-constructor-enumeration",
+      "measurements": [
+        {
+          "domain_states": 8,
+          "elapsed_seconds_median": 0.051248,
+          "elapsed_seconds_trials": [
+            0.051248
+          ],
+          "reachable_states": 7,
+          "rounds": 8,
+          "solver_checks": 71
+        },
+        {
+          "domain_states": 16,
+          "elapsed_seconds_median": 0.057303,
+          "elapsed_seconds_trials": [
+            0.057303
+          ],
+          "reachable_states": 15,
+          "rounds": 16,
+          "solver_checks": 271
+        },
+        {
+          "domain_states": 32,
+          "elapsed_seconds_median": 0.192624,
+          "elapsed_seconds_trials": [
+            0.192624
+          ],
+          "reachable_states": 31,
+          "rounds": 32,
+          "solver_checks": 1055
+        },
+        {
+          "domain_states": 64,
+          "elapsed_seconds_median": 0.795912,
+          "elapsed_seconds_trials": [
+            0.795912
+          ],
+          "reachable_states": 63,
+          "rounds": 64,
+          "solver_checks": 4159
+        }
+      ]
+    }
+  ],
+  "schema": "fine.finite-inhabitation-profile.v1"
+}

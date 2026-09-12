@@ -388,12 +388,15 @@ def validate(source: bytes, events: list[dict[str, Any]]) -> dict[str, int]:
             domain_states = data.get("domain_states")
             reachable_states = data.get("reachable_states")
             rounds = data.get("rounds")
+            solver_checks = data.get("solver_checks")
             state_cap = data.get("state_cap")
             _require(len(within) == 1 and within[0] == f"proof-inductive:{family}" and
                      isinstance(family, str) and family and family not in finite_inhabitation_families and
                      isinstance(domain_states, int) and not isinstance(domain_states, bool) and
                      isinstance(reachable_states, int) and not isinstance(reachable_states, bool) and
                      isinstance(rounds, int) and not isinstance(rounds, bool) and rounds >= 1 and
+                     isinstance(solver_checks, int) and not isinstance(solver_checks, bool) and
+                     solver_checks >= 0 and
                      isinstance(state_cap, int) and not isinstance(state_cap, bool) and state_cap > 0 and
                      1 <= domain_states <= state_cap and
                      0 <= reachable_states <= domain_states and

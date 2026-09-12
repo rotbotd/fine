@@ -527,6 +527,8 @@
           assert recursive["domain_states"] == 4
           assert recursive["reachable_states"] == 3
           assert recursive["rounds"] == 4
+          assert recursive["solver_checks"] == 19
+          assert recursive["state_cap"] == 64
           assert recursive["least_fixed_point"] is True
           PY
 

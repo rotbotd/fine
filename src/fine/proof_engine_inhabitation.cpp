@@ -69,7 +69,10 @@ namespace fine::elaboration {
         finite_inhabitation_cache_.emplace(family, std::nullopt);
         syntax::ProofInductiveDecl const &declaration = *family_found->second;
         std::vector<std::vector<z3::expr>> domain(1);
-        constexpr std::size_t max_finite_states = 256;
+        // This is a latency guard, not a logical boundary. The checked chain
+        // profile keeps 64 states below one second in both native and ordinary
+        // Wasm builds; larger finite products retain the conservative analysis.
+        constexpr std::size_t max_finite_states = 64;
         for (auto const &index : declaration.indices) {
             auto values = values_.finite_values(kind_of(index.type));
             if (!values || values->empty() || domain.size() > max_finite_states / values->size())
@@ -113,91 +116,108 @@ namespace fine::elaboration {
         FiniteInhabitation result;
         bool changed;
         do {
-            changed = false;
             auto previous = result.reachable_indices;
-            for (std::size_t state_index = 0; state_index < domain.size(); ++state_index) {
-                auto const &state = domain[state_index];
-                if (already_reached(state, previous))
-                    continue;
-                for (auto const &constructor : declaration.constructors) {
-                    ValueEnvironment constructor_values;
-                    for (auto const &parameter : constructor.parameters) {
-                        ValueKind kind = kind_of(parameter.type);
-                        std::string symbol = "fine.proof-finite." + family + "." +
-                                             std::to_string(result.rounds) + "." + std::to_string(state_index) + "." +
-                                             constructor.name + "." + parameter.name;
-                        constructor_values.emplace(
-                            parameter.name,
-                            ValueTerm(kind, values_.context().constant(symbol.c_str(), values_.sort(kind))));
+            std::vector<std::vector<z3::expr>> additions;
+            for (auto const &constructor : declaration.constructors) {
+                ValueEnvironment constructor_values;
+                for (auto const &parameter : constructor.parameters) {
+                    ValueKind kind = kind_of(parameter.type);
+                    std::string symbol = "fine.proof-finite." + family + "." + std::to_string(result.rounds) + "." +
+                                         constructor.name + "." + parameter.name;
+                    constructor_values.emplace(
+                        parameter.name,
+                        ValueTerm(kind, values_.context().constant(symbol.c_str(), values_.sort(kind))));
+                }
+                ProofEnvironment no_proofs;
+                std::vector<std::string> no_proof_order;
+                std::vector<z3::expr> no_absorbed;
+                SemanticProofType constructor_result = elaborate_proof_type(constructor.result_type, constructor_values,
+                                                                            no_proofs, no_proof_order, no_absorbed);
+                auto result_type = std::get_if<InductiveType>(&constructor_result);
+                if (!result_type || result_type->family != family ||
+                    result_type->indices.size() != declaration.indices.size())
+                    throw std::logic_error("checked proof constructor changed family or arity");
+                z3::expr condition = values_.context().bool_val(true);
+                for (auto const &constraint : constructor_identity_constraints(constructor, constructor_values))
+                    condition = condition && constraint;
+
+                bool exact = true;
+                auto require_premise = [&](syntax::CoeffectParameter const &parameter) {
+                    if (!exact || parameter.type.kind != syntax::ProofType::Kind::inductive)
+                        return;
+                    SemanticProofType premise = elaborate_proof_type(parameter.type, constructor_values, no_proofs,
+                                                                     no_proof_order, no_absorbed);
+                    auto premise_type = std::get_if<InductiveType>(&premise);
+                    if (!premise_type)
+                        throw std::logic_error("indexed constructor premise changed proof kind");
+                    if (premise_type->family == family) {
+                        condition = condition && tuple_member(premise_type->indices, previous);
+                        return;
                     }
-                    ProofEnvironment no_proofs;
-                    std::vector<std::string> no_proof_order;
-                    std::vector<z3::expr> no_absorbed;
-                    SemanticProofType constructor_result =
-                        elaborate_proof_type(constructor.result_type, constructor_values, no_proofs, no_proof_order,
-                                             no_absorbed);
-                    auto result_type = std::get_if<InductiveType>(&constructor_result);
-                    if (!result_type || result_type->family != family || result_type->indices.size() != state.size())
-                        throw std::logic_error("checked proof constructor changed family or arity");
-                    z3::expr condition = values_.context().bool_val(true);
-                    for (std::size_t i = 0; i < state.size(); ++i)
-                        condition = condition && result_type->indices[i].expression == state[i];
-                    for (auto const &constraint : constructor_identity_constraints(constructor, constructor_values))
-                        condition = condition && constraint;
+                    auto premise_states = finite_inhabitation(premise_type->family);
+                    if (!premise_states) {
+                        exact = false;
+                        return;
+                    }
+                    condition = condition && tuple_member(premise_type->indices, premise_states->reachable_indices);
+                };
+                for (auto const &parameter : constructor.explicit_proof_parameters)
+                    require_premise(parameter);
+                for (auto const &parameter : constructor.proof_parameters)
+                    require_premise(parameter);
+                if (!exact)
+                    return std::nullopt;
 
-                    bool exact = true;
-                    auto require_premise = [&](syntax::CoeffectParameter const &parameter) {
-                        if (!exact || parameter.type.kind != syntax::ProofType::Kind::inductive)
-                            return;
-                        SemanticProofType premise = elaborate_proof_type(parameter.type, constructor_values, no_proofs,
-                                                                        no_proof_order, no_absorbed);
-                        auto premise_type = std::get_if<InductiveType>(&premise);
-                        if (!premise_type)
-                            throw std::logic_error("indexed constructor premise changed proof kind");
-                        if (premise_type->family == family) {
-                            condition = condition && tuple_member(premise_type->indices, previous);
-                            return;
-                        }
-                        auto premise_states = finite_inhabitation(premise_type->family);
-                        if (!premise_states) {
-                            exact = false;
-                            return;
-                        }
-                        condition = condition &&
-                                    tuple_member(premise_type->indices, premise_states->reachable_indices);
-                    };
-                    for (auto const &parameter : constructor.explicit_proof_parameters)
-                        require_premise(parameter);
-                    for (auto const &parameter : constructor.proof_parameters)
-                        require_premise(parameter);
-                    if (!exact)
-                        return std::nullopt;
-
-                    z3::solver solver(values_.context());
-                    solver.add(condition);
+                // One incremental solver enumerates this constructor's previously unseen
+                // result tuples. Rebuilding the constructor and a solver for every possible
+                // target made a length-N chain cubic in its finite domain.
+                condition = condition && !tuple_member(result_type->indices, previous);
+                z3::solver solver(values_.context());
+                solver.add(condition);
+                while (true) {
+                    ++result.solver_checks;
                     z3::check_result status = solver.check();
                     if (status == z3::unknown)
                         return std::nullopt;
-                    if (status == z3::sat) {
-                        result.reachable_indices.push_back(state);
-                        changed = true;
+                    if (status == z3::unsat)
                         break;
-                    }
+                    z3::model model = solver.get_model();
+                    std::vector<z3::expr> output;
+                    output.reserve(result_type->indices.size());
+                    for (auto const &index : result_type->indices)
+                        output.push_back(model.eval(index.expression, true).simplify());
+                    auto state = std::find_if(domain.begin(), domain.end(), [&](auto const &candidate) {
+                        return candidate.size() == output.size() &&
+                               std::equal(candidate.begin(), candidate.end(), output.begin(),
+                                          [&](auto const &left, auto const &right) {
+                                              return same_ast(values_.context(), left, right);
+                                          });
+                    });
+                    if (state == domain.end())
+                        throw std::logic_error("finite proof-family model escaped its declared index domain");
+                    if (!already_reached(*state, additions))
+                        additions.push_back(*state);
+                    z3::expr different = values_.context().bool_val(false);
+                    for (std::size_t i = 0; i < state->size(); ++i)
+                        different = different || result_type->indices[i].expression != state->at(i);
+                    solver.add(different);
                 }
             }
+            changed = !additions.empty();
+            result.reachable_indices.insert(result.reachable_indices.end(), additions.begin(), additions.end());
             ++result.rounds;
         } while (changed);
         finite_inhabitation_cache_[family] = result;
         if (rainfall_)
             rainfall_->record(
-                "derive", "proof.inductive.finite-inhabitation", {"proof-inductive:" + family},
-                "fine.proof-elaborator",
+                "derive", "proof.inductive.finite-inhabitation", {"proof-inductive:" + family}, "fine.proof-elaborator",
                 "Fine computes the exact least constructor closure when every proof index has a small finite value "
                 "domain",
                 {RainfallRecorder::string_field("family", family),
                  RainfallRecorder::number_field("domain_states", domain.size()),
                  RainfallRecorder::number_field("reachable_states", result.reachable_indices.size()),
                  RainfallRecorder::number_field("rounds", result.rounds),
+                 RainfallRecorder::number_field("solver_checks", result.solver_checks),
                  RainfallRecorder::number_field("state_cap", max_finite_states),
                  RainfallRecorder::boolean_field("least_fixed_point", true)});
         return result;
@@ -219,9 +239,10 @@ namespace fine::elaboration {
         return cover.simplify();
     }
 
-    ProofEngine::IndexedPremiseShape ProofEngine::constructor_indexed_premise_shape(
-        syntax::ProofConstructorDecl const &constructor, ValueEnvironment const &constructor_values,
-        std::string const &evidence_name, std::set<std::string> &expanding) {
+    ProofEngine::IndexedPremiseShape
+    ProofEngine::constructor_indexed_premise_shape(syntax::ProofConstructorDecl const &constructor,
+                                                   ValueEnvironment const &constructor_values,
+                                                   std::string const &evidence_name, std::set<std::string> &expanding) {
         IndexedPremiseShape shape;
         auto inspect = [&](syntax::CoeffectParameter const &parameter) {
             if (parameter.type.kind != syntax::ProofType::Kind::inductive)
@@ -232,8 +253,8 @@ namespace fine::elaboration {
             ProofEnvironment no_proofs;
             std::vector<std::string> no_proof_order;
             std::vector<z3::expr> no_absorbed;
-            SemanticProofType premise = elaborate_proof_type(parameter.type, constructor_values, no_proofs,
-                                                             no_proof_order, no_absorbed);
+            SemanticProofType premise =
+                elaborate_proof_type(parameter.type, constructor_values, no_proofs, no_proof_order, no_absorbed);
             auto inductive = std::get_if<InductiveType>(&premise);
             if (!inductive)
                 throw std::logic_error("indexed constructor premise changed proof kind");
@@ -244,8 +265,7 @@ namespace fine::elaboration {
             }
             if (expanding.contains(parameter.type.name))
                 return;
-            shape.covers.push_back(
-                inductive_head_cover(*inductive, evidence_name + "." + parameter.name, expanding));
+            shape.covers.push_back(inductive_head_cover(*inductive, evidence_name + "." + parameter.name, expanding));
             ++shape.expanded;
         };
         for (auto const &parameter : constructor.explicit_proof_parameters)

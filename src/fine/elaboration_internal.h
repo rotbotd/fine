@@ -596,15 +596,16 @@ namespace fine::elaboration {
         struct FiniteInhabitation {
             std::vector<std::vector<z3::expr>> reachable_indices;
             std::size_t rounds = 0;
+            std::size_t solver_checks = 0;
         };
         std::map<std::string, std::optional<FiniteInhabitation>> finite_inhabitation_cache_;
         std::optional<FiniteInhabitation> finite_inhabitation(std::string const &family);
         std::optional<z3::expr> finite_inductive_head_cover(InductiveType const &type);
         bool proof_family_has_finite_constructor_tree(std::string const &family) const;
-        IndexedPremiseShape
-        constructor_indexed_premise_shape(syntax::ProofConstructorDecl const &constructor,
-                                          ValueEnvironment const &constructor_values,
-                                          std::string const &evidence_name, std::set<std::string> &expanding);
+        IndexedPremiseShape constructor_indexed_premise_shape(syntax::ProofConstructorDecl const &constructor,
+                                                              ValueEnvironment const &constructor_values,
+                                                              std::string const &evidence_name,
+                                                              std::set<std::string> &expanding);
         std::vector<z3::expr> constructor_identity_constraints(syntax::ProofConstructorDecl const &constructor,
                                                                ValueEnvironment const &constructor_values);
 

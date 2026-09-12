@@ -112,13 +112,15 @@ callers synthesize or supply the evidence.
       below. Rainfall retains the expanded-premise count.
 - [x] Compute exact recursive index inhabitation for small finite proof families.
       If every family index is `Bool` or a fieldless runtime enum and the product
-      has at most 256 states, iterate constructor support from the empty set to a
+      has at most 64 states, iterate constructor support from the empty set to a
       least fixed point. `FiniteReach(two)` needs its base and two successive
       rounds; `FiniteReach(stuck)` has only self-support and remains empty. A
       zero-arm staged match accepts the latter, while a rejecting control requires
       the `reach_two` arm for the former. Rainfall retains domain, reachable-state,
-      and round counts. Integer and payload-bearing recursive indices keep the
-      conservative repeated-family boundary.
+      round, solver-check, and state-cap counts. The 64-state cap is a latency
+      guard measured by `fine/profile_finite_inhabitation.py`; integer,
+      payload-bearing, and larger recursive index products keep the conservative
+      repeated-family boundary.
 - [x] Retain every staged constructor feasibility query in Rainfall as an exact
       result-index/identity-premise term and solver status. Replay closes the
       complete constructor set against the selected or impossible value match.

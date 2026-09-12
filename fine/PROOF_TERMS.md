@@ -316,10 +316,13 @@ premises, so an empty family and a self-supported cycle with no base make every
 constructor demanding them impossible. This remains only a necessary condition:
 Fine expands the exact head cover of grounded premise families, so impossible
 indices and identity demands propagate through acyclic dependencies. For a
-family indexed only by `Bool` or fieldless runtime enums, with at most 256 ground
-index tuples, Fine computes the least constructor closure directly. The empty
-set is round zero; a later round adds a tuple only when one constructor produces
-it and all of that constructor's indexed premises were already reached. Thus a
+family indexed only by `Bool` or fieldless runtime enums, with at most 64 ground
+index tuples, Fine computes the least constructor closure directly. The boundary
+keeps the checked worst-case native and ordinary-Wasm chains below one second;
+it is a latency guard rather than a semantic cutoff. The empty set is round zero;
+a later round adds a tuple only when one constructor produces it and all of that
+constructor's indexed premises were already reached. Each constructor enumerates
+its previously unseen result tuples from one incremental solver per round. Thus a
 base at `zero`, successive constructors at `one` and `two`, and a self-supported
 constructor at `stuck` reach exactly the first three indices. A repeated family
 outside this finite boundary still stops conservatively. When the resulting head cover is inconsistent,

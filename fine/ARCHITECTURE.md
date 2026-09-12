@@ -657,12 +657,18 @@ demanding one of those empty families contributes `false` to its head. For a
 grounded premise family, Fine also expands its exact constructor-head cover:
 result indices and identity demands therefore propagate through prior premise
 families. When every index of a family ranges over `Bool` or a fieldless runtime
-enum and their product contains at most 256 states, Fine instead starts with no
+enum and their product contains at most 64 states, Fine instead starts with no
 inhabitants and repeatedly admits exactly those ground index tuples supported by
-a constructor whose indexed premises were admitted in the previous round. This
-least constructor closure follows repeated families without turning a cycle into
-evidence. Other repeated families still stop conservatively rather than invoking
-a fabricated general decision procedure.
+a constructor whose indexed premises were admitted in the previous round. Each
+constructor owns one incremental solver per round and enumerates its previously
+unseen result tuples; Rainfall retains the exact solver-check count. This least
+constructor closure follows repeated families without turning a cycle into
+evidence. The 64-state boundary is a measured latency guard, not a claim about
+decidability: the checked worst-case chain stays below one second in both native
+and ordinary Wasm builds. Other repeated families stop conservatively rather
+than invoking a fabricated general decision procedure. The reproducible profile
+is `fine/profile_finite_inhabitation.py`, with retained measurements in
+`fine/research/finite-inhabitation-profile.json`.
 For `Never()` the cover is false; for `OnlyOff(on)` it reduces to `off == on`.
 For `IdentityGuarded(on)`, the result head fixes the constructor's candidate to
 `on` while its coeffect demands `Id(Flag, candidate, off)`, so the head is
