@@ -8886,3 +8886,77 @@ and the complete playground is
 services are active. The first public request after restart returned the expected
 transient 502 while the flake app realized; the next returned 200 with COOP
 `same-origin` and COEP `require-corp`.
+
+## 2026-09-12 — closed ground inhabitation across premise families
+
+The restricted ground Horn query initially stopped whenever a constructor proof
+field named another family. That was conservative but observably weak even without
+mutually recursive declarations. `cross-family-ground-inhabitation.fine` makes the
+smallest exact failure: `Seed(Nat)` has a base only at `zero` plus a deceptive
+self-supported constructor at every index; `Middle(value)` requires `Seed(value)`;
+and `Outer(value)` requires `Middle(value)`. Constructor-head expansion treated
+`Outer(succ(zero))` as feasible because it stopped when `Seed` repeated. Before
+this slice, the zero-arm eliminator failed by demanding the `outer` arm. The base
+at zero supplies a paired reachable control.
+
+Implementation `7a87603db` collects the complete indexed-premise dependency set
+of each closed ground query before creating Z3 state. It declares one private
+Spacer relation per family, then adds every source constructor rule to the same
+fixedpoint instance. Constructor value parameters remain universal Horn
+variables, identity evidence remains equality guards, and each indexed proof
+field calls the relation belonging to its declared family. Relation and rule
+order follows the sorted family names, so Rainfall and solver naming do not depend
+on map insertion or traversal order. Only `unsat` strengthens the outer evidence
+cover; symbolic targets, source-function applications in any dependency rule,
+timeouts, and resource exhaustion still return to the conservative cover.
+
+This is more than inlining an acyclic wrapper. The query contains four source
+rules and three relation premises: `Seed`'s self-edge, `Middle -> Seed`, and
+`Outer -> Middle`. The least simultaneous solution excludes
+`Outer(succ(zero))`, while the base reaches `Outer(zero)`. A second fixture asks
+for a zero-arm value match at the latter target and still fails with the uniquely
+reachable `outer` arm.
+
+Rainfall's `proof.inductive.ground-inhabitation` event now retains the sorted
+family set, total relation-premise count, cross-family premise count, and whether
+all premises stayed within their defining family. Replay requires the set to be
+sorted and duplicate-free, the root family to occur in it, the cross count to be
+bounded by the total, the Boolean summary to agree with that count, and the fixed
+one-million-unit resource limit to be present. It accepts native timeout 1000 and
+Wasm timeout 0. The cross-family fixture produces two `Outer` queries with
+families `[Middle, Outer, Seed]`, four rules, three premises, two cross-family
+premises, and statuses `sat`/`unsat`; its nested `Middle` queries use
+`[Middle, Seed]`, three rules, two premises, one cross-family premise, and the
+same paired statuses. All 78 Rainfall events replay successfully.
+
+Validation:
+
+```
+cmake --build .build -j2 --target fine-bin
+.build/fine run fine/fixtures/cross-family-ground-inhabitation.fine
+.build/fine rain fine/fixtures/cross-family-ground-inhabitation.fine \
+  > /tmp/cross.rain
+python3 fine/rainfall_validate.py \
+  fine/fixtures/cross-family-ground-inhabitation.fine /tmp/cross.rain
+.build/fine run fine/fixtures/reject-empty-cross-family-ground-reachable.fine
+# Compare stdout, stderr, and exit status for every prior fixture against
+# /nix/store/gl1drp2qhcnbsxnb9j7v8i228lavqsd8-fine-0.1.0/bin/fine.
+nix flake check
+nix build --no-link --print-out-paths .#default
+nix build --no-link --print-out-paths \
+  .#playground-wasm .#playground-wasm-pthreads .#playground
+systemctl restart fine-playground.service
+curl -sS -D /tmp/fine-headers -o /dev/null https://fine.shit.yachts/
+```
+
+All 83 prior fixtures retain exact stdout, stderr, and exit status. The complete
+native install check and both browser paths pass. Clean native artifact:
+`/nix/store/i6jqmjapkpghh1fnrhdjvsvwm9d73n8p-fine-0.1.0`; ordinary Wasm:
+`/nix/store/381sic7wcdr9i2drwlgyrcf56068b166-fine-playground-wasm-0.1.0`;
+pthread Wasm:
+`/nix/store/jfjf4xsw6sgvjzhaw2kgs5lzmar8dic2-fine-playground-wasm-pthreads-0.1.0`;
+complete playground:
+`/nix/store/mxvs99a23hyxc2mzk0dflizkqphhm886-fine-playground-0.1.0`. Both
+services are active. The first public request after restart returned the expected
+transient 502 while the flake app realized; the next returned 200 with COOP
+`same-origin` and COEP `require-corp`.
