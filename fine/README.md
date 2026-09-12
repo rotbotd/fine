@@ -182,16 +182,19 @@ rejected rather than silently treating its inputs as runtime; add a nullary
 wrapper when the exact inputs are known. This is an inspection action, not a
 second verifier or a runtime code generator.
 
-`fine specialize NAME file.fine` uses the same boundary only when the result is
-exact and no recursive call remained blocked. It replaces that wrapper's body
-through its concrete source range, preserving every surrounding comment and
-whitespace run, then reparses, re-verifies, and re-runs staging on the edited
-document. The exact result must survive that round trip. Output is the complete
+`fine specialize NAME file.fine` runs the same certified transfer with every
+formal parameter treated as runtime. It replaces each outermost expression
+which is exact and contains no blocked recursive call, preserving every
+surrounding comment and whitespace run. A nullary function whose whole body is
+exact is the useful whole-body special case. Fine then reparses, re-verifies,
+and re-runs the same runtime-input transfer on the edited document; its result
+and recursion-block status must survive that round trip. Output is the complete
 specialized source on stdout, or in the exact file named by `--output`.
-`bottom` and `runtime` results are rejected rather than being turned into
-plausible-looking code, and a failed file-output request creates no output.
+`bottom`, runtime-dependent expressions, and blocked recursive expressions stay
+in source rather than being turned into plausible-looking code, and a failed
+file-output request creates no output.
 
-If the wrapper reaches a value-level proof match whose erased field was fixed by
+If the function reaches a value-level proof match whose erased field was fixed by
 a constructor identity demand, staging uses the exact substitution certified by
 ordinary body elaboration. It does not infer that substitution again from the
 proof declaration. The certificate is bound to that parsed match expression;
@@ -217,12 +220,13 @@ Z3 model selector do not yet apply to indexed holes.
 `https://fine.shit.yachts` runs the same C++ executable and local Z3 fork as an
 11 MiB WebAssembly module. CodeMirror is only an editor and lexical highlighter;
 it is not a second parser. `materialize holes` installs the CLI's exact source as
-one transaction, so one undo restores the pre-action document. `specialize
-body` takes the name of a nullary wrapper, asks the Wasm CLI to write its checked
-specialized source to MEMFS, and installs those exact bytes through the same
-one-undo boundary. A failed or non-exact specialization leaves the editor
-unchanged. The checked default names `zero_from_one`, so this action has a valid
-target before the user edits anything.
+one transaction, so one undo restores the pre-action document. `specialize exact
+islands` takes a function name, asks the Wasm CLI to write its checked specialized
+source to MEMFS, and installs those exact bytes through the same one-undo
+boundary. It works inside parameterized functions as well as on a complete
+nullary body. A failed specialization leaves the editor unchanged. The checked
+default names `zero_from_one`, so this action has a visible whole-body reduction
+before the user edits anything.
 
 Checkpoint search uses a dedicated Web Worker. On cross-origin-isolated clients,
 a pthread producer runs open-ended iterative deepening while a separate Fine

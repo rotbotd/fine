@@ -384,8 +384,8 @@ int main(int argc, char **argv) try {
     }
     std::cerr << "usage: fine run <source.fine>\n"
                  "       fine stage <nullary-function> <source.fine>\n"
-                 "       fine specialize <nullary-function> <source.fine>\n"
-                 "       fine specialize <nullary-function> --output <output.fine> <source.fine>\n"
+                 "       fine specialize <function> <source.fine>\n"
+                 "       fine specialize <function> --output <output.fine> <source.fine>\n"
                  "       fine rain <source.fine>\n"
                  "       fine materialize <source.fine>\n"
                  "       fine materialize [--proof-selector z3] --output <output.fine> <source.fine>\n"
