@@ -384,8 +384,10 @@ interfaces rather than relying on translation-unit convention.
 `elaboration_internal.h` contains the shared private semantic vocabulary and
 contracts. `ValueTerm` and `ProofEvidence` remain disjoint structures there.
 Implementations are in `value_elaborator.cpp`, `proof_engine_types.cpp`,
-`proof_engine_search.cpp`, `proof_engine_inductive.cpp`, and
-`document_runner.cpp`.
+`proof_engine_search.cpp`, `proof_engine_inductive.cpp`,
+`proof_engine_inhabitation.cpp`, and `document_runner.cpp`. Constructor-head
+covers and finite least-inhabitation closure live in the last proof file; proof
+formation, matching, and structural induction do not carry that analysis inline.
 
 ## Cacheable value-flow boundary
 
