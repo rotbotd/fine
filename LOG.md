@@ -8680,3 +8680,48 @@ pthread Wasm
 `/nix/store/hbwswr1zmka7b6m6sjh69zdcdynbkk9r-fine-playground-wasm-pthreads-0.1.0`,
 and playground
 `/nix/store/r6gc0xwxlazkslc5lyp0lhh5b77nmp7y-fine-playground-0.1.0`.
+
+## 2026-09-12 — proof inhabitation detached from induction machinery
+
+Adding the finite least-constructor closure made
+`proof_engine_inductive.cpp` the largest Fine implementation file again at 1,555
+lines. More importantly, it placed two distinct concerns in one translation
+unit: proof formation/matching/structural induction and the static analysis that
+summarizes whether an indexed family can have evidence. The latter owns its own
+cache, fixed-point iteration, constructor-head formula construction, and
+finite-spine fallback; none of those operations forms or eliminates a proof.
+
+Implementation `6178bf006` moves that complete analysis into
+`proof_engine_inhabitation.cpp`. The new 310-line unit owns identity constraints
+on proof constructors, global finite-spine grounding, exact finite-state least
+closure, indexed-premise cover construction, and outer constructor-head covers.
+`proof_engine_inductive.cpp` is reduced to 1,251 lines and retains constructor
+formation, indexed holes, proof-level and staged value matching, structural
+induction, absorption, and declaration checking. The owner remains `ProofEngine`:
+this is a semantic file boundary, not a second registry or a duplicate elaborator.
+`elaboration_internal.h` remains the sole private contract, and CMake now names
+the new source explicitly. The architecture document records the boundary.
+
+The move was checked as a strict behavior-preserving refactor. Every one of the
+81 `.fine` fixtures was run with the clean pre-refactor native artifact and the
+new local executable; stdout, stderr, and exit status were byte-identical.
+Rainfall for `staged-proof-elimination`, branching proof induction, and identity
+transitivity was valid on both executables and byte-identical after removing only
+the deliberately time-derived run/document/snapshot identities. This catches a
+lost recorder call or changed feasibility ordering in addition to ordinary CLI
+behavior.
+
+Validation:
+
+```
+cmake --build .build -j2
+# Run every fine/fixtures/*.fine with the old artifact and .build/fine;
+# compare stdout, stderr, and status recursively.
+# Validate and normalize representative Rainfall pairs.
+nix flake check
+nix build --no-link --print-out-paths .#default
+git diff --check
+```
+
+The complete native install check passes. Clean native artifact:
+`/nix/store/02r8j4f588az96hfahz8qrrvbch5lwnv-fine-0.1.0`.
